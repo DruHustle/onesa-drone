@@ -135,6 +135,21 @@ class PlanTests(unittest.TestCase):
 
 
 class PrivacyTests(unittest.TestCase):
+    def test_stale_or_foreign_provider_alias_cannot_qualify(self):
+        runner = object.__new__(d.Runner)
+        runner.plan = {"vercel_project_id": "prj_fixture"}
+        valid = {"alias": "drone.onesa.eu", "projectId": "prj_fixture", "deploymentId": "dpl_fixture"}
+        with patch.object(runner, "vercel", return_value=d.canonical(valid)):
+            runner.alias_identity("production", "dpl_fixture")
+        for key, value in [
+            ("alias", "drone-staging.onesa.eu"),
+            ("projectId", "prj_foreign"),
+            ("deploymentId", "dpl_stale"),
+        ]:
+            with patch.object(runner, "vercel", return_value=d.canonical(valid | {key: value})):
+                with self.assertRaisesRegex(ValueError, "Canonical frontend alias"):
+                    runner.alias_identity("production", "dpl_fixture")
+
     def runner(self, folder):
         runner = object.__new__(d.Runner)
         runner.folder, runner.count = Path(folder), 0

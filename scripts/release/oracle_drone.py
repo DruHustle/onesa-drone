@@ -752,6 +752,7 @@ print(json.dumps({'counts':counts,'schema_verified':True,'tls_and_wrong_ca':True
             "Provider source/project receipt differs",
         )
         self.vercel(["alias", "set", url, ORIGINS[slot][0].removeprefix("https://")])
+        self.alias_identity(slot, details["id"])
         receipt = {
             "deployment_id": details["id"],
             "url": url,
@@ -760,6 +761,16 @@ print(json.dumps({'counts':counts,'schema_verified':True,'tls_and_wrong_ca':True
         }
         write(self.folder / (slot + "-frontend-receipt.json"), receipt)
         return receipt["deployment_id"]
+
+    def alias_identity(self, slot, deployment):
+        host = ORIGINS[slot][0].removeprefix("https://")
+        observed = json.loads(self.vercel(["api", "/v4/aliases/" + host]))
+        require(
+            observed.get("alias") == host
+            and observed.get("projectId") == self.plan["vercel_project_id"]
+            and observed.get("deploymentId") == deployment,
+            "Canonical frontend alias differs from the provider receipt",
+        )
 
     def browser(self, slot, workflow=False):
         config = self.plan["slots"][slot]
@@ -944,6 +955,7 @@ print(json.dumps({'counts':counts,'schema_verified':True,'tls_and_wrong_ca':True
                 self.browser(slot)
                 receipt = json.loads(private(self.folder / "production-frontend-receipt.json").read_text())
                 details = json.loads(self.vercel(["api", "/v13/deployments/" + receipt["deployment_id"]]))
+                self.alias_identity(slot, receipt["deployment_id"])
                 require(
                     details["projectId"] == self.plan["vercel_project_id"]
                     and details.get("readyState") == "READY"

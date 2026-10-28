@@ -158,6 +158,8 @@ violations. The smaller probe budget crashed a browser target during axe; the pa
 run used a bounded 1 GiB, 0.5 CPU, 256 processes and two Mesa threads. An earlier
 combined local forwarding harness stalled and was replaced by a separate disposable
 forwarder; this was not hosted qualification. Private failed reports are retained.
+The final runner also reads back the custom-domain alias and rejects a stale deployment,
+foreign project or crossed environment; the release Python suite now has 40 passing tests.
 
 Vercel project and domain registration are preparation only. Public HTTPS, hosted
 workflow/restore checks, source-pinned commissioning, provider deployment receipts
