@@ -97,8 +97,42 @@ These are local observations, not hosted capacity guarantees.
 Drone hosted CI was initially skipped pending verified included allowance/spend
 controls. On 28 October the owner explicitly confirmed included-only CI and blocked
 paid overages; `ONESA_PRIVATE_HOSTED_VALIDATION_ENABLED=true` was set and read back.
-The owner selected `local-tools/onesa-drone` for the local staging/release bundle.
-Exact-revision hosted results and local staging acceptance must be recorded after
-execution. Private-plan native branch protection remains unavailable. No hosted
-deployment, live AI identity, production release, hosted backup/rollback or
-partial-provider-failure test is claimed.
+Both exact-source hosted workflows pass for `530ef50c0b7bba935f6ed05b70a413eea0d1f3e8`:
+[push verification](https://github.com/DruHustle/onesa-drone/actions/runs/40727633449)
+and [PR verification](https://github.com/DruHustle/onesa-drone/actions/runs/40727622187).
+These include SQLite/PostgreSQL tests, browser acceptance, dependency/history checks
+and the runtime image gate. The earlier skipped runs remain skipped.
+
+The owner-selected `local-tools/onesa-drone` contains a running loopback-only stage
+at `http://127.0.0.1:3470`, bound to that source and the recorded frontend/image
+hashes. Actual acceptance passes authentication, a complete alternative-route
+delivery, live SSE, persistent telemetry/replay, private tracking, deterministic
+assistance and private monitoring. Four staged Chromium views (390/1440 pixels,
+light/dark) pass WebGL, overflow and axe checks. Runtime permission readback denies
+schema creation, audit update/delete and event deletion. A real in-memory dump is
+restored into a new isolated database: six operational counts and all tenant audit
+chains match, including two complete deliveries after a service restart.
+
+Initial local bundle startup exposed Compose temporary-filesystem quoting, Python
+module-path and proxy temporary-directory/network settings. Those were corrected
+before acceptance. Scanning cached infrastructure images then found eight proxy
+package and 26 database helper findings. The proxy packages were upgraded; PostgreSQL
+now starts as UID 70 without the unnecessary vulnerable gosu helper. All three final
+local runtime images have zero HIGH/CRITICAL findings without exclusions; original
+failed reports and the preceding manifest remain in private local evidence.
+
+The local API (UID 10001), database (UID 70) and proxy (UID 101) run read-only with
+dropped capabilities and memory caps of 256/256/64 MiB. Only the proxy publishes a
+loopback port. The database volume survives stop/start. Bundle credentials, SQL,
+source archive and acceptance receipts remain outside Git in the owner-selected
+private directory; no credential values or live records were uploaded to CI.
+
+Portal canonical naming/legacy redirects are also merged into staging in
+[#247](https://github.com/DruHustle/onesa-company-portal/pull/247) at
+`d2acbd1fa9e281cfbe73f4dfc872a673c97ea330` after exact-source hosted checks passed.
+Production publication is not claimed.
+
+Private-plan native branch protection remains unavailable. Local HTTP staging does
+not qualify public HTTPS, remote database TLS, a live Onesa AI identity, a production
+release verifier, hosted backups/rollback or partial-provider-failure acceptance.
+These remain open release gates. No physical flight or certification is claimed.

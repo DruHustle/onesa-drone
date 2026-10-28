@@ -48,6 +48,26 @@ a passing verification. Repository privacy was preserved; no upgrade, public vis
 made. Written PR discipline is not native protection. A qualified equivalent release
 control or an approved eligible plan is required before production promotion.
 
+## Owner-selected local staging
+
+On 28 October 2026 the owner selected `local-tools/onesa-drone` in the Onesa workspace.
+That private, ignored bundle serves the simulation at `http://127.0.0.1:3470` using
+the tested `530ef50` application source. Its release manifest binds the source archive,
+frontend hashes and immutable API/proxy/database images. Local operator credentials
+remain in `private/operator.json`; no password is built into the repository.
+
+From that directory, `python3 stage.py start`, `status` and `stop` manage only the
+new local services. Stop preserves their dedicated PostgreSQL volume. All three
+services run without root and with read-only root filesystems, bounded memory and
+separate runtime/migrator database identities. Database and API have no host ports;
+the proxy publishes loopback only. Local HTTP is the explicit development transport
+allowance, not evidence for public HTTPS or remote verified database TLS.
+
+Actual staged delivery, browser, runtime-grant and isolated restore checks pass.
+The API, patched proxy and nonroot database scans have no HIGH/CRITICAL findings.
+The bundle retains failed scan reports and prior manifest provenance. No public
+hosting, production identity, DNS, provider rollout or commercial service was created.
+
 ## Backup, recovery and rollback
 
 Before hosted release: enable access-controlled encrypted PostgreSQL backups, define
