@@ -206,3 +206,36 @@ are never reset or reseeded, and record counts/audit chains must survive replace
 The existing viewer must retain its original authority. All 45 release Python tests
 pass, including these preservation and browser-launch configuration regressions.
 Fresh promotion and hosted qualification are still required for this correction.
+
+Main `e2b357f7` passed its native checks and a separately commissioned backend
+qualification: delivery, RBAC/tenant isolation, TLS/grants, audit chains, preserved
+records, restart and isolated restore. The frontend preview was created and aliased
+once, but its browser qualification reached Vercel sign-in instead of the Drone
+application. No application fixture credentials were entered there. Both superseded
+contexts were explicitly revoked; the failed attempt is retained without retry.
+
+The owner approved a temporary project automation credential for testing, followed
+by revocation. A read-only provider preflight confirmed a same-origin 307 and the
+provider's `_vercel_jwt` cookie. The corrected probe requests that cookie without
+following redirects, then narrows it to the exact Drone host. A real localhost
+redirect regression proves that the credential-bearing request does not reach a
+foreign origin. Global browser headers are deliberately absent because Playwright
+carries those across redirect hops. This correction requires new checked source,
+commissioning and hosted qualification; it does not confer release authority.
+
+The correction passed 65 backend tests, 46 release Python tests, 24 Node tests
+(including three automation policy regressions), the frontend build, all seven
+local Chromium journeys and history hygiene with zero findings. A fixture-free
+Oracle browser diagnostic observed HTTP 200 and the actual Drone sign-in page
+using the exact-host cookie; no application credentials were entered. Production
+acceptance remains pending until the corrected source follows the release gates.
+
+A subsequent actual provider readback found that Vercel had classified the first
+`f3e01c1` staging deployment as production and auto-assigned the production custom
+domain. This was unqualified publication of a simulation frontend connected to the
+staging API, not an accepted release. Its exact production alias was withdrawn;
+the deployment, project, DNS, protected staging and all data were preserved. The
+runner now specifies preview explicitly, creates production with automatic domain
+assignment disabled, and rejects crossed targets, non-READY state or foreign
+operation metadata before assigning an alias. The new refusal regression joins the
+release suite. No production backend had been activated at this observation.

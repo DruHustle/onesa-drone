@@ -2,6 +2,10 @@
 import { createRequire } from "node:module";
 import { existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
+import {
+  installAutomationSession,
+  assertFixtureOrigin,
+} from "./probe_policy.mjs";
 const require = createRequire(
   new URL("../../frontend/package.json", import.meta.url),
 );
@@ -47,19 +51,23 @@ const browser = await chromium.launch({
 const context = await browser.newContext({
   viewport: { width: 1440, height: 950 },
   reducedMotion: "reduce",
-  extraHTTPHeaders: fixture.protection_bypass
-    ? { "x-vercel-protection-bypass": fixture.protection_bypass }
-    : {},
 });
+await installAutomationSession(
+  context,
+  fixture.origin,
+  fixture.protection_bypass,
+);
 const errors = [];
 const checks = {};
 const page = await context.newPage();
 page.on("pageerror", (error) => errors.push(error.message));
 try {
   const initial = await page.goto(fixture.origin);
+  assertFixtureOrigin(page.url(), fixture.origin);
   if (initial?.status() !== 200)
     throw Error("Canonical frontend unavailable or protected session missing");
   await page.getByLabel("Email", { exact: true }).fill(fixture.email);
+  assertFixtureOrigin(page.url(), fixture.origin);
   await page.getByLabel("Password", { exact: true }).fill(fixture.password);
   await page.getByRole("button", { name: "Sign in", exact: false }).click();
   await expect(
@@ -98,6 +106,7 @@ try {
     await page.getByRole("button", { name: "Pause replay" }).click();
     const recipient = await context.newPage();
     await recipient.goto(track);
+    assertFixtureOrigin(recipient.url(), fixture.origin);
     await expect(
       recipient.getByText("Simulated delivery confirmed.", { exact: true }),
     ).toBeVisible();

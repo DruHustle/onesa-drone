@@ -89,3 +89,18 @@ First provisioning and compatible source updates use separately bound initializa
 policies. Updates verify the previous immutable image and preserve database records,
 accounts and grants. Chromium's writable XDG directories live only inside the bounded
 tmpfs; the container root filesystem remains read-only.
+
+Automation access to a protected Vercel preview uses an explicitly owner-approved,
+project-scoped temporary credential held root-private on Oracle. A single request
+with redirects disabled establishes the provider cookie. The browser receives that
+cookie rebound to the exact Drone host, without global secret-bearing headers.
+Origin checks precede application credential entry. The credential file hash is
+bound to the release configuration and the provider credential must be revoked
+following release verification. Deployment protection and Drone authentication
+remain enabled. See the [Vercel automation documentation](https://vercel.com/docs/deployment-protection/methods-to-bypass-deployment-protection/protection-bypass-automation)
+and [Playwright redirect semantics](https://playwright.dev/docs/network#redirects).
+
+Deployment targets are explicit. Production creation skips automatic custom-domain
+assignment; source, project, operation, READY state and actual provider target are
+checked before assigning the single intended alias. A staging deployment classified
+as production is a failed observation even if the provider accepted its upload.
