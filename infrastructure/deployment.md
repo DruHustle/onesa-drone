@@ -38,7 +38,8 @@ are not a new Drone deployment identity. Obtain the protected Onesa release guid
 and preserve its source provenance before host operations.
 
 Private GitHub branch protection readback returned HTTP 403 (current plan limitation).
-The aggregate Actions billing readback also lacked the required user scope; hosted
+The aggregate Actions billing readback also lacked the required user scope and
+no accessible browser session was available for a read-only alternative; hosted
 validation is opt-in behind `ONESA_PRIVATE_HOSTED_VALIDATION_ENABLED` and remains
 disabled until included allowance/spend controls are verified. A skipped job is not
 a passing verification. Repository privacy was preserved; no upgrade, public visibility or billing change was
