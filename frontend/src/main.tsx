@@ -320,7 +320,7 @@ function App() {
       <div className="login">
         <div className="login-visual">
           <span className="wordmark">
-            ONESA <small>AI DRONE</small>
+            ONESA <small>DRONE</small>
           </span>
           <p className="eyebrow">PHYSICAL AI / AUTONOMOUS LOGISTICS</p>
           <h1>
@@ -510,7 +510,7 @@ function App() {
           className="wordmark"
           onClick={() => navigate("Dashboard")}
         >
-          ONESA <small>AI DRONE</small>
+          ONESA <small>DRONE</small>
         </a>
         <div className="workspace">
           <span className="workspace-symbol">O</span>
@@ -584,7 +584,7 @@ function App() {
         <main id="main">
           <div className="page-heading">
             <div>
-              <p className="eyebrow">ONESA AI DRONE / SIMULATION OPERATIONS</p>
+              <p className="eyebrow">ONESA DRONE / SIMULATION OPERATIONS</p>
               <h1>{page === "Dashboard" ? "Mission overview" : page}</h1>
               <p>
                 {page === "Dashboard"
@@ -1672,7 +1672,7 @@ function App() {
               </Empty>
             ))}
           <footer className="console-footer">
-            <span>ONESA AI DRONE · DEVELOPMENT RELEASE 0.1</span>
+            <span>ONESA DRONE · DEVELOPMENT RELEASE 0.1</span>
             <span>SIMULATED DATA · NO FLIGHT CERTIFICATION</span>
           </footer>
         </main>
@@ -2137,7 +2137,7 @@ function Tracking({ token }: { token: string }) {
   return (
     <main className="tracking">
       <span className="wordmark">
-        ONESA <small>AI DRONE</small>
+        ONESA <small>DRONE</small>
       </span>
       <p className="eyebrow">PRIVATE DELIVERY TRACKING / SIMULATION</p>
       <h1>

@@ -117,7 +117,7 @@ def create_app(settings=None):
         executor.shutdown(wait=True, cancel_futures=True)
 
     app = FastAPI(
-        title="Onesa AI Drone — simulation-only API",
+        title="Onesa Drone — simulation-only API",
         version="0.1.0",
         lifespan=lifespan,
         docs_url=None,
