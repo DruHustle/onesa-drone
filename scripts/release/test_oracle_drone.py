@@ -66,10 +66,20 @@ class PlanTests(unittest.TestCase):
         self.binding["source_sha256"] = d.digest(self.plan["source_archive"])
         native = file(
             "backend.json",
-            {"source_commit": "b" * 40, "source_tree": "c" * 40, "image_id": api, "architecture": "arm64"},
+            {
+                "source_commit": "b" * 40,
+                "source_tree": "c" * 40,
+                "image_id": api,
+                "architecture": "arm64",
+                "runtime_image_ids": {
+                    self.plan[k]: self.plan[k] for k in ["api_image", "database_image", "probe_image"]
+                },
+            },
         )
         self.plan["build_manifests"]["backend"] = native
         self.binding["build_sha256"] = d.digest(native)
+        self.plan["runtime_images"] = json.loads(Path(native).read_text())["runtime_image_ids"].copy()
+        self.rebind_native()
         for index, image in enumerate([self.plan[k] for k in ["api_image", "database_image", "probe_image"]]):
             path = file(
                 str(index) + ".json",
@@ -80,6 +90,29 @@ class PlanTests(unittest.TestCase):
                 },
             )
             self.plan["security_reports"][image] = {"path": path, "sha256": d.digest(path)}
+
+    def rebind_native(self):
+        native = self.plan["build_manifests"]["backend"]
+        self.binding["build_sha256"] = d.digest(native)
+        for slot, config in self.plan["slots"].items():
+            config["configuration_sha256"][native] = d.digest(native)
+            self.binding["configuration_sha256"][slot] = hashlib.sha256(
+                d.canonical(config["configuration_sha256"])
+            ).hexdigest()
+
+    def test_classic_and_manifest_runtime_ids_remain_bound_to_scanned_config(self):
+        path = Path(self.plan["build_manifests"]["backend"])
+        native = json.loads(path.read_text())
+        api = self.plan["api_image"]
+        native["runtime_image_ids"][api] = "sha256:" + "f" * 64
+        path.write_bytes(d.canonical(native))
+        self.rebind_native()
+        d.validate_plan(self.plan, self.binding)  # classic store uses configuration ID
+        self.plan["runtime_images"][api] = native["runtime_image_ids"][api]
+        d.validate_plan(self.plan, self.binding)  # containerd store uses manifest ID
+        self.plan["runtime_images"][api] = "sha256:" + "1" * 64
+        with self.assertRaisesRegex(ValueError, "not the scanned native artifact"):
+            d.validate_plan(self.plan, self.binding)
 
     def change_report(self, **changes):
         entry = self.plan["security_reports"][self.plan["api_image"]]
@@ -106,7 +139,7 @@ class PlanTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Foreign"):
             d.validate_plan(self.plan, binding)
         self.plan["api_image"] = "sha256:" + "f" * 64
-        with self.assertRaisesRegex(ValueError, "native runtime"):
+        with self.assertRaisesRegex(ValueError, "mapping|native runtime"):
             d.validate_plan(self.plan, self.binding)
 
     def test_empty_failed_foreign_or_expired_scan_refused(self):
