@@ -1,0 +1,4 @@
+FROM postgres:17.11-alpine3.23@sha256:2ad58d61b036d41f2613302e8c0fee03f6fe51e94d68087327ac45d1cebd4b5e
+# The runtime starts directly as postgres; it never needs the root-only gosu helper.
+RUN rm /usr/local/bin/gosu
+USER 70:70

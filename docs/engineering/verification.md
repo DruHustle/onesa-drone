@@ -136,3 +136,31 @@ Private-plan native branch protection remains unavailable. Local HTTP staging do
 not qualify public HTTPS, remote database TLS, a live Onesa AI identity, a production
 release verifier, hosted backups/rollback or partial-provider-failure acceptance.
 These remain open release gates. No physical flight or certification is claimed.
+
+## Oracle/Vercel release preparation — 28 October 2026
+
+The hosting change reran all 64 backend tests, seven browser acceptance cases and
+the production frontend build successfully. The owner bridge has 29 passing custody
+tests; the Drone runner adds ten refusal/privacy tests. All 17 transport guard and
+four prebuilt packager tests pass. The first transport test attempt was blocked by
+the local sandbox's socket restriction; the authorized rerun executed all cases.
+
+A disposable local instance of the Oracle Compose configuration executed real
+PostgreSQL TLS migration, wrong-CA rejection, restricted runtime grants, schema
+verification and an isolated restore. The dump remained in memory until CMS
+encryption. This proves the local configuration, not hosted acceptance. The initial
+browser-probe scan failed on the unused npm runtime; removing it produced zero
+HIGH/CRITICAL findings without ignored vulnerabilities. The initial Linux probe
+also exposed missing SwiftShader support; Mesa EGL is the selected software backend.
+The corrected Linux image then completed a real virtual delivery, live SSE, replay,
+private tracking and four 390/1440-pixel light/dark axe checks with WebGL and zero
+violations. The smaller probe budget crashed a browser target during axe; the passing
+run used a bounded 1 GiB, 0.5 CPU, 256 processes and two Mesa threads. An earlier
+combined local forwarding harness stalled and was replaced by a separate disposable
+forwarder; this was not hosted qualification. Private failed reports are retained.
+The final runner also reads back the custom-domain alias and rejects a stale deployment,
+foreign project or crossed environment; the release Python suite now has 40 passing tests.
+
+Vercel project and domain registration are preparation only. Public HTTPS, hosted
+workflow/restore checks, source-pinned commissioning, provider deployment receipts
+and production acceptance must be observed separately before a release is claimed.

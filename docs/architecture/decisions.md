@@ -63,3 +63,18 @@ over independently validated round trips. Limit input size and recomputation fre
 instead of introducing an unbounded vehicle-routing service. The UI binds preview
 state to the signed-in account and rechecks actual aircraft availability when planning.
 No new schema, launch state, background job, external solver or AI tool is required.
+
+## ADR 007 — Owner-controlled Oracle/Vercel release
+
+The owner selected DruHustle’s projects for Vercel and the existing Oracle VM. Vercel
+prebuilt output binds staging and production to distinct API hosts; operator pages
+are noindex and API responses are not cached. Oracle uses independent PostgreSQL
+volumes and runtime/migrator identities, verified database TLS, loopback-only API
+ports and the existing exact-host Cloudflare tunnels. No physical adapter is added.
+
+The owner evidence bridge is source-copied from Onesa Company Portal revision `409f5d964230dcb192c6f4faf0e573fbb71eb80f`
+(original SHA256 `20121b56e52a0e0d1584d78001a812888d46e5091ecb2039140746e09171c303`), narrowed to the Drone
+repository. Its signature, source/CI, commissioning, one-use context and provider
+intent guards are retained. Tests use disposable custody; their PASS never grants
+release authority. Trusted deployment requires a separately pinned root installation
+and actual component observations. No production credential enters Git or Actions.

@@ -1,0 +1,87 @@
+# Install only after exact-source qualification; separate project/env files per slot.
+services:
+  db:
+    image: ${DRONE_DATABASE_IMAGE:?Select the qualified immutable database image}
+    pull_policy: never
+    user: '70:70'
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    mem_limit: 192m
+    cpus: 0.15
+    pids_limit: 64
+    restart: unless-stopped
+    stop_grace_period: 30s
+    env_file: ${DRONE_DATABASE_ENV_FILE:?Select private database initialization custody}
+    command:
+      - postgres
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/run/onesa/server.crt
+      - -c
+      - ssl_key_file=/run/onesa/server.key
+      - -c
+      - shared_buffers=32MB
+      - -c
+      - max_connections=24
+    tmpfs:
+      - '/tmp:rw,noexec,nosuid,size=16m'
+      - '/var/run/postgresql:rw,noexec,nosuid,size=4m,uid=70,gid=70,mode=775'
+    volumes:
+      - data:/var/lib/postgresql/data
+      - ${DRONE_DATABASE_CERT_FILE:?Select database certificate}:/run/onesa/server.crt:ro
+      - ${DRONE_DATABASE_KEY_FILE:?Select private database key}:/run/onesa/server.key:ro
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U drone_owner -d drone']
+      interval: 10s
+      timeout: 3s
+      retries: 6
+    logging: &logging
+      driver: json-file
+      options: {max-size: 1m, max-file: '2'}
+    networks: [data]
+  api:
+    image: ${DRONE_API_IMAGE:?Select the qualified immutable API image}
+    pull_policy: never
+    labels:
+      org.onesa.source-commit: ${DRONE_SOURCE_COMMIT:?Select the qualified source}
+      org.onesa.mode: simulation
+    env_file: ${DRONE_RUNTIME_ENV_FILE:?Select private runtime custody}
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    mem_limit: 256m
+    cpus: ${DRONE_API_CPUS:-0.25}
+    pids_limit: 64
+    restart: unless-stopped
+    tmpfs: ['/tmp:rw,noexec,nosuid,size=32m']
+    ports: ['127.0.0.1:${DRONE_BIND_PORT:?Select the reserved slot port}:8400']
+    volumes:
+      - ${DRONE_DATABASE_CA_FILE:?Select the database trust anchor}:/run/onesa/database-ca.crt:ro
+    depends_on:
+      db: {condition: service_healthy}
+    logging: *logging
+    networks: [data, ingress]
+  migrate:
+    image: ${DRONE_API_IMAGE:?Select the qualified immutable API image}
+    pull_policy: never
+    profiles: [tools]
+    env_file: ${DRONE_MIGRATOR_ENV_FILE:?Select private migrator custody}
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    mem_limit: 256m
+    cpus: 0.25
+    pids_limit: 64
+    tmpfs: ['/tmp:rw,noexec,nosuid,size=16m']
+    volumes:
+      - ${DRONE_DATABASE_CA_FILE:?Select the database trust anchor}:/run/onesa/database-ca.crt:ro
+    command: [python, -m, scripts.migrate]
+    logging: *logging
+    networks: [data]
+volumes:
+  data:
+networks:
+  data: {internal: true}
+  ingress: {}

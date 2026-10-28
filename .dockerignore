@@ -3,7 +3,12 @@
 .venv311
 .env*
 **/node_modules
-frontend
+frontend/node_modules
+frontend/dist
+frontend/.vercel
+frontend/test-results
+frontend/playwright-report
+**/.env*
 artifacts
 **/__pycache__
 **/*.db*
