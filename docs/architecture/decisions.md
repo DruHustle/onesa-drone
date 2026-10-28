@@ -78,3 +78,9 @@ repository. Its signature, source/CI, commissioning, one-use context and provide
 intent guards are retained. Tests use disposable custody; their PASS never grants
 release authority. Trusted deployment requires a separately pinned root installation
 and actual component observations. No production credential enters Git or Actions.
+
+Portable image-configuration digests bind vulnerability scans; Docker runtime IDs
+may instead identify OCI image indexes. The native build records both identities.
+The root plan binds an explicit mapping and accepts only those recorded identities,
+with the backend provenance hash included in each environment's configuration.
+Runtime references must never be inferred from a scan's configuration digest.
