@@ -3,12 +3,11 @@
 The application is simulation-only. No physical network, ROS, PX4 or MAVLink
 actuation endpoint exists. Native automatic Vercel deployment is disabled.
 
-Candidate topology: static React frontend on the existing approved commercial-use
-host, same-origin authenticated `/api/v1` ingress to a single 256 MiB backend on the
-existing approved backend infrastructure, and an independent PostgreSQL database.
-The provided Vercel manifest prepares SPA routing and security headers; `/api` must
-be routed to the approved backend by the hosting ingress before any deployment.
-No backend address, DNS record or reverse proxy is invented in source.
+Owner-selected topology: static React frontend on Vercel, same-origin authenticated
+`/api/v1` ingress through separate exact-host Cloudflare tunnels to Oracle, and an
+independent PostgreSQL database per environment. `scripts/vercel_package.mjs` creates
+source-bound prebuilt output with security headers and explicit API routing before
+the SPA fallback. Production and staging cannot share an API origin or database.
 
 The Dockerfile pins the official Python base digest, runs as UID 10001 and the
 Compose candidate binds only loopback with read-only filesystem, dropped capabilities,
@@ -31,11 +30,12 @@ The application refuses hosted SQLite or insecure hosted session configuration.
 
 Use independent dev → staging → main PRs. Hosted Actions have no runtime secrets or
 production credentials. Never execute untrusted artifacts on the company host.
-Only qualify an immutable reviewed source/image; the actual external owner-controlled
-release verifier, environment, frontend project, backend ingress, secrets and database
-have not been commissioned for this new product. Existing Portal/AI/Robot permissions
-are not a new Drone deployment identity. Obtain the protected Onesa release guide
-and preserve its source provenance before host operations.
+Only qualify an immutable reviewed source/image. The copied and independently tested
+owner evidence bridge requires a separately commissioned Drone profile, pinned runners,
+fresh first-attempt main CI and actual hosted observations. Existing Portal/AI/Robot
+permissions are not a Drone release identity. Obtain the protected Onesa release guide
+and preserve its source provenance before host operations. A prepared installation
+or test fixture never constitutes hosted acceptance.
 
 Private GitHub branch protection readback returned HTTP 403 (current plan limitation).
 The aggregate Actions billing readback also lacked the required user scope and
@@ -86,14 +86,21 @@ Partial provider rollout and hosted restore are unexecuted gates, not successful
 
 No paid cloud resource, AI invocation or subscription was provisioned. Local runtime,
 Docker fixtures and repository creation introduced no new paid service. GitHub Actions
-must remain within included allowance with paid usage stopped; no artifact uploads or
-cache storage are configured. See [GitHub included usage](https://docs.github.com/en/billing/reference/product-usage-included).
+must remain within included allowance with paid usage stopped. CI uploads two small,
+credential-free component provenance manifests with one-day retention after tests and
+scanning pass; no images or private deployment bundle enter CI artifacts. See
+[GitHub included usage](https://docs.github.com/en/billing/reference/product-usage-included).
 
-Do not assume Vercel Hobby permits this commercial product: its
+The owner explicitly selected DruHustle’s projects after being informed that Vercel Hobby’s
 [documented policy](https://vercel.com/docs/plans/hobby) restricts it to personal,
-non-commercial use. Reuse an approved eligible existing plan or choose an approved
-commercial-use host; no upgrade or trial is authorized here. PostgreSQL storage,
+non-commercial use. That selection does not establish commercial-use eligibility;
+no paid upgrade, trial or eligibility attestation is authorized. PostgreSQL storage,
 backup, egress and compute must fit approved existing capacity/free allowances before
 provisioning. No new Neon project or database was created. Hosted monthly cost cannot
 be verified until the actual environment and its current allowance/headroom are read
-back. This is a zero-new-spend implementation, not a promise of zero operating cost.
+back. The Oracle candidate caps each database at 192 MiB and API at 256 MiB, binds
+only loopback, and builds/scans images off-host. It preserves existing workloads,
+requires 4 GiB disk and 1 GiB available-memory reserve, and creates no VM, paid backup
+service or public listening port. This is a zero-new-spend implementation, not a promise
+of zero operating cost. Public commercial launch and hosting-plan suitability remain
+separate from a simulation deployment.

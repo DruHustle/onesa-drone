@@ -1,0 +1,11 @@
+FROM node:24.22.1-alpine@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53
+RUN apk upgrade --no-cache && apk add --no-cache chromium ca-certificates mesa-dri-gallium \
+    && addgroup -g 10001 probe && adduser -D -u 10001 -G probe probe
+WORKDIR /probe
+COPY frontend/package.json frontend/package-lock.json /probe/frontend/
+RUN npm --prefix frontend ci --ignore-scripts --no-audit --no-fund && npm cache clean --force \
+    && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+    && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
+COPY scripts/release/hosted_probe.mjs /probe/scripts/release/hosted_probe.mjs
+USER 10001:10001
+ENTRYPOINT ["node", "/probe/scripts/release/hosted_probe.mjs"]
