@@ -819,17 +819,15 @@ print(json.dumps({'counts':counts,'schema_verified':True,'tls_and_wrong_ca':True
             "gitCommitRef=" + ("main" if slot == "production" else "staging"),
         ]
         if slot == "production":
-            args.append("--prod")
+            args += ["--prod", "--skip-domain"]
+        else:
+            args.append("--target=preview")
         raw = self.vercel(args, operation=identifier, artifact=artifact).decode()
         urls = set(re.findall(r"https://onesa-drone-[a-z0-9-]+\.vercel\.app", raw))
         require(len(urls) == 1, "Provider create acknowledgement uncertain; inspect retained request")
         url = urls.pop()
         details = json.loads(self.vercel(["api", "/v13/deployments/" + url.removeprefix("https://")]))
-        require(
-            details["projectId"] == self.plan["vercel_project_id"]
-            and details["meta"].get("onesaSourceCommit") == self.binding["candidate_commit"],
-            "Provider source/project receipt differs",
-        )
+        self.frontend_receipt_identity(details, slot, identifier)
         self.vercel(["alias", "set", url, ORIGINS[slot][0].removeprefix("https://")])
         self.alias_identity(slot, details["id"])
         receipt = {
@@ -840,6 +838,20 @@ print(json.dumps({'counts':counts,'schema_verified':True,'tls_and_wrong_ca':True
         }
         write(self.folder / (slot + "-frontend-receipt.json"), receipt)
         return receipt["deployment_id"]
+
+    def frontend_receipt_identity(self, details, slot, identifier):
+        require(
+            details["projectId"] == self.plan["vercel_project_id"]
+            and details.get("meta", {}).get("onesaSourceCommit") == self.binding["candidate_commit"]
+            and details.get("meta", {}).get("onesaOperationID") == identifier
+            and details.get("readyState") == "READY"
+            and (
+                details.get("target") == "production"
+                if slot == "production"
+                else details.get("target") in {None, "preview"}
+            ),
+            "Provider source/project/operation/target receipt differs; do not assign an alias",
+        )
 
     def alias_identity(self, slot, deployment):
         host = ORIGINS[slot][0].removeprefix("https://")

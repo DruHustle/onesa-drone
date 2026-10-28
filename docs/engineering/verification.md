@@ -229,3 +229,13 @@ local Chromium journeys and history hygiene with zero findings. A fixture-free
 Oracle browser diagnostic observed HTTP 200 and the actual Drone sign-in page
 using the exact-host cookie; no application credentials were entered. Production
 acceptance remains pending until the corrected source follows the release gates.
+
+A subsequent actual provider readback found that Vercel had classified the first
+`f3e01c1` staging deployment as production and auto-assigned the production custom
+domain. This was unqualified publication of a simulation frontend connected to the
+staging API, not an accepted release. Its exact production alias was withdrawn;
+the deployment, project, DNS, protected staging and all data were preserved. The
+runner now specifies preview explicitly, creates production with automatic domain
+assignment disabled, and rejects crossed targets, non-READY state or foreign
+operation metadata before assigning an alias. The new refusal regression joins the
+release suite. No production backend had been activated at this observation.

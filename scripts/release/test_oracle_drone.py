@@ -280,6 +280,29 @@ class PrivacyTests(unittest.TestCase):
             self.assertEqual(client.call("/api/v1/health"), {"mode": "simulation"})
         self.assertEqual(request.call_args.args[0].get_header("User-agent"), "OnesaDroneOwnerQualification/1")
 
+    def test_crossed_or_unready_provider_target_is_refused_before_alias(self):
+        runner = object.__new__(d.Runner)
+        runner.plan = {"vercel_project_id": "prj_fixture"}
+        runner.binding = {"candidate_commit": "a" * 40}
+        details = {
+            "projectId": "prj_fixture",
+            "meta": {"onesaSourceCommit": "a" * 40, "onesaOperationID": "operation"},
+            "readyState": "READY",
+            "target": None,
+        }
+        runner.frontend_receipt_identity(details, "staging", "operation")
+        with self.assertRaisesRegex(ValueError, "do not assign an alias"):
+            runner.frontend_receipt_identity(details | {"target": "production"}, "staging", "operation")
+        with self.assertRaisesRegex(ValueError, "do not assign an alias"):
+            runner.frontend_receipt_identity(details, "production", "operation")
+        runner.frontend_receipt_identity(details | {"target": "production"}, "production", "operation")
+        for mutation in [
+            {"readyState": "ERROR"},
+            {"meta": details["meta"] | {"onesaOperationID": "foreign"}},
+        ]:
+            with self.assertRaisesRegex(ValueError, "do not assign an alias"):
+                runner.frontend_receipt_identity(details | mutation, "staging", "operation")
+
     def test_stale_or_foreign_provider_alias_cannot_qualify(self):
         runner = object.__new__(d.Runner)
         runner.plan = {"vercel_project_id": "prj_fixture"}

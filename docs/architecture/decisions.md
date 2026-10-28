@@ -99,3 +99,8 @@ bound to the release configuration and the provider credential must be revoked
 following release verification. Deployment protection and Drone authentication
 remain enabled. See the [Vercel automation documentation](https://vercel.com/docs/deployment-protection/methods-to-bypass-deployment-protection/protection-bypass-automation)
 and [Playwright redirect semantics](https://playwright.dev/docs/network#redirects).
+
+Deployment targets are explicit. Production creation skips automatic custom-domain
+assignment; source, project, operation, READY state and actual provider target are
+checked before assigning the single intended alias. A staging deployment classified
+as production is a failed observation even if the provider accepted its upload.
