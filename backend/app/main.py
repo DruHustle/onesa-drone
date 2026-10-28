@@ -316,7 +316,10 @@ def create_app(settings=None):
     def logout(request: Request, response: Response, a=Depends(auth)):
         with store.transaction() as db:
             s = db.get(Session, digest(request.cookies["drone_session"]))
-            db.delete(s)
+            # Another logout or an administrator can revoke this session after
+            # authentication but before this transaction acquires its lock.
+            if s is not None:
+                db.delete(s)
         response.delete_cookie("drone_session", path="/")
         return {"ok": True}
 
