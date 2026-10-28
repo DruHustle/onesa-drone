@@ -53,13 +53,19 @@ class PlanTests(unittest.TestCase):
         }
         for slot, (origin, api_origin, port) in d.ORIGINS.items():
             path = file(slot + ".env", slot.encode())
-            hashes = {path: d.digest(path)}
+            control = file(
+                slot + "-initialization.json", {"provision_database": True, "previous_image": None}
+            )
+            hashes = {path: d.digest(path), control: d.digest(control)}
             self.plan["slots"][slot] = {
                 "origin": origin,
                 "api_origin": api_origin,
                 "port": port,
                 "project": "onesa-drone-oracle-" + slot,
                 "configuration_sha256": hashes,
+                "initialization_file": control,
+                "provision_database": True,
+                "previous_image": None,
             }
             self.binding["configuration_sha256"][slot] = hashlib.sha256(d.canonical(hashes)).hexdigest()
         self.plan["source_archive"] = file("source.tar", b"source fixture")
@@ -169,6 +175,89 @@ class PlanTests(unittest.TestCase):
 
 
 class PrivacyTests(unittest.TestCase):
+    def test_existing_database_update_never_bootstraps_or_reseeds(self):
+        runner = object.__new__(d.Runner)
+        image = "sha256:" + "a" * 64
+        runner.plan = {
+            "slots": {
+                "staging": {
+                    "project": "onesa-drone-oracle-staging",
+                    "provision_database": False,
+                    "previous_image": image,
+                }
+            }
+        }
+        with (
+            patch.object(runner, "run", return_value=(image + "\n").encode()),
+            patch.object(runner, "compose") as compose,
+            patch.object(runner, "identity"),
+            patch.object(runner, "verify_storage", return_value={"counts": {"missions": 2}}),
+        ):
+            runner.initialize_backend("staging")
+        calls = repr(compose.call_args_list)
+        self.assertIn("migrate", calls)
+        for prohibited in ["bootstrap", "seed", "psql"]:
+            self.assertNotIn(prohibited, calls)
+        with (
+            patch.object(runner, "run", return_value=b"foreign-image\n"),
+            patch.object(runner, "compose") as compose,
+        ):
+            with self.assertRaisesRegex(ValueError, "changed before preservation"):
+                runner.initialize_backend("staging")
+            compose.assert_not_called()
+
+    def test_existing_viewer_is_reused_without_password_or_authority_changes(self):
+        runner = object.__new__(d.Runner)
+
+        class Client:
+            def __init__(self, role):
+                self.role, self.posts = role, []
+
+            def call(self, _path, *args):
+                if args:
+                    self.posts.append(args)
+                    return {}
+                return [{"email": "viewer@example.test", "role": self.role, "active": True}]
+
+        client = Client("viewer")
+        runner.ensure_viewer(client, {"email": "viewer@example.test", "password": "synthetic-password"})
+        self.assertEqual(client.posts, [])
+        with self.assertRaisesRegex(ValueError, "authority changed"):
+            runner.ensure_viewer(
+                Client("admin"), {"email": "viewer@example.test", "password": "synthetic-password"}
+            )
+
+    def test_browser_cache_and_crashpad_use_bounded_writable_tmp(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "fixture.json"
+            path.write_text(
+                json.dumps({"operator": {"email": "fixture@example.test", "password": "synthetic-password"}})
+            )
+            runner = object.__new__(d.Runner)
+            runner.plan = {
+                "slots": {"staging": {"origin": d.ORIGINS["staging"][0], "fixture_file": str(path)}},
+                "probe_image": "portable",
+                "runtime_images": {"portable": "runtime"},
+            }
+            observed = {
+                "state": "OBSERVED",
+                "mode": "simulation",
+                "physical_interfaces_used": False,
+                "checks": {
+                    k: True for k in ["authentication", "live_telemetry", "webgl", "responsive_accessibility"]
+                },
+            }
+            with (
+                patch.object(d, "private", side_effect=lambda p, **_: Path(p)),
+                patch.object(runner, "run", return_value=d.canonical(observed)) as run,
+            ):
+                runner.browser("staging")
+            args = run.call_args.args[0]
+            self.assertIn("XDG_CONFIG_HOME=/tmp/onesa-chromium-config", args)
+            self.assertIn("XDG_CACHE_HOME=/tmp/onesa-chromium-cache", args)
+            self.assertIn("/tmp:rw,nosuid,nodev,size=192m", args)
+            self.assertEqual(args[-1], "runtime")
+
     def test_api_requests_identify_the_owner_client(self):
         client = d.Client(*reversed(d.ORIGINS["staging"][:2]))
         response = io.BytesIO(b'{"mode":"simulation"}')

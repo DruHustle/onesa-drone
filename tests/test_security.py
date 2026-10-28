@@ -1,5 +1,6 @@
 import time
 import secrets
+from contextlib import contextmanager
 from sqlalchemy import select
 from backend.app.models import Mission, Session, Audit, Tenant, User
 from backend.app.security import digest
@@ -195,3 +196,27 @@ def test_unknown_login_uses_one_precomputed_hash(stack, monkeypatch):
         headers={"Origin": stack["app"].state.settings.origin},
     )
     assert r.status_code == 401
+
+
+def test_logout_handles_session_revoked_after_authentication(stack, monkeypatch):
+    """Concurrent revocation must not turn successful logout into a storage error."""
+    store = stack["store"]
+    token_hash = digest(stack["client"].cookies.get("drone_session"))
+    transaction = store.transaction
+
+    @contextmanager
+    def revoke_before_transaction(*args, **kwargs):
+        # Authentication has succeeded, but another request completes revocation
+        # before this request acquires the session-deletion transaction.
+        with transaction() as db:
+            db.delete(db.get(Session, token_hash))
+        with transaction(*args, **kwargs) as db:
+            yield db
+
+    monkeypatch.setattr(store, "transaction", revoke_before_transaction)
+    response = stack["client"].post("/api/v1/auth/logout", headers=stack["headers"])
+    assert response.status_code == 200 and response.json() == {"ok": True}
+    assert stack["client"].cookies.get("drone_session") is None
+    assert stack["client"].get("/api/v1/operations").status_code == 401
+    with store.session() as db:
+        assert db.get(Session, token_hash) is None

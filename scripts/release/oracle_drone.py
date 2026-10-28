@@ -142,6 +142,22 @@ def validate_plan(plan, binding):
         require(config["project"] == "onesa-drone-oracle-" + slot, "Foreign Compose project")
         hashes = {name: digest(private(name)) for name in config["configuration_sha256"]}
         require(str(backend_manifest) in hashes, "Native image identities are not configuration-bound")
+        control = json.loads(private(config["initialization_file"]).read_text())
+        require(
+            config["initialization_file"] in hashes
+            and control
+            == {
+                "provision_database": config["provision_database"],
+                "previous_image": config["previous_image"],
+            }
+            and type(control["provision_database"]) is bool
+            and (
+                control["previous_image"] is None
+                if control["provision_database"]
+                else bool(re.fullmatch(r"sha256:[a-f0-9]{64}", control["previous_image"] or ""))
+            ),
+            "Initialization or preservation policy is not bound",
+        )
         require(hashes == config["configuration_sha256"], "Private configuration changed")
         require(
             hashlib.sha256(canonical(hashes)).hexdigest() == binding["configuration_sha256"][slot],
@@ -432,6 +448,25 @@ class Runner:
 
     def initialize_backend(self, slot):
         config = self.plan["slots"][slot]
+        if not config["provision_database"]:
+            existing = (
+                self.run(
+                    ["/usr/bin/docker", "inspect", "--format", "{{.Image}}", config["project"] + "-api-1"]
+                )
+                .decode()
+                .strip()
+            )
+            require(
+                existing == config["previous_image"],
+                "Existing Drone image changed before preservation update",
+            )
+            before = self.verify_storage(slot)
+            self.compose(slot, "up", "-d", "--wait", "--wait-timeout", "90", "db")
+            self.compose(slot, "run", "--rm", "-T", "migrate")
+            self.compose(slot, "up", "-d", "--wait", "--wait-timeout", "90", "api")
+            self.identity(slot)
+            require(before == self.verify_storage(slot), "Existing Drone records changed during image update")
+            return
         self.compose(slot, "up", "-d", "--wait", "--wait-timeout", "90", "db")
         self.compose(slot, "run", "--rm", "-T", "migrate")
         # This file contains only the new slot's schema grants and generated login.
@@ -542,7 +577,7 @@ class Runner:
             foreign.login(fixture["foreign"])
             foreign.call("/api/v1/missions/" + mission["id"] + "/history", expected=404)
             viewer = fixture["viewer"]
-            client.call("/api/v1/users", "POST", {**viewer, "role": "viewer"}, 201)
+            self.ensure_viewer(client, viewer)
             reader = Client(api, origin)
             reader.login(viewer)
             reader.call(
@@ -582,6 +617,16 @@ class Runner:
                 "Tracking privacy differs",
             )
         return {"authentication": True, "tenant_scope": workflow, "persistent_fleet": True}
+
+    def ensure_viewer(self, client, account):
+        existing = next((u for u in client.call("/api/v1/users") if u["email"] == account["email"]), None)
+        if existing:
+            require(
+                existing["role"] == "viewer" and existing["active"] is True,
+                "Existing fixture authority changed",
+            )
+        else:
+            client.call("/api/v1/users", "POST", {**account, "role": "viewer"}, 201)
 
     def verify_storage(self, slot, database=None):
         script = r"""
@@ -828,6 +873,10 @@ print(json.dumps({'counts':counts,'schema_verified':True,'tls_and_wrong_ca':True
                 "256",
                 "-e",
                 "LP_NUM_THREADS=2",
+                "-e",
+                "XDG_CONFIG_HOME=/tmp/onesa-chromium-config",
+                "-e",
+                "XDG_CACHE_HOME=/tmp/onesa-chromium-cache",
                 "--tmpfs",
                 "/tmp:rw,nosuid,nodev,size=192m",
                 self.plan["runtime_images"][self.plan["probe_image"]],

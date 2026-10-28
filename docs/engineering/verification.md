@@ -1,5 +1,10 @@
 # Verification scope and release gates
 
+Release-unit fixtures use a disposable commissioning registry with temporary keys,
+policy and database. When run as root, they use a private home-directory parent
+and never read the host's production trust registry. These synthetic records confer
+no hosted or production authority; the actual verifier's trust checks are unchanged.
+
 Run from the root:
 
 ```sh
@@ -36,6 +41,12 @@ private hosted staging, authenticated acceptance on the approved origin, DB/runt
 least privilege and backup restore, current dependency/container scans, owner/editorial
 and privacy approval, rollback receipt, and a qualified production promotion path.
 No merge, local PASS or screenshot substitutes for these hosted gates.
+
+Logout regression coverage also removes the authenticated fixture's session between
+authorization and its deletion transaction, as a simultaneous logout or administrator
+revocation can do. Logout must still acknowledge success, expire the browser cookie
+and deny subsequent protected reads. Other session, Origin and CSRF checks remain
+required; this does not authorize an already revoked request.
 
 ## Executed evidence — 28 October 2026
 
@@ -179,3 +190,19 @@ creation, commissioning, qualification or service activation. The corrected nati
 mapping accepts classic/configuration and containerd/index identities and rejects
 foreign references; all 42 release Python tests pass. Off-host and Oracle index IDs
 were read back and match. Original failed installation diagnostics remain private.
+
+Main `f3e01c1` passed native CI and was independently commissioned. Backend hosted
+qualification `943e6765-8d03-4b91-875e-e103e9c699ea` passed actual delivery, tenant/RBAC,
+restart persistence, TLS/grants/audit and isolated restore checks. Frontend staging
+deployment `dpl_G9oBphM8uG2uH3V4sCSzKNQ64PrA` was created and aliased once; its
+qualification stopped at Chromium launch (`crashpad --database is required`) before
+browser interaction. That reserved context is retained and revoked, not retried.
+
+A network-disabled, fixture-free Oracle browser test confirmed that writable XDG
+configuration/cache directories under the bounded tmpfs fix launch and WebGL.
+The runner now supplies those directories. A source-bound initialization policy
+distinguishes fresh provisioning from preservation updates; existing roles/accounts
+are never reset or reseeded, and record counts/audit chains must survive replacement.
+The existing viewer must retain its original authority. All 45 release Python tests
+pass, including these preservation and browser-launch configuration regressions.
+Fresh promotion and hosted qualification are still required for this correction.
