@@ -1382,6 +1382,7 @@ function App() {
                       answer: string;
                       source: string;
                       provider_status: string;
+                      provenance?: { provider: string; model: string };
                     }>("/assistant", "POST", { question: f.get("question") });
                     setAnswer(r.answer);
                     setExtra({ page, value: r });
@@ -1408,13 +1409,16 @@ function App() {
                   <p>{answer}</p>
                   <small>
                     Source: {extra?.source} · Provider: {extra?.provider_status}
+                    {extra?.provenance && (
+                      <> · Model: {extra.provenance.model}</>
+                    )}
                   </small>
                 </article>
               )}
               <p className="fine">
                 The local operational summary works without an AI provider.
-                Generative Onesa AI responses require a separately approved
-                delegated identity. Recommendations cannot authorize a mission.
+                An administrator must configure an approved AI connection.
+                Recommendations cannot authorize a mission.
               </p>
             </section>
           )}

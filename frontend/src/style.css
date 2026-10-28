@@ -833,6 +833,7 @@ meter::-webkit-meter-optimum-value {
   color: var(--onesa-muted);
 }
 .assistant-answer {
+  overflow-wrap: anywhere;
   padding: 28px 0;
   margin-top: 24px;
   border-top: 1px solid var(--onesa-divider);

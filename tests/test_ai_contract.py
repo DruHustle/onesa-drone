@@ -24,6 +24,7 @@ def test_existing_platform_conversation_and_csrf_contract(monkeypatch):
         assert "secret-route" not in data["content"] and "secret-user" not in data["content"]
         return httpx.Response(
             200,
+            headers={"Content-Type": "text/event-stream"},
             text='event: content_delta\ndata: {"text":"Advisory response."}\n\nevent: message_end\ndata: {}\n\n',
         )
 
