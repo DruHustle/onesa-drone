@@ -1,0 +1,138 @@
+# Verification scope and release gates
+
+Run from the root:
+
+```sh
+.venv311/bin/python -m ruff check backend autonomy simulation integrations scripts tests
+.venv311/bin/python -m pytest -q
+npm --prefix frontend run typecheck
+npm --prefix frontend run build
+npm --prefix frontend run test:e2e
+npm --prefix frontend audit --audit-level=high
+.venv311/bin/python -m pip_audit -r backend/requirements.lock --no-deps --disable-pip
+.venv311/bin/python scripts/repository_hygiene.py --history
+```
+
+PostgreSQL repeats the backend suite against an explicitly disposable `drone_test`
+database using `DRONE_TEST_DATABASE_URL`. Fixtures use unique tenants and never
+truncate another database. Browser tests launch their own temporary SQLite backend,
+individual synthetic account and loopback Vite server. They refuse an already running
+server. Browser artifacts are ignored and must not be uploaded with live records.
+
+The suite covers complete delivery, duplicate commands, idempotency conflict,
+reservation contention, invalid transitions, expired session/authorization, CSRF,
+roles, tenant object denial, audit integrity, tracking expiry, database failure,
+rollback of a partial command, restart checkpoints, bounded telemetry, SSE expiry
+and disconnect, deterministic detours and physical-adapter denial. A mock validates
+the inspected Onesa AI session/Origin/CSRF and completion contract without inference.
+
+Browser evidence covers Chromium real API journeys, 390/768/1440 CSS pixels, light
+and dark system appearance, reduced motion, all navigation, replay, private tracking,
+WebGL rendering, horizontal overflow and axe WCAG checks. It does not prove physical
+handset GPU performance, full screen-reader usability or validated flight physics.
+
+Before release, bind results to the exact source SHA. Required external gates:
+private hosted staging, authenticated acceptance on the approved origin, DB/runtime
+least privilege and backup restore, current dependency/container scans, owner/editorial
+and privacy approval, rollback receipt, and a qualified production promotion path.
+No merge, local PASS or screenshot substitutes for these hosted gates.
+
+## Executed evidence — 28 October 2026
+
+- Backend source `68fc93a`: 54 tests pass natively on Python 3.11.14. The same
+  54 cases pass with SQLite and real disposable PostgreSQL inside the final
+  Linux/musl container, read-only, UID 10001, 256 MiB, 1 CPU and 64 PIDs.
+- PostgreSQL `pg_dump`/`pg_restore` into a new isolated database verifies schema,
+  six operational table counts and every tenant audit chain. No production data.
+- Node 24.22.1 typecheck/build pass. Seven Chromium cases pass in 84 seconds,
+  including an actual end-to-end virtual delivery, WebGL assertions, replay,
+  private tracking, assistant and all navigation at three widths in both appearances.
+- Axe finds no WCAG A/AA violations in those tested console views. Portal's eight
+  EN/DE views, 23 domain/identity tests, homepage regressions, build, lint,
+  appearance checks and repository hygiene pass. Portal PR #245 also passes all
+  hosted checks and is merged into staging at `3a3e021d517f8668d1f3425b81db383b38bca635`.
+  This is source integration, not a receipt for production publication.
+- npm and Python advisory scans find no known dependency vulnerabilities. The
+  final Alpine runtime scan finds zero HIGH/CRITICAL vulnerabilities without
+  ignores. This is not proof that no vulnerability exists.
+- Final scene instrumentation: 31–37 ms initialization after module load,
+  33.5–45.2 MiB reported JS heap. One active headless flight sample measured
+  14 FPS; idle/reduced-motion scenes render on demand. This does not establish
+  a physical-device frame-rate target or total GPU/process memory.
+- Production chunks: about 81 kB gzip for the application, 5.2 kB CSS and
+  143 kB lazy 3D code. No external model, terrain or texture downloads.
+- 100 deterministic planner runs: local median 0.050 ms, p95 0.056 ms. These
+  timings establish neither flight dynamics fidelity nor hosted performance.
+
+The initial Debian image failed its vulnerability gate and was replaced. Earlier
+browser runs included timeouts; the tablet accessibility case repeatedly stalled
+while the idle renderer drew continuously. On-demand idle/reduced-motion rendering
+was implemented, followed by a passing full seven-case run. The failed and passing
+local JSON reports remain ignored artifacts; they are not silently relabelled.
+
+A nonblocking Starlette/httpx test-transport deprecation remains. Vite reports the
+large uncompressed Three.js chunk; it is lazy and approximately 139 kB gzip.
+Hardware GPU benchmarking, cross-browser/device qualification, maximum-capacity
+load tests, delta telemetry, full localisation and advanced multi-stop dispatch
+remain further qualification/development work.
+
+The planning extension passes 64 backend cases natively and in the read-only Linux
+container with both SQLite and disposable PostgreSQL. The added cases cover route
+alternatives, reserve exhaustion, stable parallel sequencing, scheduled starts,
+depot boundaries, tenant-scoped read-only previews, stale assignment conflicts,
+bounded recomputation and the published OpenAPI contract. A new fixture initially
+omitted a required package category; it was corrected. The PostgreSQL run exposed
+a rate-limit test crossing a minute boundary; that test now freezes its clock, and
+the full 64-case PostgreSQL rerun passes. These failures were not release passes.
+
+The seven Chromium cases pass with a real alternative-route delivery and populated
+dispatch preview. A focused follow-up also passes mobile preview overflow/axe checks
+and the full delivery. The rebuilt runtime image
+`sha256:174e30a386780e210f7dfe3dfcea07eb7fd8f11d872568701a110c26319e6796`
+has zero HIGH/CRITICAL findings without exclusions. Latest local route benchmark:
+median 0.171 ms, p95 0.183 ms; five full 25-request/50-aircraft dispatch previews:
+median 100.787 ms, maximum 109.509 ms. Run `.venv311/bin/python -m scripts.benchmark`.
+These are local observations, not hosted capacity guarantees.
+
+Drone hosted CI was initially skipped pending verified included allowance/spend
+controls. On 28 October the owner explicitly confirmed included-only CI and blocked
+paid overages; `ONESA_PRIVATE_HOSTED_VALIDATION_ENABLED=true` was set and read back.
+Both exact-source hosted workflows pass for `530ef50c0b7bba935f6ed05b70a413eea0d1f3e8`:
+[push verification](https://github.com/DruHustle/onesa-drone/actions/runs/40727633449)
+and [PR verification](https://github.com/DruHustle/onesa-drone/actions/runs/40727622187).
+These include SQLite/PostgreSQL tests, browser acceptance, dependency/history checks
+and the runtime image gate. The earlier skipped runs remain skipped.
+
+The owner-selected `local-tools/onesa-drone` contains a running loopback-only stage
+at `http://127.0.0.1:3470`, bound to that source and the recorded frontend/image
+hashes. Actual acceptance passes authentication, a complete alternative-route
+delivery, live SSE, persistent telemetry/replay, private tracking, deterministic
+assistance and private monitoring. Four staged Chromium views (390/1440 pixels,
+light/dark) pass WebGL, overflow and axe checks. Runtime permission readback denies
+schema creation, audit update/delete and event deletion. A real in-memory dump is
+restored into a new isolated database: six operational counts and all tenant audit
+chains match, including two complete deliveries after a service restart.
+
+Initial local bundle startup exposed Compose temporary-filesystem quoting, Python
+module-path and proxy temporary-directory/network settings. Those were corrected
+before acceptance. Scanning cached infrastructure images then found eight proxy
+package and 26 database helper findings. The proxy packages were upgraded; PostgreSQL
+now starts as UID 70 without the unnecessary vulnerable gosu helper. All three final
+local runtime images have zero HIGH/CRITICAL findings without exclusions; original
+failed reports and the preceding manifest remain in private local evidence.
+
+The local API (UID 10001), database (UID 70) and proxy (UID 101) run read-only with
+dropped capabilities and memory caps of 256/256/64 MiB. Only the proxy publishes a
+loopback port. The database volume survives stop/start. Bundle credentials, SQL,
+source archive and acceptance receipts remain outside Git in the owner-selected
+private directory; no credential values or live records were uploaded to CI.
+
+Portal canonical naming/legacy redirects are also merged into staging in
+[#247](https://github.com/DruHustle/onesa-company-portal/pull/247) at
+`d2acbd1fa9e281cfbe73f4dfc872a673c97ea330` after exact-source hosted checks passed.
+Production publication is not claimed.
+
+Private-plan native branch protection remains unavailable. Local HTTP staging does
+not qualify public HTTPS, remote database TLS, a live Onesa AI identity, a production
+release verifier, hosted backups/rollback or partial-provider-failure acceptance.
+These remain open release gates. No physical flight or certification is claimed.

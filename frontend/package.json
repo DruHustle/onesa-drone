@@ -1,0 +1,30 @@
+{
+  "name": "@onesa/ai-drone-console",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.12 <25"
+  },
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 3400",
+    "build": "tsc -b && vite build",
+    "typecheck": "tsc -b",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "three": "0.186.1"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
+    "@playwright/test": "1.64.1",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@types/three": "0.186.0",
+    "prettier": "3.8.4",
+    "typescript": "5.9.3",
+    "vite": "8.3.5"
+  }
+}
