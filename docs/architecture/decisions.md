@@ -84,3 +84,8 @@ may instead identify OCI image indexes. The native build records both identities
 The root plan binds an explicit mapping and accepts only those recorded identities,
 with the backend provenance hash included in each environment's configuration.
 Runtime references must never be inferred from a scan's configuration digest.
+
+First provisioning and compatible source updates use separately bound initialization
+policies. Updates verify the previous immutable image and preserve database records,
+accounts and grants. Chromium's writable XDG directories live only inside the bounded
+tmpfs; the container root filesystem remains read-only.
