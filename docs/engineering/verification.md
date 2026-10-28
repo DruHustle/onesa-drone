@@ -1,5 +1,10 @@
 # Verification scope and release gates
 
+Release-unit fixtures use a disposable commissioning registry with temporary keys,
+policy and database. When run as root, they use a private home-directory parent
+and never read the host's production trust registry. These synthetic records confer
+no hosted or production authority; the actual verifier's trust checks are unchanged.
+
 Run from the root:
 
 ```sh
@@ -36,6 +41,12 @@ private hosted staging, authenticated acceptance on the approved origin, DB/runt
 least privilege and backup restore, current dependency/container scans, owner/editorial
 and privacy approval, rollback receipt, and a qualified production promotion path.
 No merge, local PASS or screenshot substitutes for these hosted gates.
+
+Logout regression coverage also removes the authenticated fixture's session between
+authorization and its deletion transaction, as a simultaneous logout or administrator
+revocation can do. Logout must still acknowledge success, expire the browser cookie
+and deny subsequent protected reads. Other session, Origin and CSRF checks remain
+required; this does not authorize an already revoked request.
 
 ## Executed evidence — 28 October 2026
 
