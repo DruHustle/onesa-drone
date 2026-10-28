@@ -1,0 +1,67 @@
+name: Simulation verification
+on:
+  push:
+    branches: [dev, staging, main]
+  pull_request:
+    branches: [dev, staging, main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verification:
+    if: ${{ github.event.repository.private == false || vars.ONESA_PRIVATE_HOSTED_VALIDATION_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: drone_test
+          POSTGRES_USER: drone_test
+          POSTGRES_PASSWORD: synthetic-test-only
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U drone_test"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24.22.1'
+      - name: Install locked tooling without application credentials
+        run: |
+          python -m venv .venv311
+          .venv311/bin/python -m pip install -r backend/requirements.lock
+          npm --prefix frontend ci --ignore-scripts
+      - name: Backend, hygiene and contracts
+        run: |
+          .venv311/bin/python -m ruff check backend autonomy simulation integrations scripts tests
+          .venv311/bin/python -m pytest -q
+          .venv311/bin/python scripts/repository_hygiene.py --history
+      - name: PostgreSQL integration
+        env:
+          DRONE_TEST_DATABASE_URL: postgresql+psycopg://drone_test:synthetic-test-only@127.0.0.1:5432/drone_test
+        run: .venv311/bin/python -m pytest -q
+      - name: Build and scan dependencies
+        run: |
+          npm --prefix frontend run build
+          npm --prefix frontend audit --audit-level=high
+          .venv311/bin/python -m pip_audit -r backend/requirements.lock --no-deps --disable-pip
+      - name: Browser acceptance
+        run: |
+          cd frontend
+          npx playwright install --with-deps chromium
+          npm run test:e2e
+      - name: Runtime container security gate
+        run: |
+          docker build --file infrastructure/Dockerfile --tag onesa-drone:ci .
+          docker image save onesa-drone:ci --output "$RUNNER_TEMP/drone-runtime.tar"
+          docker run --rm --memory 1g --cpus 1 --volume "$RUNNER_TEMP/drone-runtime.tar:/scan/runtime.tar:ro" aquasec/trivy@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa image --input /scan/runtime.tar --scanners vuln --severity HIGH,CRITICAL --exit-code 1 --quiet
