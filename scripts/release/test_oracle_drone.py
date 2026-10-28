@@ -127,6 +127,20 @@ class PlanTests(unittest.TestCase):
         path.write_bytes(d.canonical(value))
         entry["sha256"] = d.digest(path)
 
+    def test_automation_access_must_be_configuration_bound(self):
+        config = self.plan["slots"]["staging"]
+        secret = self.root / "synthetic-automation.secret"
+        secret.write_text("synthetic-only")
+        config["protection_bypass_file"] = str(secret)
+        with self.assertRaisesRegex(ValueError, "not configuration-bound"):
+            d.validate_plan(self.plan, self.binding)
+        config["configuration_sha256"][str(secret)] = d.digest(secret)
+        self.rebind_native()
+        d.validate_plan(self.plan, self.binding)
+        secret.write_text("changed")
+        with self.assertRaisesRegex(ValueError, "configuration changed"):
+            d.validate_plan(self.plan, self.binding)
+
     def test_exact_plan_is_accepted(self):
         d.validate_plan(self.plan, self.binding)
 

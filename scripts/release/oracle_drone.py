@@ -141,6 +141,10 @@ def validate_plan(plan, binding):
         )
         require(config["project"] == "onesa-drone-oracle-" + slot, "Foreign Compose project")
         hashes = {name: digest(private(name)) for name in config["configuration_sha256"]}
+        if config.get("protection_bypass_file"):
+            require(
+                config["protection_bypass_file"] in hashes, "Automation access is not configuration-bound"
+            )
         require(str(backend_manifest) in hashes, "Native image identities are not configuration-bound")
         control = json.loads(private(config["initialization_file"]).read_text())
         require(
