@@ -194,6 +194,7 @@ def command(db, tenant, actor, identifier, c, correlation):
                         aircraft_out(candidate),
                         m.package_weight,
                         constraints=policy(db, tenant),
+                        route_index=c.route_index,
                     )
                     plans.append((p["energy_percent"], candidate.id, candidate, p))
                 except ValueError as e:

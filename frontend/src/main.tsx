@@ -18,6 +18,7 @@ import type {
   History,
   Preferences,
   Sample,
+  DispatchPreview,
 } from "./types";
 import "./onesa-foundation.css";
 import "./style.css";
@@ -120,12 +121,20 @@ function App() {
   );
   const [extraState, setExtra] = useState<any>(null),
     [answer, setAnswer] = useState("");
+  const [dispatchState, setDispatch] = useState<{
+      user_id: string;
+      value: DispatchPreview;
+    } | null>(null),
+    [routeIndex, setRouteIndex] = useState(0);
+  const dispatch =
+    dispatchState?.user_id === user?.id ? dispatchState?.value : null;
   const extra = extraState?.page === page ? extraState.value : null;
   const flight =
     data.missions.find((m) => m.id === selected) ||
     data.missions.find((m) => !terminal.includes(m.state)) ||
     data.missions[0];
   const aircraft = data.aircraft.find((a) => a.id === flight?.aircraft_id);
+  useEffect(() => setRouteIndex(0), [flight?.id]);
   const mounted = useRef(true);
   const run = useCallback(async (fn: () => Promise<unknown>) => {
     setBusy(true);
@@ -280,12 +289,19 @@ function App() {
     setMobile(false);
     setNotice("");
   };
-  async function act(m: Mission, action: string) {
+  async function act(m: Mission, action: string, assignment?: string) {
     await run(async () => {
       await api(
         `/missions/${m.id}/commands`,
         "POST",
-        { action, revision: m.revision },
+        {
+          action,
+          revision: m.revision,
+          ...(action === "plan"
+            ? { route_index: assignment ? 0 : routeIndex }
+            : {}),
+          ...(assignment ? { aircraft_id: assignment } : {}),
+        },
         crypto.randomUUID(),
       );
       await refresh();
@@ -899,6 +915,119 @@ function App() {
               {["3D simulator", "Route planning", "Mission control"].includes(
                 page,
               ) && scene}
+              {["Route planning", "Delivery management"].includes(page) && (
+                <section
+                  className="dispatch-preview"
+                  aria-label="Dispatch planning"
+                >
+                  <div className="section-heading">
+                    <h2>Suggested dispatch order</h2>
+                    <button
+                      disabled={busy}
+                      onClick={() =>
+                        void run(async () => {
+                          setDispatch({
+                            user_id: user.id,
+                            value:
+                              await api<DispatchPreview>("/dispatch/preview"),
+                          });
+                        })
+                      }
+                    >
+                      Build dispatch preview
+                    </button>
+                  </div>
+                  <p className="fine">
+                    Sequence independent round trips with estimated battery,
+                    scheduled start times and a 60-second turnaround. No
+                    automatic recharge or transfer between depots.
+                  </p>
+                  {dispatch && (
+                    <>
+                      <p className="fine">
+                        {dispatch.notice} Generated{" "}
+                        {new Date(dispatch.at * 1000).toLocaleTimeString()}.
+                      </p>
+                      <ol className="dispatch-order">
+                        {dispatch.entries.map((entry) => {
+                          const mission = data.missions.find(
+                            (m) => m.id === entry.mission_id,
+                          );
+                          const candidate = data.aircraft.find(
+                            (a) => a.id === entry.aircraft_id,
+                          );
+                          const ready =
+                            mission?.state === "requested" &&
+                            mission.revision === entry.mission_revision &&
+                            candidate?.status === "available" &&
+                            !candidate.active_mission_id;
+                          return (
+                            <li key={entry.mission_id}>
+                              <div>
+                                <strong>{entry.label}</strong>
+                                <p className="fine">
+                                  {entry.aircraft_name} ·{" "}
+                                  {new Date(
+                                    entry.estimated_start * 1000,
+                                  ).toLocaleTimeString()}
+                                  –
+                                  {new Date(
+                                    entry.estimated_end * 1000,
+                                  ).toLocaleTimeString()}{" "}
+                                  · estimated battery after return{" "}
+                                  {entry.estimated_battery_after}%
+                                </p>
+                                {entry.predecessor_id && (
+                                  <p className="fine">
+                                    Follows the preceding round trip on this
+                                    aircraft; rebuild the preview after it
+                                    returns.
+                                  </p>
+                                )}
+                              </div>
+                              {canOperate && (
+                                <button
+                                  disabled={
+                                    busy || !ready || !!entry.predecessor_id
+                                  }
+                                  onClick={() => {
+                                    if (mission) {
+                                      setSelected(mission.id);
+                                      void act(
+                                        mission,
+                                        "plan",
+                                        entry.aircraft_id,
+                                      );
+                                    }
+                                  }}
+                                >
+                                  Plan this delivery
+                                </button>
+                              )}
+                            </li>
+                          );
+                        })}
+                      </ol>
+                      {!dispatch.entries.length && (
+                        <p>No feasible assignments in this preview.</p>
+                      )}
+                      {dispatch.unassigned.map((entry) => (
+                        <p className="fine" key={entry.mission_id}>
+                          <strong>{entry.label}:</strong> {entry.reason}
+                        </p>
+                      ))}
+                      {(dispatch.truncated.missions ||
+                        dispatch.truncated.aircraft) && (
+                        <p className="fine">
+                          Preview considers up to 25 requests and 50 available
+                          aircraft; additional records remain outside this
+                          batch.
+                        </p>
+                      )}
+                    </>
+                  )}
+                </section>
+              )}
               <div className="operations-grid">
                 <section>
                   <h2>
@@ -977,6 +1106,50 @@ function App() {
                           </dd>
                         </div>
                       </dl>
+                      {canOperate && flight.state === "requested" && (
+                        <label>
+                          Route preference
+                          <select
+                            value={routeIndex}
+                            onChange={(e) =>
+                              setRouteIndex(Number(e.target.value))
+                            }
+                          >
+                            <option value={0}>Shortest feasible route</option>
+                            <option value={1}>Alternative route 1</option>
+                            <option value={2}>Alternative route 2</option>
+                          </select>
+                          <span className="fine">
+                            Alternatives are checked against the same virtual
+                            restrictions and energy reserve. An unavailable
+                            choice is rejected.
+                          </span>
+                        </label>
+                      )}
+                      {!!flight.plan.alternatives?.length && (
+                        <div className="route-options">
+                          <h3>Feasible route options</h3>
+                          {flight.plan.alternatives.map((option) => (
+                            <p className="fine" key={option.route_index}>
+                              <strong>
+                                {option.route_index === 0
+                                  ? "Shortest route"
+                                  : `Alternative ${option.route_index}`}
+                                {option.route_index === flight.plan.route_index
+                                  ? " · Selected"
+                                  : ""}
+                              </strong>
+                              : {distance(option.distance_m)} ·{" "}
+                              {option.duration_min} min ·{" "}
+                              {option.energy_percent}% estimated energy
+                            </p>
+                          ))}
+                          <p className="fine">
+                            Release and replan to change routes. Preflight and
+                            authorization must run again.
+                          </p>
+                        </div>
+                      )}
                       {canOperate && (
                         <div className="actions mission-actions">
                           {(

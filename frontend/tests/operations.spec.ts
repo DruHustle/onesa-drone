@@ -44,6 +44,30 @@ test("real delivery, telemetry, replay, assistant and tracking", async ({
   await page.getByRole("button", { name: "Register delivery" }).click();
   const link = await page.getByLabel("Private tracking link").inputValue();
   await page.getByRole("button", { name: "Continue to mission" }).click();
+  await page
+    .getByRole("button", { name: "Route planning", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Build dispatch preview" }).click();
+  await expect(page.locator(".dispatch-order li")).toHaveCount(1);
+  await expect(
+    page.getByRole("button", { name: "Plan this delivery" }),
+  ).toBeEnabled();
+  await page.setViewportSize({ width: 390, height: 950 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBeTruthy();
+  const planningAxe = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
+    .analyze();
+  expect(planningAxe.violations.map((violation) => violation.id)).toEqual([]);
+  await page.screenshot({
+    path: "../artifacts/planning-preview-mobile.png",
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.getByLabel("Route preference").selectOption("1");
   for (const action of [
     "Plan & assign",
     "Validate preflight",
@@ -51,6 +75,9 @@ test("real delivery, telemetry, replay, assistant and tracking", async ({
     "Launch simulation",
   ])
     await page.getByRole("button", { name: action, exact: true }).click();
+  await expect(page.locator(".route-options")).toContainText(
+    "Alternative 1 · Selected",
+  );
   await expect(page.getByText("receiving", { exact: true })).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "Simulation telemetry", exact: true }),

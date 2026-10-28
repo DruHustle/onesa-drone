@@ -27,7 +27,10 @@ with the restricted runtime identity. Never point tests or seeds at company data
 1. Sign in. Inspect the simulation-only notice and register an aircraft if needed.
 2. Create a delivery using the illustrative coordinates or an arbitrary local campus.
 3. Preserve the expiring private tracking link, then open Mission control.
-4. Plan & assign, validate preflight, authorize simulation, launch simulation.
+4. Open Route planning and build a dispatch preview. Inspect suggested aircraft,
+   start/return times, reserve and any unassigned requests. Choose the shortest route
+   or an alternative, then plan & assign, validate preflight, authorize simulation
+   and launch simulation. Unavailable alternatives are rejected without reservation.
 5. Inspect the 3D route, telemetry and event history as the parcel is delivered and
    the aircraft returns. One real second advances five simulated seconds.
 6. Replay recorded telemetry. Replay never dispatches a command.

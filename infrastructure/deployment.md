@@ -39,9 +39,11 @@ and preserve its source provenance before host operations.
 
 Private GitHub branch protection readback returned HTTP 403 (current plan limitation).
 The aggregate Actions billing readback also lacked the required user scope and
-no accessible browser session was available for a read-only alternative; hosted
-validation is opt-in behind `ONESA_PRIVATE_HOSTED_VALIDATION_ENABLED` and remains
-disabled until included allowance/spend controls are verified. A skipped job is not
+no accessible browser session was available for a read-only alternative. The owner
+subsequently confirmed included-only usage with paid overages blocked; hosted
+validation was enabled and read back behind `ONESA_PRIVATE_HOSTED_VALIDATION_ENABLED`.
+The selected local staging/release bundle location is `local-tools/onesa-drone`.
+This does not commission a public hosting project. A skipped job is not
 a passing verification. Repository privacy was preserved; no upgrade, public visibility or billing change was
 made. Written PR discipline is not native protection. A qualified equivalent release
 control or an approved eligible plan is required before production promotion.

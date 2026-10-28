@@ -17,6 +17,8 @@ PostgreSQL. See docs/architecture/decisions.md and docs/engineering/local-develo
 - Fleet registration/editing, inspections, decommissioning and illustrative charging.
 - Delivery requests, deterministic assignment/routing, preflight, expiring simulation
   authorization, launch, cancellation, reschedule, failure recovery and reporting.
+- Feasible alternative routes and bounded dispatch sequencing with battery budgets,
+  scheduled releases, depot consistency and round-trip turnaround estimates.
 - Durable tenant-scoped mission/event/audit/telemetry records; private recipient tracking.
 - Procedural Three.js campus, animated aircraft, cameras, day/night/weather visuals,
   low-power rendering and command-free recorded replay.

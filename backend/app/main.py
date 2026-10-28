@@ -31,8 +31,20 @@ from .schemas import (
     IncidentIn,
     IncidentUpdate,
 )
-from .service import j, aircraft_out, mission_out, owned, audit, idempotent, create_mission, command, advance
+from .service import (
+    j,
+    aircraft_out,
+    mission_out,
+    owned,
+    audit,
+    idempotent,
+    create_mission,
+    command,
+    advance,
+    policy,
+)
 from autonomy.decision_engine.states import ACTIVE
+from autonomy.mission_planning.dispatch import sequence_deliveries, MAX_DELIVERIES, MAX_AIRCRAFT
 
 log = logging.getLogger("onesa.drone")
 
@@ -355,6 +367,45 @@ def create_app(settings=None):
         return StreamingResponse(
             events(), media_type="text/event-stream", headers={"X-Accel-Buffering": "no"}
         )
+
+    @app.get("/api/v1/dispatch/preview")
+    def dispatch_preview(a=Depends(auth)):
+        limiter.check("dispatch:" + a["tenant_id"] + ":" + a["id"], 6)
+        with store.session() as db:
+            missions = list(
+                db.scalars(
+                    select(Mission)
+                    .where(
+                        Mission.tenant_id == a["tenant_id"],
+                        Mission.state == "requested",
+                    )
+                    .order_by(func.coalesce(Mission.scheduled_at, 0), Mission.created_at, Mission.id)
+                    .limit(MAX_DELIVERIES + 1)
+                )
+            )
+            aircraft = list(
+                db.scalars(
+                    select(Aircraft)
+                    .where(
+                        Aircraft.tenant_id == a["tenant_id"],
+                        Aircraft.status == "available",
+                        Aircraft.active_mission_id.is_(None),
+                    )
+                    .order_by(Aircraft.id)
+                    .limit(MAX_AIRCRAFT + 1)
+                )
+            )
+            result = sequence_deliveries(
+                [mission_out(m) for m in missions[:MAX_DELIVERIES]],
+                [aircraft_out(row) for row in aircraft[:MAX_AIRCRAFT]],
+                time.time(),
+                policy(db, a["tenant_id"]),
+            )
+            result["truncated"] = {
+                "missions": len(missions) > MAX_DELIVERIES,
+                "aircraft": len(aircraft) > MAX_AIRCRAFT,
+            }
+            return result
 
     @app.post("/api/v1/aircraft", status_code=201)
     def create_aircraft(data: AircraftIn, request: Request, a=Depends(operator), k=Depends(key)):

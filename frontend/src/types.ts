@@ -32,6 +32,14 @@ export type Sample = {
   progress_percent: number;
 };
 export type Plan = {
+  route_index?: number;
+  alternatives?: {
+    route_index: number;
+    waypoints: Point[];
+    distance_m: number;
+    duration_min: number;
+    energy_percent: number;
+  }[];
   waypoints?: Point[];
   distance_m?: number;
   duration_min?: number;
@@ -41,6 +49,23 @@ export type Plan = {
   zones?: { x: number; y: number; radius: number; label: string }[];
   algorithm?: string;
   advisories?: string[];
+};
+export type DispatchPreview = {
+  at: number;
+  notice: string;
+  entries: {
+    mission_id: string;
+    mission_revision: number;
+    label: string;
+    aircraft_id: string;
+    aircraft_name: string;
+    predecessor_id: string | null;
+    estimated_start: number;
+    estimated_end: number;
+    estimated_battery_after: number;
+  }[];
+  unassigned: { mission_id: string; label: string; reason: string }[];
+  truncated: { missions: boolean; aircraft: boolean };
 };
 export type Mission = {
   id: string;

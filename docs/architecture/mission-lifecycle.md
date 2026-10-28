@@ -41,5 +41,20 @@ tracking links expire after seven days and are not included in reports or logs.
 Route planning uses a local visibility graph and deterministic Dijkstra search. It
 minimizes route distance around illustrative restricted circles, selects the feasible
 available aircraft with the lowest estimated energy and budgets return plus reserve.
-This is single-delivery assignment, not a validated multi-stop vehicle-routing solver.
+Up to three deterministic waypoint alternatives must satisfy the same geofence,
+restriction, payload and energy constraints. Route preference is part of the initial
+plan command and its idempotency receipt. A different preference requires release
+and replan; previous preflight and authorization are invalidated. Duration includes
+both quantized legs and all three 15-second takeoff/delivery/landing phases.
+
+`GET /api/v1/dispatch/preview` sequences up to 25 requested deliveries over up to
+50 currently available aircraft; truncation is explicit. The deterministic heuristic
+chooses the earliest eligible start, then shortest completion, with stable identifiers
+as tie breakers. It budgets each complete round trip, subtracts illustrative energy,
+preserves reserve, and adds a 60-second turnaround. Aircraft cannot change depots
+within a sequence. Recharge, depot transfers and deadlines are not invented.
+The authenticated tenant-scoped preview is read-only and rate-limited to six per
+user per minute. It reserves nothing; every chosen assignment is rechecked by the
+normal transactional plan and launch commands. This sequences separate round trips;
+multi-stop flights and globally optimal vehicle routing remain separate development.
 Fixed-wing dispatch is refused pending a runway/release model.

@@ -681,6 +681,26 @@ meter::-webkit-meter-optimum-value {
   grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
   gap: 40px;
 }
+.dispatch-preview {
+  margin: 24px 0;
+}
+.dispatch-order {
+  padding-left: 24px;
+}
+.dispatch-order li {
+  padding: 12px 0;
+}
+.dispatch-order li > div {
+  display: inline-block;
+  vertical-align: top;
+  max-width: 100%;
+}
+.dispatch-order button {
+  margin-top: 8px;
+}
+.route-options {
+  margin: 20px 0;
+}
 .mission-detail > .section-heading {
   margin-top: 0;
 }

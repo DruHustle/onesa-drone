@@ -20,6 +20,7 @@ def test_complete_delivery_and_persisted_replay(stack, aircraft):
     m, token = launch(stack)
     m = tick(stack, m["id"], 150)
     assert m["state"] == "completed" and m["delivered"]
+    assert abs(m["plan"]["duration_min"] * 60 - m["tick"] * 5) <= 0.31
     with stack["store"].session() as db:
         a = db.get(Aircraft, aircraft["id"])
         assert a.active_mission_id is None and a.status == "available" and 25 < a.battery < 100

@@ -1,7 +1,7 @@
 """Deterministic visibility graph. Constraints are synthetic, not aviation data."""
 
 from heapq import heappush, heappop
-from math import cos, sin, pi, hypot
+from math import cos, sin, pi, hypot, ceil
 from autonomy.navigation.geometry import xy, geo, distance, segment_clear
 
 DEFAULT_ZONES = [{"x": 120, "y": 100, "radius": 55, "label": "Illustrative restricted campus area"}]
@@ -14,7 +14,46 @@ DEFAULT_CONSTRAINTS = {
 }
 
 
-def plan_route(home, destination, aircraft, weight, zones=None, constraints=None):
+def shortest_path(nodes, zones, radius_m, excluded=frozenset(), exclude_direct=False):
+    q = [(0, 0)]
+    costs = {0: 0}
+    prev = {}
+    while q:
+        cost, i = heappop(q)
+        if cost != costs[i]:
+            continue
+        if i == 1:
+            route = [1]
+            while route[-1] != 0:
+                route.append(prev[route[-1]])
+            return list(reversed(route)), cost
+        for j, p in enumerate(nodes):
+            if (
+                i == j
+                or j in excluded
+                or (exclude_direct and {i, j} == {0, 1})
+                or hypot(*p) > radius_m
+                or not segment_clear(nodes[i], p, zones)
+            ):
+                continue
+            nc = cost + distance(nodes[i], p)
+            if nc < costs.get(j, float("inf")):
+                costs[j] = nc
+                prev[j] = i
+                heappush(q, (nc, j))
+    return None
+
+
+def plan_route(
+    home,
+    destination,
+    aircraft,
+    weight,
+    zones=None,
+    constraints=None,
+    route_index=0,
+    include_alternatives=True,
+):
     c = {**DEFAULT_CONSTRAINTS, **(constraints or {})}
     zones = DEFAULT_ZONES if zones is None else zones
     end = xy(destination, home)
@@ -33,44 +72,53 @@ def plan_route(home, destination, aircraft, weight, zones=None, constraints=None
         # Circumscribed polygon edges maintain clearance around circular constraints.
         radius = (z["radius"] + 22) / cos(pi / 8)
         nodes.extend((z["x"] + cos(k * pi / 4) * radius, z["y"] + sin(k * pi / 4) * radius) for k in range(8))
-    q = [(0, 0)]
-    costs = {0: 0}
-    prev = {}
-    while q:
-        cost, i = heappop(q)
-        if cost != costs[i]:
-            continue
-        if i == 1:
-            break
-        for j, p in enumerate(nodes):
-            if i == j or hypot(*p) > c["radius_m"] or not segment_clear(nodes[i], p, zones):
-                continue
-            nc = cost + distance(nodes[i], p)
-            if nc < costs.get(j, float("inf")):
-                costs[j] = nc
-                prev[j] = i
-                heappush(q, (nc, j))
-    if 1 not in costs:
+    # Two bounded lateral candidates also allow alternatives for a clear direct leg.
+    length = hypot(*end)
+    offset = min(350, max(80, length * 0.35))
+    nodes.extend(
+        (end[0] / 2 + sign * -end[1] / length * offset, end[1] / 2 + sign * end[0] / length * offset)
+        for sign in (-1, 1)
+    )
+    primary = shortest_path(nodes, zones, c["radius_m"])
+    if primary is None:
         raise ValueError("No route satisfies virtual restricted-zone clearance")
-    route = [1]
-    while route[-1] != 0:
-        route.append(prev[route[-1]])
-    points = [geo(*nodes[i], home) for i in reversed(route)]
-    duration = (costs[1] * 2 / 10 + 24) / 60
-    energy = duration / aircraft["endurance"] * 100 * (1 + weight / aircraft["capacity"] * 0.3)
-    if energy + c["reserve_percent"] > aircraft["battery"]:
+    paths = [primary]
+    excluded = set(primary[0][1:-1])
+    if include_alternatives:
+        for _ in range(2):
+            alternate = shortest_path(nodes, zones, c["radius_m"], excluded, exclude_direct=True)
+            if alternate is None:
+                break
+            paths.append(alternate)
+            excluded.update(alternate[0][1:-1])
+    options = []
+    for indices, meters in sorted(paths, key=lambda path: (path[1], path[0])):
+        # Match both quantized flight legs and the three 15-second ground phases.
+        duration = (2 * max(4, ceil(meters / 50)) * 5 + 45) / 60
+        energy = duration / aircraft["endurance"] * 100 * (1 + weight / aircraft["capacity"] * 0.3)
+        if energy + c["reserve_percent"] <= aircraft["battery"]:
+            options.append(
+                {
+                    "route_index": len(options),
+                    "waypoints": [geo(*nodes[i], home) for i in indices],
+                    "distance_m": round(meters * 2, 1),
+                    "duration_min": round(duration, 2),
+                    "energy_percent": round(energy, 2),
+                }
+            )
+    if not options:
         raise ValueError("Insufficient estimated energy including return and reserve")
+    if route_index < 0 or route_index >= len(options):
+        raise ValueError("Requested alternative route is unavailable under current constraints")
     return {
-        "waypoints": points,
-        "distance_m": round(costs[1] * 2, 1),
-        "duration_min": round(duration, 2),
-        "energy_percent": round(energy, 2),
+        **options[route_index],
+        "alternatives": options,
         "reserve_percent": c["reserve_percent"],
         "altitude_m": c["altitude_m"],
         "wind_mps": c["wind_mps"],
         "zones": zones,
         "constraints": c,
-        "algorithm": "visibility-graph-dijkstra-v1",
+        "algorithm": "visibility-graph-dijkstra-v2",
         "mode": "simulation",
         "physics": "illustrative-kinematic",
         "advisories": ["Synthetic zones and weather; no authoritative airspace or aviation clearance."],

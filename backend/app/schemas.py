@@ -54,6 +54,7 @@ class Command(Strict):
     revision: int = Field(ge=1)
     aircraft_id: str | None = Field(default=None, max_length=40)
     scheduled_at: float | None = Field(default=None, ge=0)
+    route_index: int = Field(default=0, ge=0, le=2)
 
 
 class AssistantIn(Strict):

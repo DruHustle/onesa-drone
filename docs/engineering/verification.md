@@ -76,8 +76,29 @@ Hardware GPU benchmarking, cross-browser/device qualification, maximum-capacity
 load tests, delta telemetry, full localisation and advanced multi-stop dispatch
 remain further qualification/development work.
 
-Drone hosted CI remains gated off pending verified included allowance/spend controls:
-the GitHub billing API lacks its required user scope and no accessible browser
-session is available. Private-plan native branch protection is unavailable. No
-passing hosted Drone CI, commissioned staging origin, live AI identity, production
-release, hosted backup/rollback or partial-provider-failure test is claimed.
+The planning extension passes 64 backend cases natively and in the read-only Linux
+container with both SQLite and disposable PostgreSQL. The added cases cover route
+alternatives, reserve exhaustion, stable parallel sequencing, scheduled starts,
+depot boundaries, tenant-scoped read-only previews, stale assignment conflicts,
+bounded recomputation and the published OpenAPI contract. A new fixture initially
+omitted a required package category; it was corrected. The PostgreSQL run exposed
+a rate-limit test crossing a minute boundary; that test now freezes its clock, and
+the full 64-case PostgreSQL rerun passes. These failures were not release passes.
+
+The seven Chromium cases pass with a real alternative-route delivery and populated
+dispatch preview. A focused follow-up also passes mobile preview overflow/axe checks
+and the full delivery. The rebuilt runtime image
+`sha256:174e30a386780e210f7dfe3dfcea07eb7fd8f11d872568701a110c26319e6796`
+has zero HIGH/CRITICAL findings without exclusions. Latest local route benchmark:
+median 0.171 ms, p95 0.183 ms; five full 25-request/50-aircraft dispatch previews:
+median 100.787 ms, maximum 109.509 ms. Run `.venv311/bin/python -m scripts.benchmark`.
+These are local observations, not hosted capacity guarantees.
+
+Drone hosted CI was initially skipped pending verified included allowance/spend
+controls. On 28 October the owner explicitly confirmed included-only CI and blocked
+paid overages; `ONESA_PRIVATE_HOSTED_VALIDATION_ENABLED=true` was set and read back.
+The owner selected `local-tools/onesa-drone` for the local staging/release bundle.
+Exact-revision hosted results and local staging acceptance must be recorded after
+execution. Private-plan native branch protection remains unavailable. No hosted
+deployment, live AI identity, production release, hosted backup/rollback or
+partial-provider-failure test is claimed.

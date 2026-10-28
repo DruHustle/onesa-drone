@@ -139,6 +139,13 @@
             "title": "Revision",
             "type": "integer"
           },
+          "route_index": {
+            "default": 0,
+            "maximum": 2.0,
+            "minimum": 0.0,
+            "title": "Route Index",
+            "type": "integer"
+          },
           "scheduled_at": {
             "anyOf": [
               {
@@ -754,6 +761,22 @@
           }
         },
         "summary": "Me"
+      }
+    },
+    "/api/v1/dispatch/preview": {
+      "get": {
+        "operationId": "dispatch_preview_api_v1_dispatch_preview_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Dispatch Preview"
       }
     },
     "/api/v1/health": {
