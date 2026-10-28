@@ -6,6 +6,6 @@ COPY frontend/package.json frontend/package-lock.json /probe/frontend/
 RUN npm --prefix frontend ci --ignore-scripts --no-audit --no-fund && npm cache clean --force \
     && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
     && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
-COPY scripts/release/hosted_probe.mjs /probe/scripts/release/hosted_probe.mjs
+COPY scripts/release/hosted_probe.mjs scripts/release/probe_policy.mjs /probe/scripts/release/
 USER 10001:10001
 ENTRYPOINT ["node", "/probe/scripts/release/hosted_probe.mjs"]

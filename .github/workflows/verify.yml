@@ -55,6 +55,7 @@ jobs:
         run: |
           node --test scripts/test_vercel_package.mjs
           node --test scripts/release/vercel_transport_guard.test.cjs
+          node --test scripts/release/probe_policy.test.mjs
           node --check scripts/release/hosted_probe.mjs
           npm --prefix frontend run build
           npm --prefix frontend audit --audit-level=high

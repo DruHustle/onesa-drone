@@ -127,6 +127,20 @@ class PlanTests(unittest.TestCase):
         path.write_bytes(d.canonical(value))
         entry["sha256"] = d.digest(path)
 
+    def test_automation_access_must_be_configuration_bound(self):
+        config = self.plan["slots"]["staging"]
+        secret = self.root / "synthetic-automation.secret"
+        secret.write_text("synthetic-only")
+        config["protection_bypass_file"] = str(secret)
+        with self.assertRaisesRegex(ValueError, "not configuration-bound"):
+            d.validate_plan(self.plan, self.binding)
+        config["configuration_sha256"][str(secret)] = d.digest(secret)
+        self.rebind_native()
+        d.validate_plan(self.plan, self.binding)
+        secret.write_text("changed")
+        with self.assertRaisesRegex(ValueError, "configuration changed"):
+            d.validate_plan(self.plan, self.binding)
+
     def test_exact_plan_is_accepted(self):
         d.validate_plan(self.plan, self.binding)
 
@@ -265,6 +279,29 @@ class PrivacyTests(unittest.TestCase):
         with patch.object(client.opener, "open", return_value=response) as request:
             self.assertEqual(client.call("/api/v1/health"), {"mode": "simulation"})
         self.assertEqual(request.call_args.args[0].get_header("User-agent"), "OnesaDroneOwnerQualification/1")
+
+    def test_crossed_or_unready_provider_target_is_refused_before_alias(self):
+        runner = object.__new__(d.Runner)
+        runner.plan = {"vercel_project_id": "prj_fixture"}
+        runner.binding = {"candidate_commit": "a" * 40}
+        details = {
+            "projectId": "prj_fixture",
+            "meta": {"onesaSourceCommit": "a" * 40, "onesaOperationID": "operation"},
+            "readyState": "READY",
+            "target": None,
+        }
+        runner.frontend_receipt_identity(details, "staging", "operation")
+        with self.assertRaisesRegex(ValueError, "do not assign an alias"):
+            runner.frontend_receipt_identity(details | {"target": "production"}, "staging", "operation")
+        with self.assertRaisesRegex(ValueError, "do not assign an alias"):
+            runner.frontend_receipt_identity(details, "production", "operation")
+        runner.frontend_receipt_identity(details | {"target": "production"}, "production", "operation")
+        for mutation in [
+            {"readyState": "ERROR"},
+            {"meta": details["meta"] | {"onesaOperationID": "foreign"}},
+        ]:
+            with self.assertRaisesRegex(ValueError, "do not assign an alias"):
+                runner.frontend_receipt_identity(details | mutation, "staging", "operation")
 
     def test_stale_or_foreign_provider_alias_cannot_qualify(self):
         runner = object.__new__(d.Runner)
