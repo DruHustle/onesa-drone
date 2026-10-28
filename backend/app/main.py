@@ -45,6 +45,7 @@ from .service import (
 )
 from autonomy.decision_engine.states import ACTIVE
 from autonomy.mission_planning.dispatch import sequence_deliveries, MAX_DELIVERIES, MAX_AIRCRAFT
+from integrations.onesa_ai.adapter import configured as ai_configured
 
 log = logging.getLogger("onesa.drone")
 
@@ -792,8 +793,8 @@ def create_app(settings=None):
                     "detail": "Persisted checkpoints; single worker",
                 },
                 {
-                    "name": "Onesa AI",
-                    "status": "configured-unverified" if cfg.ai_url and cfg.ai_session else "not-configured",
+                    "name": "AI advisory",
+                    "status": "configured-unverified" if ai_configured(cfg) else "not-configured",
                     "detail": "Read-only adapter; no aircraft tools",
                 },
             ],

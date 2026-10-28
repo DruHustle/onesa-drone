@@ -1,5 +1,13 @@
 # Verification scope and release gates
 
+Provider portability regressions live in `tests/test_ai_portability.py` and the
+existing `tests/test_ai_contract.py`. They run the same tenant-scoped advisory
+against Onesa and compatible HTTP fixtures with identical business inputs, check
+credential/context separation and model provenance, reject partial/failed/cancelled
+legacy streams and keep local summaries explicit. They do not activate an external
+identity/provider, change a mission or prove hosted model quality. The locally
+vendored transport's current provenance/hash is recorded in the integration README.
+
 Release-unit fixtures use a disposable commissioning registry with temporary keys,
 policy and database. When run as root, they use a private home-directory parent
 and never read the host's production trust registry. These synthetic records confer
