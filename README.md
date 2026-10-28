@@ -1,4 +1,6 @@
-# Onesa AI Drone
+# Onesa Drone
+
+Canonical repository: [DruHustle/onesa-drone](https://github.com/DruHustle/onesa-drone).
 
 **Intelligent Delivery Beyond Roads**
 

@@ -1,4 +1,4 @@
-# Onesa AI Drone engineering policy
+# Onesa Drone engineering policy
 
 This repository is independent. Use dev → staging → main with PRs and exact-source
 checks. Preserve concurrent work and data. No paid resources without budget approval.
