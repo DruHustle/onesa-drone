@@ -118,6 +118,21 @@ def validate_plan(plan, binding):
         and re.fullmatch(r"[a-f0-9]{40}", binding["candidate_commit"]),
         "Qualified production source required",
     )
+    backend_manifest = private(plan["build_manifests"]["backend"])
+    identities = json.loads(backend_manifest.read_text())["runtime_image_ids"]
+    images = {plan[k] for k in ["api_image", "database_image", "probe_image"]}
+    require(
+        set(plan["runtime_images"]) == set(identities) == images,
+        "Complete portable/runtime image mapping required",
+    )
+    require(
+        all(
+            re.fullmatch(r"sha256:[a-f0-9]{64}", identities[image])
+            and plan["runtime_images"][image] in {image, identities[image]}
+            for image in images
+        ),
+        "Runtime image is not the scanned native artifact",
+    )
     for slot, (origin, api, port) in ORIGINS.items():
         config = plan["slots"][slot]
         require(
@@ -126,6 +141,7 @@ def validate_plan(plan, binding):
         )
         require(config["project"] == "onesa-drone-oracle-" + slot, "Foreign Compose project")
         hashes = {name: digest(private(name)) for name in config["configuration_sha256"]}
+        require(str(backend_manifest) in hashes, "Native image identities are not configuration-bound")
         require(hashes == config["configuration_sha256"], "Private configuration changed")
         require(
             hashlib.sha256(canonical(hashes)).hexdigest() == binding["configuration_sha256"][slot],
@@ -390,7 +406,7 @@ class Runner:
             text = text[end:].lstrip()
         image, labels, ports, health = values
         require(
-            image == self.plan["api_image"]
+            image == self.plan["runtime_images"][self.plan["api_image"]]
             and labels["org.onesa.source-commit"] == self.binding["candidate_commit"]
             and labels["org.onesa.mode"] == "simulation",
             "Serving runtime/source differs",
@@ -620,7 +636,16 @@ print(json.dumps({'counts':counts,'schema_verified':True,'tls_and_wrong_ca':True
             "First-release rollback plan differs",
         )
         for image in [self.plan["api_image"], self.plan["database_image"], self.plan["probe_image"]]:
-            self.run(["/usr/bin/docker", "image", "inspect", "--format", "{{.Id}}", image])
+            self.run(
+                [
+                    "/usr/bin/docker",
+                    "image",
+                    "inspect",
+                    "--format",
+                    "{{.Id}}",
+                    self.plan["runtime_images"][image],
+                ]
+            )
         for name, expected in self.plan["retained_artifacts"].items():
             require(digest(private(name)) == expected, "Rollback artifact is missing or changed")
 
@@ -805,7 +830,7 @@ print(json.dumps({'counts':counts,'schema_verified':True,'tls_and_wrong_ca':True
                 "LP_NUM_THREADS=2",
                 "--tmpfs",
                 "/tmp:rw,nosuid,nodev,size=192m",
-                self.plan["probe_image"],
+                self.plan["runtime_images"][self.plan["probe_image"]],
             ],
             canonical(body),
             timeout=300,

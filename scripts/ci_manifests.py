@@ -38,6 +38,9 @@ def main():
                     raise SystemExit("Exactly one runtime image is required")
                 config = archive.extractfile(manifest[0]["Config"]).read()
             value["image_id"] = "sha256:" + hashlib.sha256(config).hexdigest()
+            value["runtime_image_id"] = command(
+                "docker", "image", "inspect", "--format", "{{.Id}}", args.image
+            )
             value["architecture"] = command(
                 "docker", "image", "inspect", "--format", "{{.Architecture}}", args.image
             )

@@ -171,3 +171,11 @@ Python's default user-agent and the expected inactive-origin 502 for the explici
 request-header regression; all 41 release Python tests pass. No hosted qualification
 context was issued or consumed during this diagnosis. This transport correction
 requires fresh normal source promotion and main checks before installation.
+
+Inactive Oracle import then exposed a Docker store difference: configuration digest
+`f14f27a...` was scanned, while the imported runtime uses OCI index `4e72f707...`.
+All three archives loaded; inspection refused the wrong identifier before plan
+creation, commissioning, qualification or service activation. The corrected native
+mapping accepts classic/configuration and containerd/index identities and rejects
+foreign references; all 42 release Python tests pass. Off-host and Oracle index IDs
+were read back and match. Original failed installation diagnostics remain private.
