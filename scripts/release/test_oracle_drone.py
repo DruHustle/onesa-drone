@@ -4,6 +4,7 @@ from copy import deepcopy
 from datetime import datetime, timezone, timedelta
 import hashlib
 import http.cookiejar
+import io
 import json
 from pathlib import Path
 import subprocess
@@ -135,6 +136,14 @@ class PlanTests(unittest.TestCase):
 
 
 class PrivacyTests(unittest.TestCase):
+    def test_api_requests_identify_the_owner_client(self):
+        client = d.Client(*reversed(d.ORIGINS["staging"][:2]))
+        response = io.BytesIO(b'{"mode":"simulation"}')
+        response.status = 200
+        with patch.object(client.opener, "open", return_value=response) as request:
+            self.assertEqual(client.call("/api/v1/health"), {"mode": "simulation"})
+        self.assertEqual(request.call_args.args[0].get_header("User-agent"), "OnesaDroneOwnerQualification/1")
+
     def test_stale_or_foreign_provider_alias_cannot_qualify(self):
         runner = object.__new__(d.Runner)
         runner.plan = {"vercel_project_id": "prj_fixture"}
