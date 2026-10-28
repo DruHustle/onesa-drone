@@ -164,3 +164,10 @@ foreign project or crossed environment; the release Python suite now has 40 pass
 Vercel project and domain registration are preparation only. Public HTTPS, hosted
 workflow/restore checks, source-pinned commissioning, provider deployment receipts
 and production acceptance must be observed separately before a release is claimed.
+
+Oracle-side unauthenticated ingress preflight found Cloudflare returning 403 for
+Python's default user-agent and the expected inactive-origin 502 for the explicit
+`OnesaDroneOwnerQualification/1` identity. The client now identifies itself, with a
+request-header regression; all 41 release Python tests pass. No hosted qualification
+context was issued or consumed during this diagnosis. This transport correction
+requires fresh normal source promotion and main checks before installation.

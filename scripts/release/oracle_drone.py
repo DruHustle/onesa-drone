@@ -198,7 +198,12 @@ class Client:
 
     def call(self, path, method="GET", data=None, expected=200):
         require(path.startswith("/api/v1/") and ".." not in path, "HTTP path refused")
-        headers = {"Origin": self.origin, "Content-Type": "application/json", "X-CSRF-Token": self.csrf}
+        headers = {
+            "Origin": self.origin,
+            "Content-Type": "application/json",
+            "X-CSRF-Token": self.csrf,
+            "User-Agent": "OnesaDroneOwnerQualification/1",
+        }
         if method != "GET":
             headers["Idempotency-Key"] = __import__("uuid").uuid4().hex
         request = urllib.request.Request(
