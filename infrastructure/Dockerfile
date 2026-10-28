@@ -1,4 +1,6 @@
 FROM python:3.11-alpine@sha256:79440cc1dfa86a5f98d67efcd219726a8e9d8083cc0aafd27c7bef5976c38868
+ARG DRONE_SOURCE_COMMIT=unqualified-local-build
+LABEL org.onesa.source-commit=$DRONE_SOURCE_COMMIT org.onesa.mode=simulation
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /app
 COPY backend/requirements-runtime.lock /tmp/requirements.lock

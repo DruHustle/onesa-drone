@@ -45,6 +45,7 @@ jobs:
         run: |
           .venv311/bin/python -m ruff check backend autonomy simulation integrations scripts tests
           .venv311/bin/python -m pytest -q
+          .venv311/bin/python -m unittest discover -s scripts/release -p 'test_*.py'
           .venv311/bin/python scripts/repository_hygiene.py --history
       - name: PostgreSQL integration
         env:
@@ -52,6 +53,9 @@ jobs:
         run: .venv311/bin/python -m pytest -q
       - name: Build and scan dependencies
         run: |
+          node --test scripts/test_vercel_package.mjs
+          node --test scripts/release/vercel_transport_guard.test.cjs
+          node --check scripts/release/hosted_probe.mjs
           npm --prefix frontend run build
           npm --prefix frontend audit --audit-level=high
           .venv311/bin/python -m pip_audit -r backend/requirements.lock --no-deps --disable-pip
@@ -62,6 +66,22 @@ jobs:
           npm run test:e2e
       - name: Runtime container security gate
         run: |
-          docker build --file infrastructure/Dockerfile --tag onesa-drone:ci .
+          docker build --file infrastructure/Dockerfile --build-arg DRONE_SOURCE_COMMIT="$GITHUB_SHA" --tag onesa-drone:ci .
           docker image save onesa-drone:ci --output "$RUNNER_TEMP/drone-runtime.tar"
           docker run --rm --memory 1g --cpus 1 --volume "$RUNNER_TEMP/drone-runtime.tar:/scan/runtime.tar:ro" aquasec/trivy@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa image --input /scan/runtime.tar --scanners vuln --severity HIGH,CRITICAL --exit-code 1 --quiet
+      - name: Create credential-free component manifests
+        run: .venv311/bin/python -m scripts.ci_manifests --output "$RUNNER_TEMP/drone-runtime-manifests" --image onesa-drone:ci --image-archive "$RUNNER_TEMP/drone-runtime.tar"
+      - name: 'Release requirement: Publish backend provenance'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: runtime-onesa-drone-backend
+          path: ${{ runner.temp }}/drone-runtime-manifests/backend.json
+          retention-days: 1
+          if-no-files-found: error
+      - name: 'Release requirement: Publish frontend provenance'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: runtime-onesa-drone-frontend
+          path: ${{ runner.temp }}/drone-runtime-manifests/frontend.json
+          retention-days: 1
+          if-no-files-found: error
