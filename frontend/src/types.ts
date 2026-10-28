@@ -1,0 +1,125 @@
+export type Point = { lat: number; lon: number };
+export type Aircraft = {
+  id: string;
+  name: string;
+  model: string;
+  manufacturer: string;
+  category: string;
+  status: string;
+  battery: number;
+  capacity: number;
+  endurance: number;
+  firmware: string;
+  connectivity: string;
+  active_mission_id: string | null;
+  revision: number;
+  maintenance: { at: number; action: string; note: string }[];
+};
+export type Sample = {
+  seq: number;
+  mode: string;
+  simulation_seconds: number;
+  position: Point;
+  altitude_m: number;
+  ground_speed_mps: number;
+  heading: number;
+  battery_percent: number;
+  remaining_endurance_min: number;
+  flight_mode: string;
+  motor_health: string;
+  connectivity: string;
+  payload_state: string;
+  progress_percent: number;
+};
+export type Plan = {
+  route_index?: number;
+  alternatives?: {
+    route_index: number;
+    waypoints: Point[];
+    distance_m: number;
+    duration_min: number;
+    energy_percent: number;
+  }[];
+  waypoints?: Point[];
+  distance_m?: number;
+  duration_min?: number;
+  energy_percent?: number;
+  reserve_percent?: number;
+  altitude_m?: number;
+  zones?: { x: number; y: number; radius: number; label: string }[];
+  algorithm?: string;
+  advisories?: string[];
+};
+export type DispatchPreview = {
+  at: number;
+  notice: string;
+  entries: {
+    mission_id: string;
+    mission_revision: number;
+    label: string;
+    aircraft_id: string;
+    aircraft_name: string;
+    predecessor_id: string | null;
+    estimated_start: number;
+    estimated_end: number;
+    estimated_battery_after: number;
+  }[];
+  unassigned: { mission_id: string; label: string; reason: string }[];
+  truncated: { missions: boolean; aircraft: boolean };
+};
+export type Mission = {
+  id: string;
+  label: string;
+  aircraft_id: string | null;
+  package_weight: number;
+  package_kind: string;
+  state: string;
+  scenario: string;
+  tick: number;
+  revision: number;
+  created_at: number;
+  scheduled_at: number | null;
+  authorized_until: number | null;
+  delivered: boolean;
+  outcome: string | null;
+  origin: Point;
+  destination: Point;
+  plan: Plan;
+  last_telemetry: Partial<Sample>;
+};
+export type Operations = {
+  aircraft: Aircraft[];
+  missions: Mission[];
+  counts: Record<string, number>;
+  mode: string;
+  at: number;
+  truncated: { aircraft: boolean; missions: boolean };
+};
+export type User = {
+  id: string;
+  email: string;
+  role: string;
+  tenant_id: string;
+  csrf: string;
+};
+export type History = {
+  events: {
+    id: string;
+    at: number;
+    state: string;
+    detail: { reason: string };
+    correlation_id: string;
+  }[];
+  telemetry: Sample[];
+  retention_samples: number;
+};
+export type Preferences = {
+  virtual_radius_m?: number;
+  wind_mps?: number;
+  reserve_percent?: number;
+  altitude_m?: number;
+  currency: string;
+  units: string;
+  language: string;
+  region: string;
+};

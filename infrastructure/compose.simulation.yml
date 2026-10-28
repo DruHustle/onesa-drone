@@ -1,0 +1,16 @@
+# Candidate for the existing backend host; no public port or physical adapter.
+services:
+  drone-api:
+    build:
+      context: ..
+      dockerfile: infrastructure/Dockerfile
+    env_file: ${DRONE_RUNTIME_ENV_FILE:?Select a private approved runtime file}
+    ports: ["127.0.0.1:8400:8400"]
+    read_only: true
+    tmpfs: ["/tmp:size=16m,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
+    restart: unless-stopped

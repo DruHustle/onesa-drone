@@ -1,0 +1,9 @@
+[
+ {"id":"nominal","name":"Campus delivery","description":"Complete takeoff, delivery and return."},
+ {"id":"low_battery","name":"Low battery","description":"Supervisor requests virtual return at tick 10."},
+ {"id":"communication_loss","name":"Communication loss","description":"Virtual failsafe returns without a delivery."},
+ {"id":"gps_degradation","name":"GPS degradation","description":"Simulation holds until authorized recovery."},
+ {"id":"weather","name":"Weather front","description":"Illustrative wind advisory triggers return."},
+ {"id":"obstruction","name":"Route obstruction","description":"Hold and inspect route before recovery."},
+ {"id":"aircraft_fault","name":"Aircraft fault","description":"Hold and create inspection evidence."}
+]

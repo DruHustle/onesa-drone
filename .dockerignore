@@ -1,0 +1,10 @@
+.git
+.venv
+.venv311
+.env*
+**/node_modules
+frontend
+artifacts
+**/__pycache__
+**/*.db*
+tests

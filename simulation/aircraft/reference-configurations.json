@@ -1,0 +1,1 @@
+{"classification":"illustrative-simulation-only","not_certified":true,"aircraft":[{"name":"SIM-001","category":"multirotor","capacity_kg":4,"endurance_min":35},{"name":"SIM-002","category":"vtol","capacity_kg":8,"endurance_min":55},{"name":"SIM-003","category":"fixed-wing","capacity_kg":5,"endurance_min":60,"dispatch":"blocked-pending-runway-model"}]}
