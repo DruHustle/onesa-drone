@@ -152,6 +152,12 @@ encryption. This proves the local configuration, not hosted acceptance. The init
 browser-probe scan failed on the unused npm runtime; removing it produced zero
 HIGH/CRITICAL findings without ignored vulnerabilities. The initial Linux probe
 also exposed missing SwiftShader support; Mesa EGL is the selected software backend.
+The corrected Linux image then completed a real virtual delivery, live SSE, replay,
+private tracking and four 390/1440-pixel light/dark axe checks with WebGL and zero
+violations. The smaller probe budget crashed a browser target during axe; the passing
+run used a bounded 1 GiB, 0.5 CPU, 256 processes and two Mesa threads. An earlier
+combined local forwarding harness stalled and was replaced by a separate disposable
+forwarder; this was not hosted qualification. Private failed reports are retained.
 
 Vercel project and domain registration are preparation only. Public HTTPS, hosted
 workflow/restore checks, source-pinned commissioning, provider deployment receipts
