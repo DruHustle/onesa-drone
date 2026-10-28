@@ -31,7 +31,7 @@ server-side delegated session and the existing conversation/completion contract.
 
 ## ADR 004 — Defensive operation
 
-Opaque hashed sessions, scrypt passwords, Origin/CSRF enforcement and server role
+Opaque hashed sessions, versioned scrypt passwords (N=16384, r=8, p=5), Origin/CSRF enforcement and server role
 checks. No public privileged registration. Admin bootstrap is an offline CLI.
 Tracking uses high-entropy expiring read capabilities and returns no customer address,
 aircraft ID, route or precise location. Tenant audit chains are transactional and
@@ -44,3 +44,9 @@ Retention limits telemetry to recent per-mission samples; full events remain dur
 Onesa Design System 1.0.0 foundation copied by pinned hash from the Portal. Product
 layout is task-oriented; system appearance is CSS-only. Procedural models are original
 illustrations with editable illustrative performance, never manufacturer specifications.
+
+The selected scrypt profile balances the 256 MiB runtime budget against the current
+[OWASP password-storage configurations](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html).
+Unknown accounts use one precomputed dummy-hash verification. Peer and account
+limits bound expensive login work; prior local hashes upgrade on successful login.
+Python module directories use underscores to preserve standard import semantics.

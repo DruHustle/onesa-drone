@@ -18,7 +18,7 @@ from .monitoring import Hysteresis
 from .config import Settings
 from .db import Store
 from .models import Tenant, User, Session, Aircraft, Mission, MissionEvent, Audit, Telemetry, Incident
-from .security import digest, password_hash, password_valid, Limiter
+from .security import digest, password_hash, password_valid, Limiter, DUMMY_HASH, HASH_PREFIX
 from .schemas import (
     Login,
     AircraftIn,
@@ -260,12 +260,16 @@ def create_app(settings=None):
     def login(data: Login, request: Request, response: Response):
         origin(request)
         limiter.check("login:" + ((request.client.host if request.client else "") + data.email.lower()), 6)
+        limiter.check("login-peer:" + (request.client.host if request.client else "unknown"), 12)
+        limiter.check("login-account:" + digest(data.email.strip().lower()), 6)
         with store.transaction() as db:
             u = db.scalar(select(User).where(User.email == data.email.strip().lower()))
-            encoded = u.password if u else password_hash("invalid-account-dummy-password")
+            encoded = u.password if u else DUMMY_HASH
             valid = password_valid(data.password, encoded)
             if not u or not valid or not u.active:
                 raise HTTPException(401, "Invalid credentials")
+            if not u.password.startswith(HASH_PREFIX):
+                u.password = password_hash(data.password)
             token = secrets.token_urlsafe(32)
             csrf = secrets.token_urlsafe(24)
             # Revoke stale sessions; bound retained sessions per account.
@@ -764,20 +768,25 @@ def create_app(settings=None):
     @app.post("/api/v1/assistant")
     async def assistant(data: AssistantIn, request: Request, a=Depends(auth)):
         limiter.check("assistant:" + a["id"], 10)
-        with store.transaction(a["tenant_id"]) as db:
-            context = snapshot(db, a["tenant_id"])
-            audit(
-                db,
-                a["tenant_id"],
-                a["id"],
-                "assistant.read_context",
-                {
-                    "aircraft_count": len(context["aircraft"]),
-                    "mission_count": len(context["missions"]),
-                    "question_hash": digest(data.question),
-                },
-                request.state.correlation,
-            )
+
+        def read_context():
+            with store.transaction(a["tenant_id"]) as db:
+                context = snapshot(db, a["tenant_id"])
+                audit(
+                    db,
+                    a["tenant_id"],
+                    a["id"],
+                    "assistant.read_context",
+                    {
+                        "aircraft_count": len(context["aircraft"]),
+                        "mission_count": len(context["missions"]),
+                        "question_hash": digest(data.question),
+                    },
+                    request.state.correlation,
+                )
+            return context
+
+        context = await asyncio.to_thread(read_context)
         # No endpoint can receive a mission command from this adapter.
         from integrations.onesa_ai.adapter import advise
 

@@ -1,7 +1,7 @@
 import time
 import secrets
 from sqlalchemy import select
-from backend.app.models import Mission, Session, Audit, Tenant
+from backend.app.models import Mission, Session, Audit, Tenant, User
 from backend.app.security import digest
 from backend.app.service import j
 from conftest import delivery, cmd
@@ -159,3 +159,39 @@ def test_decommissioned_aircraft_cannot_dispatch(stack, aircraft):
     )
     assert r.status_code == 200
     assert cmd(stack, delivery(stack)["mission"], "plan").status_code == 422
+
+
+def test_password_work_factor_and_legacy_local_upgrade(stack):
+    import hashlib
+    from backend.app.security import HASH_PREFIX, password_valid, password_hash
+
+    encoded = password_hash("synthetic-test-password")
+    assert encoded.startswith(HASH_PREFIX) and password_valid("synthetic-test-password", encoded)
+    assert not password_valid("wrong", encoded)
+    salt = "1" * 32
+    old = salt + ":" + hashlib.scrypt(stack["password"].encode(), salt=salt.encode(), n=16384, r=8, p=1).hex()
+    with stack["store"].transaction() as db:
+        db.get(User, stack["user"]).password = old
+    r = stack["client"].post(
+        "/api/v1/auth/login",
+        json={"email": stack["email"], "password": stack["password"]},
+        headers={"Origin": stack["app"].state.settings.origin},
+    )
+    assert r.status_code == 200
+    with stack["store"].session() as db:
+        assert db.get(User, stack["user"]).password.startswith(HASH_PREFIX)
+
+
+def test_unknown_login_uses_one_precomputed_hash(stack, monkeypatch):
+    import backend.app.main as main
+
+    def reject_generation(*args):
+        raise AssertionError("Unknown account must not generate another hash")
+
+    monkeypatch.setattr(main, "password_hash", reject_generation)
+    r = stack["client"].post(
+        "/api/v1/auth/login",
+        json={"email": "unknown@example.test", "password": "wrong"},
+        headers={"Origin": stack["app"].state.settings.origin},
+    )
+    assert r.status_code == 401
