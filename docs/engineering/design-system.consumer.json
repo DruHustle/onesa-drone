@@ -1,0 +1,9 @@
+{
+  "version": "1.0.0",
+  "owner": "DruHustle/onesa-company-portal",
+  "source": "onesa-company-portal-frontend/src/styles/onesa-foundation.css",
+  "sha256": "903893a34aab19b3a46cb9543cd7d96d1dbc219c1a69b14678aeceb50eeff7a4",
+  "local_artifacts": [
+    "frontend/src/onesa-foundation.css"
+  ]
+}
