@@ -7,6 +7,12 @@ Canonical repository: [DruHustle/onesa-drone](https://github.com/DruHustle/onesa
 An independent, simulation-only aerial logistics platform under development. No
 physical aircraft commands, flight certification or operational delivery service.
 
+The first simulation release is available at [drone.onesa.eu](https://drone.onesa.eu).
+Its accepted application revision is `ff493035cbc11a31312f6fae9364825c761b992a`.
+The frontend runs on Vercel and the API and independent PostgreSQL databases run
+on existing Oracle capacity. Staging remains protected. Later source changes are
+not deployed merely because their repository checks pass.
+
 The architecture combines a React/Three.js console, FastAPI, SQLAlchemy operational
 records, deterministic mission planning and an isolated safety supervisor. Local
 SQLite supports offline development; deployment uses independently provisioned
@@ -34,7 +40,7 @@ PostgreSQL. See docs/architecture/decisions.md and docs/engineering/local-develo
 The local assistant is a deterministic summary until the existing Onesa AI adapter
 has an approved dedicated identity. Maps, weather and aircraft performance are
 synthetic. PX4/Gazebo, authoritative airspace, fixed-wing dispatch, multi-stop routing,
-full console localisation, hosted release, privacy approval and hardware qualification
+full console localisation, real-data privacy approval and hardware qualification
 remain outstanding. Physical flight is unavailable by construction.
 
 Private vulnerability reporting: info@onesa.eu. Do not put secrets, private operational

@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import os
 from urllib.parse import urlsplit
 from sqlalchemy.engine import make_url
@@ -13,8 +13,11 @@ class Settings:
     session_seconds: int = 3600
     telemetry_limit: int = 600
     ai_url: str = os.getenv("ONESA_AI_URL", "")
-    ai_session: str = os.getenv("ONESA_AI_DELEGATED_SESSION", "")
-    ai_csrf: str = os.getenv("ONESA_AI_DELEGATED_CSRF", "")
+    ai_provider: str = os.getenv("ONESA_AI_PROVIDER", "onesa-legacy")
+    ai_model: str = os.getenv("ONESA_AI_MODEL", "default")
+    ai_api_key: str = field(default=os.getenv("ONESA_AI_API_KEY", ""), repr=False)
+    ai_session: str = field(default=os.getenv("ONESA_AI_DELEGATED_SESSION", ""), repr=False)
+    ai_csrf: str = field(default=os.getenv("ONESA_AI_DELEGATED_CSRF", ""), repr=False)
     ai_origin: str = os.getenv("ONESA_AI_ORIGIN", "")
     ai_tenant: str = os.getenv("ONESA_AI_TENANT_ID", "")
     ai_cookie: str = os.getenv("ONESA_AI_COOKIE_NAME", "onesa_session")
@@ -38,5 +41,9 @@ class Settings:
             database = make_url(self.database_url)
             if database.drivername != "postgresql+psycopg" or database.query.get("sslmode") != "verify-full":
                 raise ValueError("Hosted PostgreSQL requires psycopg and sslmode=verify-full")
-        if self.ai_url and not self.ai_url.startswith("https://"):
-            raise ValueError("AI integration requires verified HTTPS")
+        if self.ai_provider not in {"disabled", "onesa-legacy", "onesa", "openai-compatible"}:
+            raise ValueError("Unknown AI provider")
+        if self.ai_url:
+            from integrations.ai.consumer import https_base
+
+            https_base(self.ai_url)
