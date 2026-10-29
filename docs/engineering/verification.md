@@ -1,5 +1,49 @@
 # Verification scope and release gates
 
+## Accepted hosted simulation — 29 October 2026
+
+Application revision `ff493035cbc11a31312f6fae9364825c761b992a` (tree
+`8f31f4889678a9868bacfbc2a942f4d04749e704`) completed normal PR #15/#16
+promotion. Its first-attempt [Main verification](https://github.com/DruHustle/onesa-drone/actions/runs/40787397135)
+and [history hygiene](https://github.com/DruHustle/onesa-drone/actions/runs/40787397304)
+passed. The executed scope includes 65 backend cases with SQLite and PostgreSQL,
+47 release Python cases, 24 Node cases and seven local Chromium journeys.
+The three ARM64 images had zero HIGH/CRITICAL findings without ignored findings.
+
+Separately commissioned, source-bound owner observations qualified both hosted
+components and accepted the actual production API and frontend. Staging exercised
+a complete simulated delivery, tenant/RBAC denial, wrong-CA rejection, restricted
+runtime grants, audit integrity, restart preservation, encrypted isolated restore,
+SSE, replay, private tracking and four responsive light/dark WebGL/axe views.
+Production verified the actual source/artifacts/configuration, HTTPS and access
+boundaries, authenticated UI/SSE/WebGL and preserved independent workloads.
+Private signed receipts remain outside Git; a local fixture is never their substitute.
+
+The production console is [drone.onesa.eu](https://drone.onesa.eu); the separate
+staging hostname remains protected. Backend acceptance is
+`fb9b3877-12e5-4b6e-9852-9a4df0dd43d8`; frontend acceptance is
+`0a79ae55-665f-43e0-92bf-55773a009027`. The approved temporary Vercel credential
+was revoked, its absence read back, and its rejection verified without changing
+deployment protection. Eight encrypted synthetic staging backups were verified
+off-host with authenticated decryption in memory and no saved plaintext.
+
+These receipts apply to that exact application source. Later Dev changes,
+the independent Portal publication, live AI identity/model quality, physical GPUs,
+production backup scheduling/RPO/RTO, real-data privacy approval, commercial hosting
+eligibility and physical aircraft remain separate unqualified scopes. The historical
+preparation and failed attempts below remain as observed; their pending statuses
+describe those earlier sources rather than the accepted revision.
+
+## Local verification and subsequent development
+
+Provider portability regressions live in `tests/test_ai_portability.py` and the
+existing `tests/test_ai_contract.py`. They run the same tenant-scoped advisory
+against Onesa and compatible HTTP fixtures with identical business inputs, check
+credential/context separation and model provenance, reject partial/failed/cancelled
+legacy streams and keep local summaries explicit. They do not activate an external
+identity/provider, change a mission or prove hosted model quality. The locally
+vendored transport's current provenance/hash is recorded in the integration README.
+
 Release-unit fixtures use a disposable commissioning registry with temporary keys,
 policy and database. When run as root, they use a private home-directory parent
 and never read the host's production trust registry. These synthetic records confer

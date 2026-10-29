@@ -3,6 +3,32 @@
 The application is simulation-only. No physical network, ROS, PX4 or MAVLink
 actuation endpoint exists. Native automatic Vercel deployment is disabled.
 
+## Accepted simulation hosting — 29 October 2026
+
+The accepted application source is `ff493035cbc11a31312f6fae9364825c761b992a`.
+Production runs at [drone.onesa.eu](https://drone.onesa.eu), with its authenticated
+same-origin API routed to the existing Oracle host. A separate protected staging
+frontend and separate API/database retain their data. Production frontend and
+backend acceptance followed exact-source CI, immutable tool installation, separate
+owner commissioning, actual staging qualification and separate authorization.
+See [executed verification](../docs/engineering/verification.md). Later source
+commits or PR checks alone do not change that deployed identity.
+
+No paid resource was added. Each API/database pair is capped at 448 MiB; builds
+and scans ran off-host. Existing independent workloads were preserved. Encrypted
+synthetic staging backups and isolated restore were exercised; off-host ciphertext
+integrity was verified without persisting plaintext. Production backup scheduling,
+RPO/RTO and real-data retention still need an approved operational policy.
+
+The project-scoped temporary automation credential was revoked after acceptance;
+provider absence and rejection were observed with protection settings preserved.
+Vercel Hobby commercial-use eligibility remains unresolved; owner selection of the
+host did not authorize a paid upgrade or establish commercial eligibility. The
+release makes no operational autonomous-delivery or aircraft-certification claim.
+
+The following preparation records describe their stated earlier sources and gates.
+They are retained as history, not current release authorization or a rollback runbook.
+
 Owner-selected topology: static React frontend on Vercel, same-origin authenticated
 `/api/v1` ingress through separate exact-host Cloudflare tunnels to Oracle, and an
 independent PostgreSQL database per environment. `scripts/vercel_package.mjs` creates
