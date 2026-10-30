@@ -1,5 +1,18 @@
 # Verification scope and release gates
 
+The runtime security gate downloads its digest-pinned scanner with at most three
+120-second attempts and two five-second pauses. These retries cover the image
+download only. Exhaustion fails CI, and a vulnerability scan failure is never
+retried, suppressed or accepted from an older run.
+
+Session response regressions run with `npm --prefix frontend run test:unit` on
+Node24. The actual API client rejects both a delayed fetch and delayed JSON body
+after a session change, preserves current-session errors and sends no retry.
+Browser cases in `session-isolation.spec.ts` use synthetic, loopback-only sessions
+to check late advice after an account switch, expiry with an open draft and a
+queued expiry from a previous stream. Existing real-API delivery/browser cases
+remain required. These fixtures do not establish hosted release acceptance.
+
 ## Accepted hosted simulation — 29 October 2026
 
 Application revision `ff493035cbc11a31312f6fae9364825c761b992a` (tree

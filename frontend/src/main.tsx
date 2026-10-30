@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { createRoot } from "react-dom/client";
-import { api, setCSRF } from "./api";
+import { api, setCSRF, SessionChangedError } from "./api";
 import type {
   Aircraft,
   Mission,
@@ -136,15 +136,53 @@ function App() {
   const aircraft = data.aircraft.find((a) => a.id === flight?.aircraft_id);
   useEffect(() => setRouteIndex(0), [flight?.id]);
   const mounted = useRef(true);
+  const currentAction = useRef(0);
+  const resetWorkspace = useCallback(() => {
+    currentAction.current++;
+    setBusy(false);
+    setNotice("");
+    setData({
+      aircraft: [],
+      missions: [],
+      counts: {},
+      mode: "simulation",
+      at: 0,
+      truncated: { aircraft: false, missions: false },
+    });
+    setPrefs({
+      currency: "EUR",
+      units: "metric",
+      language: "en",
+      region: "illustrative-campus",
+    });
+    setHistory(null);
+    setExtra(null);
+    setSelected("");
+    setAnswer("");
+    setTrack("");
+    setInspectedAircraft(null);
+    setDispatch(null);
+    setModal(null);
+    setEdit(null);
+    setReplay(null);
+    setPlaying(false);
+    setRouteIndex(0);
+    setConnection("connecting");
+  }, []);
   const run = useCallback(async (fn: () => Promise<unknown>) => {
+    const action = ++currentAction.current;
     setBusy(true);
     setNotice("");
     try {
       await fn();
     } catch (e) {
-      setNotice(e instanceof Error ? e.message : "Operation failed");
+      if (
+        action === currentAction.current &&
+        !(e instanceof SessionChangedError)
+      )
+        setNotice(e instanceof Error ? e.message : "Operation failed");
     } finally {
-      setBusy(false);
+      if (action === currentAction.current) setBusy(false);
     }
   }, []);
   const refresh = useCallback(async () => {
@@ -193,13 +231,16 @@ function App() {
         setData(JSON.parse((event as MessageEvent).data));
       });
       source.addEventListener("expired", () => {
+        if (stopped) return;
         source?.close();
+        setCSRF("");
+        resetWorkspace();
         setConnection("session expired");
         setUser(null);
       });
-      source.addEventListener("unavailable", () =>
-        setConnection("storage unavailable"),
-      );
+      source.addEventListener("unavailable", () => {
+        if (!stopped) setConnection("storage unavailable");
+      });
       source.onerror = () => {
         source?.close();
         if (stopped) return;
@@ -216,7 +257,7 @@ function App() {
       source?.close();
       clearTimeout(timer);
     };
-  }, [user, refresh]);
+  }, [user, refresh, resetWorkspace]);
   useEffect(() => {
     setExtra(null);
     setHistory(null);
@@ -366,20 +407,7 @@ function App() {
                   email: f.get("email"),
                   password: f.get("password"),
                 });
-                setData({
-                  aircraft: [],
-                  missions: [],
-                  counts: {},
-                  mode: "simulation",
-                  at: 0,
-                  truncated: { aircraft: false, missions: false },
-                });
-                setHistory(null);
-                setExtra(null);
-                setSelected("");
-                setAnswer("");
-                setTrack("");
-                setInspectedAircraft(null);
+                resetWorkspace();
                 setCSRF(u.csrf);
                 setUser(u);
               });
@@ -561,8 +589,9 @@ function App() {
             onClick={() =>
               void run(async () => {
                 await api("/auth/logout", "POST", {});
-                setUser(null);
                 setCSRF("");
+                resetWorkspace();
+                setUser(null);
               })
             }
           >
@@ -1416,8 +1445,8 @@ function App() {
                 </article>
               )}
               <p className="fine">
-                The local operational summary works without an AI provider.
-                An administrator must configure an approved AI connection.
+                The local operational summary works without an AI provider. An
+                administrator must configure an approved AI connection.
                 Recommendations cannot authorize a mission.
               </p>
             </section>
