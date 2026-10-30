@@ -16,6 +16,11 @@
 
 ## Unreleased — 0.1 simulation implementation
 
+- Ignore pending API responses after a sign-in, sign-out or expiry changes the
+  session. Clear account-specific drafts, reports, tracking and dispatch state at
+  that boundary, and ignore queued expiry events from a closed previous stream.
+- An older operation cannot overwrite a newer operation's busy/error state.
+  Existing server authorization, idempotency and simulation supervision still apply.
 - A logout whose session is concurrently revoked still clears the cookie and
   acknowledges success; it no longer reports a misleading storage failure.
 - Release-unit fixtures isolate their commissioning registry even under root test
