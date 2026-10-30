@@ -1,5 +1,10 @@
 # Verification scope and release gates
 
+The runtime security gate downloads its digest-pinned scanner with at most three
+120-second attempts and two five-second pauses. These retries cover the image
+download only. Exhaustion fails CI, and a vulnerability scan failure is never
+retried, suppressed or accepted from an older run.
+
 Session response regressions run with `npm --prefix frontend run test:unit` on
 Node24. The actual API client rejects both a delayed fetch and delayed JSON body
 after a session change, preserves current-session errors and sends no retry.

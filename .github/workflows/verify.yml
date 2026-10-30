@@ -68,6 +68,7 @@ jobs:
           npm run test:e2e
       - name: Runtime container security gate
         run: |
+          python scripts/pull_ci_scanner.py
           docker build --file infrastructure/Dockerfile --build-arg DRONE_SOURCE_COMMIT="$GITHUB_SHA" --tag onesa-drone:ci .
           docker image save onesa-drone:ci --output "$RUNNER_TEMP/drone-runtime.tar"
           docker run --rm --memory 1g --cpus 1 --volume "$RUNNER_TEMP/drone-runtime.tar:/scan/runtime.tar:ro" aquasec/trivy@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa image --input /scan/runtime.tar --scanners vuln --severity HIGH,CRITICAL --exit-code 1 --quiet

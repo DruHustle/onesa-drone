@@ -16,6 +16,8 @@
 
 ## Unreleased — 0.1 simulation implementation
 
+- Retry only downloading the immutable CI scanner, at most three bounded attempts.
+  An unavailable scanner or a failed vulnerability scan still fails verification.
 - Ignore pending API responses after a sign-in, sign-out or expiry changes the
   session. Clear account-specific drafts, reports, tracking and dispatch state at
   that boundary, and ignore queued expiry events from a closed previous stream.
