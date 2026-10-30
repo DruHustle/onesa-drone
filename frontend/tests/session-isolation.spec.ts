@@ -114,7 +114,8 @@ async function signIn(page: Page, session: string) {
     .getByLabel("Password", { exact: true })
     .fill("Synthetic-session-only-password-42!");
   await page.getByRole("button", { name: /^Sign in/ }).click();
-  await expect(page.locator("body")).toContainText(
+  await expect(page.locator(".avatar")).toHaveAttribute(
+    "title",
     `session-${session}@example.test`,
   );
   await page.waitForFunction(
@@ -196,6 +197,9 @@ test("a queued expiry from the closed old stream cannot sign out the next accoun
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
   await signIn(page, "b");
   await page.evaluate(() => (window as any).expirePreviousSyntheticStream());
-  await expect(page.locator("body")).toContainText("session-b@example.test");
+  await expect(page.locator(".avatar")).toHaveAttribute(
+    "title",
+    "session-b@example.test",
+  );
   await expect(page.getByRole("button", { name: /^Sign in/ })).toHaveCount(0);
 });
