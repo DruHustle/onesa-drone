@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 const pages = [
   "Dashboard",
@@ -19,13 +19,17 @@ const pages = [
   "Infrastructure monitor",
   "Administration",
 ];
-async function login(page: any) {
+async function login(page: Page, account = "delivery") {
   await page.goto("/");
-  await page.getByLabel("Email", { exact: true }).fill("browser@example.test");
+  await page
+    .getByLabel("Email", { exact: true })
+    .fill(`browser-${account}@example.test`);
   await page
     .getByLabel("Password", { exact: true })
     .fill("Synthetic-browser-password-42!");
+  const response = page.waitForResponse("**/api/v1/auth/login");
   await page.getByRole("button", { name: "Sign in", exact: false }).click();
+  expect((await response).status()).toBe(200);
   await expect(
     page.getByRole("heading", { name: "Mission overview", exact: true }),
   ).toBeVisible();
@@ -131,7 +135,7 @@ for (const colorScheme of ["light", "dark"] as const)
     }, testInfo) => {
       await page.setViewportSize({ width, height: 950 });
       await page.emulateMedia({ colorScheme, reducedMotion: "reduce" });
-      await login(page);
+      await login(page, `navigation-${colorScheme}-${width}`);
       for (const name of pages) {
         if (width < 850)
           await page.getByRole("button", { name: "Toggle navigation" }).click();

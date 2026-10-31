@@ -111,6 +111,36 @@ def test_failure_injection_and_recovery(stack, aircraft, scenario):
         assert db.get(Aircraft, aircraft["id"]).active_mission_id is None
 
 
+@pytest.mark.parametrize("scenario", ["gps_degradation", "obstruction", "aircraft_fault"])
+def test_held_sample_is_persisted_and_replayable(stack, aircraft, scenario):
+    m, _ = launch(stack, scenario)
+    before = tick(stack, m["id"], 9)
+    with stack["store"].transaction(stack["tenant"]) as db:
+        advance(db, db.get(Mission, m["id"]), limit=5)
+    held = tick(stack, m["id"], 3)
+    history = stack["client"].get(f"/api/v1/missions/{m['id']}/history").json()
+    latest = history["telemetry"][-1]
+    assert held["state"] == latest["flight_mode"] == "paused"
+    assert latest == held["last_telemetry"]
+    assert latest["seq"] == held["tick"] == 10
+    assert latest["simulation_seconds"] == 50
+    assert latest["ground_speed_mps"] == 0
+    assert latest["position"] == before["last_telemetry"]["position"]
+    assert latest["altitude_m"] == before["last_telemetry"]["altitude_m"]
+    assert latest["mode"] == "simulation"
+    assert [sample["seq"] for sample in history["telemetry"]] == list(range(6, 11))
+    if scenario == "gps_degradation":
+        assert latest["gps_quality"] == "simulated-degraded"
+    if scenario == "aircraft_fault":
+        assert latest["motor_health"] == "simulated-fault"
+    resumed = cmd(stack, held, "recover").json()
+    resumed = tick(stack, resumed["id"])
+    history = stack["client"].get(f"/api/v1/missions/{m['id']}/history").json()
+    assert history["telemetry"][-2] == latest
+    assert history["telemetry"][-1]["seq"] == 11
+    assert resumed["state"] == "returning"
+
+
 def test_active_cancellation_returns_home(stack, aircraft):
     m, _ = launch(stack)
     m = tick(stack, m["id"], 6)

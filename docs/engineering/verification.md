@@ -1,5 +1,54 @@
 # Verification scope and release gates
 
+## Hardware-free readiness audit — 31 October 2026
+
+The audit based on development revision `88b59a4d559ea0491b0b65520c487850405e4394`
+corrected two simulation record/display defects:
+
+- A GPS, obstruction or aircraft-fault hold now saves its zero-speed, correctly
+  timed telemetry checkpoint in the same transaction as the hold event, subject
+  to the same retention bound as ordinary samples. Live state and replay agree;
+  recovery continues at the next sequence without losing the held observation.
+- Mission history is bound to the selected mission. Switching missions immediately
+  stops replay and hides the previous mission's events/samples while the new
+  history loads. An obsolete history error also cannot replace the current notice.
+
+The resulting source passed 147 backend cases with SQLite and again with a new
+disposable PostgreSQL 16 database, 47 release-unit tests, 24 package/transport tests,
+five frontend-unit tests and all 13 Chromium browser cases. The additional browser
+case holds the next mission's history response while checking that previous replay
+and events cannot appear against that mission. Existing browser journeys exercised
+real local delivery, tracking, assistant fallback, six responsive light/dark views,
+WebGL, navigation and accessibility. Ruff, TypeScript, production build, diff and
+history hygiene checks passed. The locked npm and Python dependency audits reported
+no known vulnerabilities. Tests used Python 3.11.17, Node 24.22.1 and the pinned
+Chromium 156.0.8078.4. The Three.js chunk-size advisory remains a build warning.
+
+The first PR verification run passed backend, PostgreSQL 17, build and dependency
+checks, then exposed a timing-dependent browser fixture defect: the seventh sign-in
+to its shared synthetic account hit the real six-attempt/minute limit. A local
+browser reproduction returned six HTTP 200 responses followed by HTTP 429 and the
+visible retry message. Browser scenarios now use separate seeded accounts; their
+helpers assert the login response before waiting for authenticated content. Two
+deterministic fixture regressions hold the limiter clock in one minute: the suite's
+ten sign-ins succeed, while seven attempts on one account still end in HTTP 429.
+Production authentication limits and browser timeouts are unchanged. The complete
+13-case Chromium matrix and all 149 SQLite backend/fixture cases passed on the
+follow-up source. CI container scanning
+and provenance publication were skipped after the original browser failure and
+still require a successful follow-up run.
+
+Bounded unauthenticated hosted checks observed HTTP 200 for the production console,
+health and readiness; health/readiness identify simulation mode. Session/operations
+reads correctly returned 401, including a direct operations request to the API.
+Staging redirected to Vercel sign-in. These checks did not sign in, mutate hosted
+records, prove live inference or establish source-bound hosted acceptance.
+
+The changes do not add physical interfaces, change the schema or commission an AI
+identity. PX4/Gazebo SITL, validated dynamics, live-model acceptance, complete CI,
+container scanning and exact-source staging/production promotion remain separate
+gates. This audit does not label the new fixes as deployed or qualify physical flight.
+
 ## Offline controller-plan inspection
 
 `tests/test_flight_plans.py` exercises the actual QGroundControl parser and authenticated
