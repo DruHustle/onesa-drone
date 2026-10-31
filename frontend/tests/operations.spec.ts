@@ -8,6 +8,7 @@ const pages = [
   "Mission control",
   "Delivery management",
   "Route planning",
+  "Flight plans",
   "Live telemetry",
   "3D simulator",
   "Digital twins",

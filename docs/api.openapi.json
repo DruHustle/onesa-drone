@@ -166,6 +166,22 @@
         "title": "Command",
         "type": "object"
       },
+      "FlightPlanIn": {
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "maxLength": 12288,
+            "minLength": 1,
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "title": "FlightPlanIn",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -777,6 +793,42 @@
           }
         },
         "summary": "Dispatch Preview"
+      }
+    },
+    "/api/v1/flight-plans/preview": {
+      "post": {
+        "operationId": "flight_plan_preview_api_v1_flight_plans_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FlightPlanIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Flight Plan Preview"
       }
     },
     "/api/v1/health": {

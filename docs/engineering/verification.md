@@ -1,5 +1,39 @@
 # Verification scope and release gates
 
+## Offline controller-plan inspection
+
+`tests/test_flight_plans.py` exercises the actual QGroundControl parser and authenticated
+API: bounded bytes/items, duplicate fields, excessive nesting, strict command order,
+coordinate frames, explicit altitude semantics, preserved navigation parameters,
+unsupported fence/rally refusal, virtual radius/zone findings and tenant policy
+isolation. Record counts and reservations remain unchanged, and imported previews
+cannot bypass the existing launch/command schemas or disabled physical adapter.
+The synthetic file is `tests/fixtures/controller-preview.plan`.
+
+`frontend/tests/flight-plans.spec.ts` exercises a real API preview, mobile light/dark
+accessibility and overflow, unsupported/oversize files, and a delayed response across
+sign-out. The existing navigation matrix includes Flight plans. File reads use strict
+UTF-8 and preserve source bytes; file/session changes invalidate older results.
+These checks do not establish live controller compatibility, validated flight physics,
+SITL qualification, hosted acceptance or physical flight.
+
+The resumed local review on 31 October 2026 passed all 144 backend cases on SQLite
+and again on a dedicated disposable PostgreSQL 16.15 database, 47 release tests,
+24 transport/package tests, five frontend unit tests and all 12 Chromium browser
+cases. Ruff, frontend typecheck/build, history hygiene and both locked dependency
+audits passed. Application checks used Python 3.11.17 and Node 24.22.1. The unchanged
+Python lock was audited with the pinned `pip-audit` 2.10.0 in a separate Python 3.12
+tool environment because the local Python 3.11 HTTP client could not traverse its
+proxy. Neither audit reported a known vulnerability.
+
+The browser suite used the exact pinned Chromium 156.0.8078.4 build, obtained from
+Google's official Chrome for Testing distribution after the Playwright CDN returned
+HTML instead of the archive. The first full browser run exposed an incorrect test
+helper assumption about navigation after signing back in. The corrected test keeps
+the same page, releases the old response and waits for its delivery before checking
+session isolation; the full rerun passed. These local results do not replace the
+required source-bound PostgreSQL 17 CI, container scans or hosted release gates.
+
 The runtime security gate downloads its digest-pinned scanner with at most three
 120-second attempts and two five-second pauses. These retries cover the image
 download only. Exhaustion fails CI, and a vulnerability scan failure is never
@@ -98,6 +132,34 @@ private hosted staging, authenticated acceptance on the approved origin, DB/runt
 least privilege and backup restore, current dependency/container scans, owner/editorial
 and privacy approval, rollback receipt, and a qualified production promotion path.
 No merge, local PASS or screenshot substitutes for these hosted gates.
+
+## Local review — 31 October 2026
+
+The clean development checkout was fast-forwarded from `5d2c31d` to fetched
+`5951704` before final qualification. With the local advisory decoder correction,
+92 backend tests, 47 release tests (38 additional subtests), five frontend unit
+tests and 24 transport/package tests pass. Ruff, the TypeScript/production build,
+history hygiene and both locked dependency advisory scans pass; no known dependency
+vulnerability was reported. Node 24.22.1 and Python 3.11 were used for final checks.
+
+All ten Chromium acceptance cases pass: a complete simulation delivery, telemetry,
+replay, private tracking, advisory, six light/dark mobile/tablet/desktop navigation,
+accessibility and WebGL checks, and three account/session-race cases. The old-source
+browser run was deliberately interrupted to test the updated source; it is not
+counted as a pass. Three new provider-nesting regressions failed before the fix and
+pass afterward, including the legacy stream path. Temporary browser artifacts and
+fixture services are removed after review at the owner's request.
+
+The same 92 backend cases also pass against an isolated local PostgreSQL database.
+An in-memory `pg_dump`/`pg_restore` round trip validates the schema, six table counts
+and all 88 synthetic tenant audit chains. The source and restored test databases,
+temporary restore script and fixture files are removed after validation.
+
+This is local SQLite/PostgreSQL and synthetic-provider evidence. It does not
+requalify hosted production, live model identity, hosted backup recovery, physical
+hardware, flight physics or jurisdiction-specific operating permission. Physical
+transports remain disabled. Existing accepted production and its source-bound
+receipts are unchanged.
 
 Logout regression coverage also removes the authenticated fixture's session between
 authorization and its deletion transaction, as a simultaneous logout or administrator

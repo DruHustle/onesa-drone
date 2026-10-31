@@ -1,5 +1,17 @@
 # Architecture decisions
 
+## ADR 008 — Inspect controller plans before implementing transport
+
+The offline QGroundControl adapter accepts a small explicit navigation profile and
+produces `onesa-flight-plan-preview-v1`. Inspection is an authenticated, non-persistent
+operation; it reads only the current tenant's virtual policy. Input provenance,
+original navigation parameters and distinctions between AMSL, relative and unknown
+return altitude survive normalization. Unsupported behavior is rejected, not dropped.
+The contract has no authorization capability and cannot populate application mission
+commands. The UI is session-bound and discards superseded reads. This advances the
+controller integration boundary while keeping network/serial adapters disabled;
+SITL, firmware, vehicle identity and physical flight remain separately unqualified.
+
 ## ADR 001 — Independent simulation product
 
 Inspected Onesa Company Portal, AI Platform, AI Robot, Smart Factory frontend,
