@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import * as T from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import {
+  disposeReferenceObject,
+  loadReferenceAsset,
+  referenceAssets,
+  referenceUrl,
+} from "./nvidiaAssets";
 import type { Mission, Sample } from "./types";
 
 type Props = {
@@ -17,10 +23,18 @@ export default function DroneScene(props: Props) {
     current = useRef(props);
   current.current = props;
   const [failure, setFailure] = useState(false),
-    [stats, setStats] = useState("Initializing scene…");
+    [stats, setStats] = useState("Initializing scene…"),
+    [attempt, setAttempt] = useState(0),
+    [assets, setAssets] = useState<
+      Record<string, "loading" | "ready" | "failed">
+    >({});
   useEffect(() => {
     const element = host.current;
     if (!element) return;
+    setFailure(false);
+    setAssets(
+      Object.fromEntries(referenceAssets.map((asset) => [asset.id, "loading"])),
+    );
     let renderer: T.WebGLRenderer;
     try {
       renderer = new T.WebGLRenderer({
@@ -32,6 +46,11 @@ export default function DroneScene(props: Props) {
       });
     } catch {
       setFailure(true);
+      setAssets(
+        Object.fromEntries(
+          referenceAssets.map((asset) => [asset.id, "failed"]),
+        ),
+      );
       return;
     }
     const scene = new T.Scene(),
@@ -47,10 +66,12 @@ export default function DroneScene(props: Props) {
     element.appendChild(renderer.domElement);
     renderer.domElement.setAttribute(
       "aria-label",
-      "Illustrative 3D drone and virtual campus",
+      "Illustrative 3D drone, virtual campus and NVIDIA environment models. With Orbit camera selected, drag to orbit, scroll to zoom and use arrow keys to pan the focused view.",
     );
     renderer.domElement.setAttribute("role", "img");
+    renderer.domElement.tabIndex = 0;
     const controls = new OrbitControls(camera, renderer.domElement);
+    controls.listenToKeyEvents(renderer.domElement);
     controls.enableDamping = true;
     controls.minDistance = 12;
     controls.maxDistance = 700;
@@ -233,6 +254,71 @@ export default function DroneScene(props: Props) {
     let dirty = true,
       signature = "",
       reported = false;
+    let disposed = false,
+      contextLost = false;
+    const downloads = referenceAssets.map(() => new AbortController());
+    referenceAssets.forEach(async (asset, index) => {
+      const request = downloads[index];
+      const deadline = setTimeout(() => request.abort(), 15000);
+      try {
+        const model = await loadReferenceAsset(asset, request.signal);
+        if (disposed) {
+          disposeReferenceObject(model);
+          return;
+        }
+        // Reference props are deliberately scaled for inspection in the campus.
+        // These positions never enter route planning or collision/flight physics.
+        const bounds = new T.Box3().setFromObject(model);
+        const size = bounds.getSize(new T.Vector3());
+        const center = bounds.getCenter(new T.Vector3());
+        const span = Math.max(size.x, size.y, size.z);
+        if (!Number.isFinite(span) || span <= 0 || span > 1000) {
+          disposeReferenceObject(model);
+          throw new Error("Invalid reference bounds");
+        }
+        const scale = [25, 12, 22][index] / span;
+        model.scale.multiplyScalar(scale);
+        const [x, z] = [
+          [36, -20],
+          [58, -14],
+          [74, -26],
+        ][index];
+        model.position.set(
+          x - center.x * scale,
+          -bounds.min.y * scale,
+          z - center.z * scale,
+        );
+        model.name = asset.id;
+        model.traverse((node) => {
+          if (node instanceof T.Mesh) {
+            node.castShadow = true;
+            node.receiveShadow = true;
+          }
+        });
+        scene.add(model);
+        dirty = true;
+        reported = false;
+        setAssets((previous) => ({ ...previous, [asset.id]: "ready" }));
+      } catch {
+        if (!disposed)
+          setAssets((previous) => ({ ...previous, [asset.id]: "failed" }));
+      } finally {
+        clearTimeout(deadline);
+      }
+    });
+    const onContextLost = (event: Event) => {
+      event.preventDefault();
+      contextLost = true;
+      if (!disposed) setFailure(true);
+    };
+    const onContextRestored = () => {
+      if (!disposed) setAttempt((value) => value + 1);
+    };
+    renderer.domElement.addEventListener("webglcontextlost", onContextLost);
+    renderer.domElement.addEventListener(
+      "webglcontextrestored",
+      onContextRestored,
+    );
     controls.addEventListener("change", () => {
       dirty = true;
     });
@@ -249,13 +335,13 @@ export default function DroneScene(props: Props) {
     let frame = 0,
       frames = 0,
       last = performance.now(),
-      lastDraw = 0,
-      disposed = false;
+      lastDraw = 0;
     const initialized = performance.now();
     let firstFrame: number | undefined;
     const render = (now: number) => {
       if (disposed) return;
       frame = requestAnimationFrame(render);
+      if (contextLost) return;
       const p = current.current;
       const low = p.lowPower;
       const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -315,7 +401,10 @@ export default function DroneScene(props: Props) {
           scene.remove(route);
           route.geometry.dispose();
         }
-        zones.clear();
+        for (const zone of [...zones.children]) {
+          (zone as T.Mesh).geometry.dispose();
+          zones.remove(zone);
+        }
         if (m?.plan.waypoints) {
           const points = m.plan.waypoints.map(project);
           route = new T.Line(
@@ -360,7 +449,10 @@ export default function DroneScene(props: Props) {
       ambient.intensity = p.night ? 0.65 : 2.5;
       sun.intensity = p.night ? 0.4 : 3;
       controls.enabled = p.view === "orbit";
-      if (p.view === "inspect") {
+      if (p.view === "environment") {
+        camera.position.set(95, 55, 50);
+        controls.target.set(52, 5, -20);
+      } else if (p.view === "inspect") {
         camera.position.lerp(
           drone.position.clone().add(new T.Vector3(18, 12, 22)),
           0.12,
@@ -401,40 +493,121 @@ export default function DroneScene(props: Props) {
     frame = requestAnimationFrame(render);
     return () => {
       disposed = true;
+      downloads.forEach((request) => request.abort());
       cancelAnimationFrame(frame);
       observer.disconnect();
       controls.dispose();
-      scene.traverse((o) => {
-        const mesh = o as T.Mesh;
-        if (mesh.geometry) mesh.geometry.dispose();
-        if (mesh.material) {
-          for (const m of Array.isArray(mesh.material)
-            ? mesh.material
-            : [mesh.material])
-            m.dispose();
-        }
-      });
+      renderer.domElement.removeEventListener(
+        "webglcontextlost",
+        onContextLost,
+      );
+      renderer.domElement.removeEventListener(
+        "webglcontextrestored",
+        onContextRestored,
+      );
+      disposeReferenceObject(scene);
       renderer.dispose();
       renderer.forceContextLoss();
       renderer.domElement.remove();
     };
-  }, []);
+  }, [attempt]);
+  const ready = referenceAssets.filter(
+    (asset) => assets[asset.id] === "ready",
+  ).length;
+  const failed = referenceAssets.some((asset) => assets[asset.id] === "failed");
   return (
     <div className="scene-shell">
-      <div ref={host} className="scene" />
+      <div ref={host} className="scene" hidden={failure} />
       {failure && (
         <div className="scene-fallback">
           <strong>3D view unavailable</strong>
+          <div className="reference-fallback-images">
+            {referenceAssets.map((asset) => (
+              <img
+                key={asset.id}
+                src={referenceUrl(asset.thumbnail.path)}
+                alt={`${asset.name} — static NVIDIA model preview`}
+                width="320"
+                height="200"
+              />
+            ))}
+          </div>
           <p>
-            WebGL is unavailable. Mission controls and telemetry remain
-            accessible below.
+            Static NVIDIA model previews are shown while 3D graphics are
+            unavailable. Mission controls and telemetry remain accessible below.
           </p>
+          <button
+            type="button"
+            onClick={() => setAttempt((value) => value + 1)}
+          >
+            Retry 3D view
+          </button>
         </div>
       )}
       <div className="scene-caption">
-        <span>PROCEDURAL CAMPUS / ILLUSTRATIVE GEOMETRY</span>
+        <span>VIRTUAL CAMPUS / NVIDIA REFERENCE ENVIRONMENT</span>
         <span>{failure ? "WebGL unavailable" : stats}</span>
       </div>
+      <div className="reference-status">
+        <span role="status" data-testid="reference-status">
+          {failure
+            ? "Static model previews"
+            : failed
+              ? `${ready}/3 NVIDIA models loaded; static previews available`
+              : ready === 3
+                ? "3/3 NVIDIA models loaded"
+                : "Loading NVIDIA environment models…"}
+        </span>
+        {!failure && failed && (
+          <button
+            type="button"
+            onClick={() => setAttempt((value) => value + 1)}
+          >
+            Retry environment models
+          </button>
+        )}
+      </div>
+      <details className="reference-library">
+        <summary>NVIDIA environment models · source and previews</summary>
+        <p>
+          Visual references at illustrative scale. These models do not add
+          flight physics, sensors or collision validation.
+        </p>
+        <div className="reference-model-grid">
+          {referenceAssets.map((asset) => (
+            <article key={asset.id}>
+              <img
+                src={referenceUrl(asset.thumbnail.path)}
+                alt={`${asset.name} by NVIDIA`}
+                width="320"
+                height="200"
+                loading="lazy"
+              />
+              <h3>{asset.name}</h3>
+              <p>{asset.attribution}</p>
+              <a href={asset.sourceUrl} target="_blank" rel="noreferrer">
+                Original source
+              </a>
+              {" · "}
+              <a
+                href={referenceUrl(asset.licenseFile.path)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                CC BY 4.0 license
+              </a>
+              {" · "}
+              <a
+                href={referenceUrl(asset.sourceFile.path)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Provenance
+              </a>
+            </article>
+          ))}
+        </div>
+      </details>
     </div>
   );
 }

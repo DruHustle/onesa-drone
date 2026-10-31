@@ -7,13 +7,21 @@ const source = readFileSync(
   new URL("../../tests/fixtures/controller-preview.plan", import.meta.url),
 );
 
-async function login(page: Page, navigate = true) {
+async function login(
+  page: Page,
+  account: "preview" | "session",
+  navigate = true,
+) {
   if (navigate) await page.goto("/");
-  await page.getByLabel("Email", { exact: true }).fill("browser@example.test");
+  await page
+    .getByLabel("Email", { exact: true })
+    .fill(`browser-flight-${account}@example.test`);
   await page
     .getByLabel("Password", { exact: true })
     .fill("Synthetic-browser-password-42!");
+  const response = page.waitForResponse("**/api/v1/auth/login");
   await page.getByRole("button", { name: /^Sign in/ }).click();
+  expect((await response).status()).toBe(200);
   await expect(
     page.getByRole("button", { name: "Sign out", exact: true }),
   ).toBeVisible();
@@ -31,7 +39,7 @@ async function upload(page: Page, buffer = source) {
 test("real API previews a controller plan without mission changes, with accessible mobile views", async ({
   page,
 }) => {
-  await login(page);
+  await login(page, "preview");
   const before = await (await page.request.get("/api/v1/operations")).json();
   await upload(page);
   await page
@@ -89,7 +97,7 @@ test("real API previews a controller plan without mission changes, with accessib
 test("a late preview is discarded after sign-out and the next session starts with no file", async ({
   page,
 }) => {
-  await login(page);
+  await login(page, "session");
   let release!: () => void;
   let received!: () => void;
   const held = new Promise<void>((resolve) => {
@@ -113,7 +121,7 @@ test("a late preview is discarded after sign-out and the next session starts wit
     .click();
   await captured;
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
-  await login(page, false);
+  await login(page, "session", false);
   const delivered = page.waitForResponse("**/api/v1/flight-plans/preview");
   release();
   await (await delivered).finished();
