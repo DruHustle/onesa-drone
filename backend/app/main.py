@@ -26,6 +26,7 @@ from .schemas import (
     MissionIn,
     Command,
     AssistantIn,
+    FlightPlanIn,
     SettingsIn,
     UserIn,
     IncidentIn,
@@ -46,6 +47,7 @@ from .service import (
 from autonomy.decision_engine.states import ACTIVE
 from autonomy.mission_planning.dispatch import sequence_deliveries, MAX_DELIVERIES, MAX_AIRCRAFT
 from integrations.onesa_ai.adapter import configured as ai_configured
+from integrations.mavlink.plan import PlanError, preview_plan
 
 log = logging.getLogger("onesa.drone")
 
@@ -410,6 +412,16 @@ def create_app(settings=None):
                 "aircraft": len(aircraft) > MAX_AIRCRAFT,
             }
             return result
+
+    @app.post("/api/v1/flight-plans/preview")
+    def flight_plan_preview(data: FlightPlanIn, a=Depends(auth)):
+        limiter.check("flight-plan:" + a["tenant_id"] + ":" + a["id"], 6)
+        with store.session() as db:
+            constraints = policy(db, a["tenant_id"])
+        try:
+            return preview_plan(data.source, constraints)
+        except PlanError as error:
+            raise HTTPException(422, str(error)) from None
 
     @app.post("/api/v1/aircraft", status_code=201)
     def create_aircraft(data: AircraftIn, request: Request, a=Depends(operator), k=Depends(key)):

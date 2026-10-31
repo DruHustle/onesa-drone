@@ -4,6 +4,46 @@
   --scene-height: 440px;
   --onesa-divider: #dce3e6;
 }
+.flight-plan-preview,
+.flight-plan-result {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+.flight-plan-preview > button {
+  justify-self: start;
+}
+.flight-plan-map {
+  width: 100%;
+  max-height: 360px;
+  border: 1px solid var(--onesa-border);
+  border-radius: 5px;
+}
+.flight-plan-zone {
+  fill: none;
+  stroke: currentColor;
+  stroke-dasharray: 5 4;
+}
+.flight-plan-items {
+  display: grid;
+  gap: 12px;
+  padding: 0;
+  list-style: none;
+}
+.flight-plan-items li {
+  display: grid;
+  gap: 6px;
+  border-bottom: 1px solid var(--onesa-border);
+  padding-bottom: 12px;
+}
+.flight-plan-items code,
+.flight-plan-digest,
+.flight-plan-result p {
+  overflow-wrap: anywhere;
+}
+.flight-plan-items summary {
+  cursor: pointer;
+}
 * {
   box-sizing: border-box;
 }

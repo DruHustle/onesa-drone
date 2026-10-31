@@ -29,6 +29,8 @@ PostgreSQL. See docs/architecture/decisions.md and docs/engineering/local-develo
 - Procedural Three.js campus, animated aircraft, cameras, day/night/weather visuals,
   low-power rendering and command-free recorded replay.
 - Read-only operational assistant, analytics, incidents and service health observations.
+- Offline QGroundControl flight-plan inspection with an explicit PX4/ArduPilot
+  navigation subset, local geometry and virtual-policy findings. No device commands.
 
 [Run locally and demonstrate](docs/engineering/local-development.md) ·
 [Architecture and decisions](docs/architecture/decisions.md) ·

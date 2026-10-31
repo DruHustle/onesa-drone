@@ -133,6 +133,31 @@ def test_provider_failure_has_one_attempt_and_explicit_local_summary(monkeypatch
     assert "private-provider-error" not in json.dumps(result)
 
 
+@pytest.mark.parametrize("provider", ["onesa", "openai-compatible", "onesa-legacy"])
+def test_deeply_nested_provider_json_is_rejected_with_explicit_local_summary(monkeypatch, provider):
+    calls = []
+    nested = '{"private-provider-error":' + "[" * 2000 + "0" + "]" * 2000 + "}"
+
+    def handle(request):
+        calls.append(request)
+        if request.url.path == "/api/v1/conversations":
+            return httpx.Response(201, json={"id": "synthetic-conversation"})
+        if request.url.path == "/api/v1/chat/completions":
+            return httpx.Response(
+                200,
+                headers={"Content-Type": "text/event-stream"},
+                text="event: content_delta\ndata: " + nested + "\n\n",
+            )
+        return httpx.Response(200, headers={"Content-Type": "application/json"}, text=nested)
+
+    install_transport(monkeypatch, handle)
+    result = asyncio.run(advise("Explain", CONTEXT, config(provider), "tenant"))
+    assert len(calls) == (2 if provider == "onesa-legacy" else 1)
+    assert result["provider_status"] == "unavailable-or-contract-unqualified"
+    assert result["source"] == "deterministic-operational-summary"
+    assert "private-provider-error" not in json.dumps(result)
+
+
 @pytest.mark.parametrize(
     "tail",
     [

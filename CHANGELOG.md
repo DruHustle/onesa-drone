@@ -16,6 +16,12 @@
 
 ## Unreleased — 0.1 simulation implementation
 
+- Add a read-only QGroundControl plan preview for a bounded PX4/ArduPilot multirotor
+  subset. Preserve source identity and navigation parameters, report virtual-policy
+  conflicts, and reject unsupported frames, commands, fences and malformed files.
+  The console previews geometry without creating missions or enabling transports.
+- Reject excessively nested provider JSON in portable and legacy advisory responses.
+  Decoder exhaustion returns the labelled local summary without leaking provider data.
 - Retry only downloading the immutable CI scanner, at most three bounded attempts.
   An unavailable scanner or a failed vulnerability scan still fails verification.
 - Ignore pending API responses after a sign-in, sign-out or expiry changes the

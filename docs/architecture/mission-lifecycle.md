@@ -1,5 +1,12 @@
 # Mission contract and persistence
 
+The independent `POST /api/v1/flight-plans/preview` operation reads a bounded
+QGroundControl file for format/geometry inspection. It does not enter this lifecycle,
+create an event, reserve an aircraft or confer authorization. A parsed controller
+plan is not accepted as a field of a mission command. The normal deterministic
+planner, preflight and separate safety supervisor remain authoritative for every
+simulation launch. See [the supported file profile](../../integrations/mavlink/README.md).
+
 ```mermaid
 stateDiagram-v2
     [*] --> requested

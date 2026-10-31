@@ -61,6 +61,10 @@ class AssistantIn(Strict):
     question: str = Field(min_length=2, max_length=2000)
 
 
+class FlightPlanIn(Strict):
+    source: str = Field(min_length=1, max_length=12288)
+
+
 class SettingsIn(Strict):
     virtual_radius_m: float = Field(default=3000, ge=100, le=3000)
     wind_mps: float = Field(default=5, ge=0, le=30)
