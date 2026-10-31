@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 3400",
-    "build": "tsc -b && vite build",
+    "build": "node scripts/check_renderer_notice.mjs && tsc -b && vite build",
     "typecheck": "tsc -b",
     "test:unit": "node --test tests/*.test.mjs",
     "test:e2e": "playwright test"
