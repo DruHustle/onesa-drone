@@ -23,6 +23,10 @@ def seed_browser_accounts(store):
             "flight-preview",
             "flight-session",
             "delivery",
+            *(f"nvidia-{case}" for case in (
+                "load", "failure", "integrity", "no-webgl", "context", "cancel",
+                "mobile-light", "mobile-dark",
+            )),
             *(f"navigation-{scheme}-{width}" for scheme in ("light", "dark") for width in (390, 768, 1440)),
         ]
         for account in accounts:

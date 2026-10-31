@@ -1,5 +1,51 @@
 # Verification scope and release gates
 
+## NVIDIA reference environment — 31 October 2026
+
+The development change based on `340d14e` adds three independently packaged NVIDIA
+SimReady browser derivatives with complete source/license records. The runtime
+checks exact byte size, SHA-256 and the static embedded-resource GLB profile before
+loading. Scene references never enter mission APIs, flight planning, simulation
+supervision, telemetry or physical transports. There are no backend schema or
+dependency changes. [Asset details](nvidia-reference-assets.md) describe the source
+revision and the deliberate visual-only boundary.
+
+Executed local verification:
+
+- 149 backend cases passed on SQLite and again against a new isolated PostgreSQL
+  16 database; 47 release/custody and 24 packaging/transport cases passed.
+- Five existing frontend session units plus seven asset/catalogue cases passed.
+  Asset checks parse all three real GLBs, check finite geometry and exact triangle
+  counts, validate every model/preview/license/provenance file hash, and reject
+  oversized, truncated, corrupt, cancelled and unsupported resource inputs.
+- All 21 Chromium browser journeys passed, including eight reference-environment
+  cases. They exercise automatic loading, environment framing, actual 503 and
+  integrity failures/retry, unavailable WebGL, lost/restored graphics context,
+  leaving a scene during downloads, desktop/mobile views, both OS color schemes,
+  reduced motion, forced colors, keyboard provenance and axe accessibility. The
+  original delivery, tracking, replay, flight-plan and session-isolation journeys
+  also passed. Opening the reference views sent no mission/control writes.
+- TypeScript, production build, Ruff, diff checks and repository-history hygiene
+  passed. The pinned npm dependency audit reported zero known vulnerabilities.
+  The existing Three.js bundle-size advisory remains a build warning.
+- An independent source review found no blocking defect; its finite-bounds and
+  keyboard-pan suggestions were incorporated. The final focused browser check
+  also verifies that arrow-key input actually changes the rendered canvas.
+
+The requested Playwright Chromium 156 download repeatedly returned an invalid empty
+archive in this workspace. Local browser evidence therefore used available Chrome
+for Testing 145.0.7632.6 through an ignored temporary configuration; the committed
+Playwright/browser versions and mandatory CI checks are unchanged. Python advisory
+lookup was blocked by the execution proxy's HTTP 426 response. Exact-source CI must
+still complete its pinned Chromium, PostgreSQL 17, Python advisory and runtime
+container checks before source promotion. An initial sandboxed backend run stalled
+at local socket use and was terminated; the permitted local-socket rerun passed.
+
+These are local development results, not staging or production acceptance. The
+existing hosted release identity is unchanged until the independent release path
+qualifies and accepts this source. No hardware, live model service or physical
+flight capability was commissioned or claimed.
+
 ## Hardware-free readiness audit — 31 October 2026
 
 The audit based on development revision `88b59a4d559ea0491b0b65520c487850405e4394`
