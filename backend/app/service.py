@@ -8,7 +8,7 @@ from .security import digest
 from autonomy.mission_planning.planner import plan_route
 from autonomy.safety_supervisor.supervisor import validate_launch, supervision
 from autonomy.decision_engine.states import check_transition, ACTIVE, TERMINAL
-from simulation.physics.kinematic import sample
+from simulation.physics.kinematic import STEP_SECONDS, sample
 
 
 def j(value):
@@ -302,6 +302,14 @@ def release(a):
         a.revision += 1
 
 
+def record_telemetry(db, m, telemetry, limit):
+    m.last_telemetry = j(telemetry)
+    observation = Telemetry(tenant_id=m.tenant_id, mission_id=m.id, seq=m.tick, payload=j(telemetry))
+    db.add(observation)
+    db.execute(delete(Telemetry).where(Telemetry.mission_id == m.id, Telemetry.seq <= m.tick - limit))
+    return observation
+
+
 def advance(db, m, limit=600):
     if m.state not in ACTIVE:
         return
@@ -324,10 +332,14 @@ def advance(db, m, limit=600):
             )
         )
         if m.state == "paused":
-            m.last_telemetry = j(
+            record_telemetry(
+                db,
+                m,
                 {
                     **previous,
                     "seq": m.tick,
+                    "simulation_seconds": m.tick * STEP_SECONDS,
+                    "ground_speed_mps": 0,
                     "flight_mode": "paused",
                     "mode": "simulation",
                     "gps_quality": "simulated-degraded"
@@ -336,15 +348,13 @@ def advance(db, m, limit=600):
                     "motor_health": "simulated-fault"
                     if m.scenario == "aircraft_fault"
                     else "illustrative-nominal",
-                }
+                },
+                limit,
             )
             return
     telemetry = sample(m, a, previous)
     a.battery = telemetry["battery_percent"]
-    m.last_telemetry = j(telemetry)
-    observation = Telemetry(tenant_id=m.tenant_id, mission_id=m.id, seq=m.tick, payload=j(telemetry))
-    db.add(observation)
-    db.execute(delete(Telemetry).where(Telemetry.mission_id == m.id, Telemetry.seq <= m.tick - limit))
+    observation = record_telemetry(db, m, telemetry, limit)
     target = None
     if m.state == "taking_off" and m.phase_tick >= 3:
         target = "outbound"

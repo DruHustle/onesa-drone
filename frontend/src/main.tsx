@@ -115,7 +115,10 @@ function App() {
     [night, setNight] = useState(false),
     [weather, setWeather] = useState(false),
     [view, setView] = useState("orbit"),
-    [history, setHistory] = useState<History | null>(null),
+    [historyState, setHistory] = useState<{
+      mission_id: string;
+      value: History;
+    } | null>(null),
     [replay, setReplay] = useState<number | null>(null),
     [playing, setPlaying] = useState(false);
   const [inspectedAircraft, setInspectedAircraft] = useState<Aircraft | null>(
@@ -136,7 +139,13 @@ function App() {
     data.missions.find((m) => !terminal.includes(m.state)) ||
     data.missions[0];
   const aircraft = data.aircraft.find((a) => a.id === flight?.aircraft_id);
-  useEffect(() => setRouteIndex(0), [flight?.id]);
+  const history =
+    historyState?.mission_id === flight?.id ? historyState?.value : null;
+  useEffect(() => {
+    setRouteIndex(0);
+    setReplay(null);
+    setPlaying(false);
+  }, [flight?.id]);
   const mounted = useRef(true);
   const currentAction = useRef(0);
   const resetWorkspace = useCallback(() => {
@@ -304,9 +313,11 @@ function App() {
     let cancelled = false;
     void api<History>(`/missions/${flight.id}/history`)
       .then((h) => {
-        if (!cancelled) setHistory(h);
+        if (!cancelled) setHistory({ mission_id: flight.id, value: h });
       })
-      .catch((e) => setNotice(e.message));
+      .catch((e) => {
+        if (!cancelled) setNotice(e.message);
+      });
     return () => {
       cancelled = true;
     };
