@@ -503,6 +503,7 @@ function App() {
           >
             <option value="orbit">Orbit</option>
             <option value="inspect">Aircraft inspection</option>
+            <option value="environment">NVIDIA environment models</option>
             <option value="follow">Follow aircraft</option>
             <option value="first-person">First person</option>
           </select>
