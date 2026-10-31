@@ -31,7 +31,10 @@ def legacy_text(raw):
         if len(events) != 1:
             raise CompletionError()
         event = events[0]
-        value = json.loads(data)
+        try:
+            value = json.loads(data)
+        except (ValueError, RecursionError):
+            raise CompletionError() from None
         if not isinstance(value, dict) or event in {"error", "message_cancelled"}:
             raise CompletionError()
         if event == "content_delta":

@@ -23,13 +23,16 @@ the explicit local summary without contacting either provider. Known provider/mo
 revision/usage remain attached to each result, without claiming unknown token counts.
 
 This transport is a reviewed source copy of AI Platform `app/consumer.py`, SHA256
-`7b0e0b5c60a2a36b03a5e91a9ff386383e47097029a10d941634fd6637fac6a3`.
+`48ff4e7f5a48deb46385a5ae8239cd5bea50c55e227846846ff6666829f98378`.
 Builds use only local bytes and locked httpx; no sibling package or shared runtime is
 imported. Updates need a new inspected copy/hash, independent checks and rollback.
 
 The portable records are a bounded list of `{role, content}` messages and a complete
 text result with provenance. Unsupported tool calls, truncation, malformed JSON,
-oversize responses and failed streams do not become advice. The 25-second total
+oversize responses, excessive JSON nesting and failed streams do not become advice.
+Malformed or excessively nested JSON in both portable responses and legacy stream
+records returns the explicit unavailable-provider summary without exposing the body.
+The 25-second total
 budget includes connection and response reads. Failure returns the clearly labelled
 existing local summary; it never sends data to another AI provider. Names, routes,
 recipient tokens and user identifiers are omitted from the operational context.

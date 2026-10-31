@@ -10,6 +10,7 @@ import {
 } from "react";
 import { createRoot } from "react-dom/client";
 import { api, setCSRF, SessionChangedError } from "./api";
+import FlightPlanPreview from "./FlightPlanPreview";
 import type {
   Aircraft,
   Mission,
@@ -31,6 +32,7 @@ const groups = [
     "Mission control",
     "Delivery management",
     "Route planning",
+    "Flight plans",
     "Live telemetry",
   ],
   ["SIMULATION", "3D simulator", "Digital twins", "Scenarios"],
@@ -1629,6 +1631,9 @@ function App() {
               </div>
             </>
           )}
+          {page === "Flight plans" && (
+            <FlightPlanPreview key={`${user.id}:${user.tenant_id}`} />
+          )}
           {page === "Infrastructure monitor" && extra && (
             <>
               <div className="service-list">
@@ -2386,6 +2391,7 @@ const subtitles: Record<string, string> = {
     "Coordinate package requests and simulated delivery outcomes.",
   "Route planning":
     "Deterministic routing within explicit virtual constraints.",
+  "Flight plans": "Inspect controller plan files in a command-free workspace.",
   "Live telemetry":
     "Trace simulation observations and recorded mission history.",
   "3D simulator":
