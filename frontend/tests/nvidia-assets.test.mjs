@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { Box3, Vector3 } from "three";
 import {
   referenceAssets,
+  referenceUrl,
   validateReferenceGLB,
   loadReferenceAsset,
   disposeReferenceObject,
@@ -44,8 +45,9 @@ for (const asset of referenceAssets) {
     const bytes = await readFile(local(asset.glb.path));
     t.mock.method(globalThis, "fetch", async (url, init) => {
       assert.equal(url, `/models/nvidia/${asset.glb.path}`);
-      assert.equal(init.credentials, "omit");
+      assert.equal(init.credentials, "same-origin");
       assert.equal(init.redirect, "error");
+      assert.equal(init.headers, undefined);
       return new Response(bytes);
     });
     const model = await loadReferenceAsset(asset, new AbortController().signal);
@@ -98,6 +100,29 @@ test("an aborted request cannot finish a late parse", async (t) => {
   await assert.rejects(loadReferenceAsset(asset, controller.signal), {
     name: "AbortError",
   });
+});
+
+test("only catalogued relative paths can receive same-origin preview cookies", async (t) => {
+  let requests = 0;
+  t.mock.method(globalThis, "fetch", async () => {
+    requests++;
+    throw new Error("Unreviewed paths must fail before requesting");
+  });
+  for (const path of [
+    "https://outside.invalid/model.glb",
+    "//outside.invalid/model.glb",
+    "../../api/v1/private",
+    "%2e%2e/%2e%2e/private",
+    referenceAssets[0].glb.path + "?redirect=outside",
+    referenceAssets[0].glb.path + "#fragment",
+    "nvidia-transfer-conveyor/unreviewed.glb",
+  ]) {
+    assert.throws(() => referenceUrl(path), /Unreviewed reference file/);
+    await assert.rejects(loadReferenceAsset({
+      ...referenceAssets[0], glb: { ...referenceAssets[0].glb, path },
+    }, new AbortController().signal), /Unreviewed reference file/);
+  }
+  assert.equal(requests, 0);
 });
 
 test("the static reference profile rejects remote files, extensions and animation", () => {

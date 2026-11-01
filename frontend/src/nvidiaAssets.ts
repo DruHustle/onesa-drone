@@ -4,7 +4,13 @@ import manifest from "./nvidia-manifest.json" with { type: "json" };
 
 export const referenceAssets = manifest.assets;
 export type ReferenceAsset = (typeof referenceAssets)[number];
-export const referenceUrl = (path: string) => `/models/nvidia/${path}`;
+const referencePaths = new Set(referenceAssets.flatMap((asset) => [
+  asset.glb.path, asset.thumbnail.path, asset.licenseFile.path, asset.sourceFile.path,
+]));
+export const referenceUrl = (path: string) => {
+  if (!referencePaths.has(path)) throw new Error("Unreviewed reference file");
+  return "/models/nvidia/" + path;
+};
 
 /** Only the checked, embedded static GLBs from the bundled catalogue are accepted. */
 export function validateReferenceGLB(bytes: ArrayBuffer) {
@@ -42,7 +48,7 @@ export async function loadReferenceAsset(
 ) {
   const response = await fetch(referenceUrl(asset.glb.path), {
     signal,
-    credentials: "omit",
+    credentials: "same-origin",
     redirect: "error",
   });
   if (!response.ok || !response.body)

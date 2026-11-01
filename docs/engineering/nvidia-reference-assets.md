@@ -32,8 +32,10 @@ is retained in frontend/package-lock.json. The notice's SHA-256 is
 
 The three compact GLBs total 3,874,632 bytes and 87,251 triangles. Their reviewed
 files have no external resource URIs, extensions, animation, skins or active content.
-Each runtime fetch omits credentials, refuses redirects, has a 15-second deadline,
-stops at the exact declared size and verifies SHA-256 before parsing. A damaged or
+Each model fetch accepts only an exact catalogued relative path and uses same-origin
+browser cookies so an authenticated preview can serve it. No application
+authorization header is added. Fetches refuse redirects, have a 15-second deadline,
+stop at the exact declared size and verify SHA-256 before parsing. A damaged or
 unavailable model cannot silently replace the pinned reference.
 
 ## Rendering and operational boundaries
