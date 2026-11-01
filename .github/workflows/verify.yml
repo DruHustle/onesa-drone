@@ -61,6 +61,8 @@ jobs:
           npm --prefix frontend run build
           npm --prefix frontend audit --audit-level=high
           .venv311/bin/python -m pip_audit -r backend/requirements.lock --no-deps --disable-pip
+      - name: 'Release requirement: Verify built frontend package'
+        run: node scripts/check_frontend_release_package.mjs
       - name: Browser acceptance
         run: |
           cd frontend

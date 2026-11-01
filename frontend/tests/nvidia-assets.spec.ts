@@ -31,11 +31,37 @@ async function disableGraphics(page: Page) {
   });
 }
 
-test("NVIDIA models load automatically, render and disclose provenance without mission writes", async ({
+test("cookie-protected previews load NVIDIA models automatically without mission writes", async ({
   page,
+  context,
+  baseURL,
 }) => {
   const writes: string[] = [],
     errors: string[] = [];
+  const modelRequests: { path: string; authorized: boolean }[] = [];
+  const previewCookie = "onesa_nvidia_preview_fixture=synthetic-preview-only";
+  await context.addCookies([{
+    name: "onesa_nvidia_preview_fixture",
+    value: "synthetic-preview-only",
+    url: baseURL!,
+    httpOnly: true,
+    sameSite: "Lax",
+  }]);
+  await page.route("**/models/nvidia/**/*.glb", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    expect(url.origin).toBe(new URL(baseURL!).origin);
+    const headers = await request.allHeaders();
+    expect(headers.authorization).toBeUndefined();
+    const authorized = (headers.cookie || "")
+      .split(";").some((part) => part.trim() === previewCookie);
+    modelRequests.push({ path: url.pathname, authorized });
+    if (!authorized) {
+      await route.fulfill({ status: 401, body: "Synthetic preview cookie required" });
+      return;
+    }
+    await route.continue();
+  });
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("request", (request) => {
     if (["POST", "PUT", "PATCH", "DELETE"].includes(request.method()))
@@ -71,6 +97,8 @@ test("NVIDIA models load automatically, render and disclose provenance without m
     expect((await canvas.screenshot()).equals(before)).toBe(false);
   }).toPass();
   expect(writes).toEqual(["/api/v1/auth/login"]);
+  expect(new Set(modelRequests.map((request) => request.path)).size).toBe(3);
+  expect(modelRequests.every((request) => request.authorized)).toBe(true);
   expect(errors).toEqual([]);
 });
 
