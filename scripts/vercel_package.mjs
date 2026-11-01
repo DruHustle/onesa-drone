@@ -6,9 +6,10 @@ import {
   copyFile,
   lstat,
 } from "node:fs/promises";
-import { resolve, relative, join, extname } from "node:path";
+import { resolve, relative, join, extname, sep } from "node:path";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
+import { requiredPublicFiles, assertPinnedBytes } from "./frontend_asset_policy.mjs";
 
 const origins = {
   staging: "https://drone-api-staging.onesa.eu",
@@ -61,10 +62,13 @@ export async function packageVercel({
       "Source and release output must be independent directories",
     );
   const files = [];
+  const required = await requiredPublicFiles();
+  const observed = new Set();
   let bytes = 0;
   async function walk(folder) {
     for (const entry of await readdir(folder, { withFileTypes: true })) {
       const path = join(folder, entry.name);
+      const name = relative(dist, path).split(sep).join("/");
       const stat = await lstat(path);
       if (entry.name.startsWith(".") || stat.isSymbolicLink())
         throw new Error(
@@ -76,17 +80,25 @@ export async function packageVercel({
       }
       if (
         !stat.isFile() ||
-        !allowed.has(extname(entry.name)) ||
+        (name.startsWith("models/nvidia/") && !required.has(name)) ||
+        (!allowed.has(extname(entry.name)) && !required.has(name)) ||
         stat.size > 10 * 1024 * 1024
       )
         throw new Error("Unexpected or oversized frontend artifact");
+      const expected = required.get(name);
+      if (expected) {
+        assertPinnedBytes(name, await readFile(path), expected);
+        observed.add(name);
+      }
       bytes += stat.size;
-      files.push({ path, name: relative(dist, path) });
+      files.push({ path, name });
       if (files.length > 1000 || bytes > 30 * 1024 * 1024)
         throw new Error("Frontend artifact exceeds bounded release size");
     }
   }
   await walk(dist);
+  if (observed.size !== required.size)
+    throw new Error("Required pinned public artifacts are missing");
   if (
     !files.some((file) => file.name === "index.html") ||
     !files.some((file) => file.name.endsWith(".js"))
@@ -110,7 +122,10 @@ export async function packageVercel({
     const target = join(staticPath, file.name);
     await mkdir(resolve(target, ".."), { recursive: true });
     await copyFile(file.path, target);
-    manifest.files[file.name] = sha(await readFile(target));
+    const copied = await readFile(target);
+    const expected = required.get(file.name);
+    if (expected) assertPinnedBytes(file.name, copied, expected);
+    manifest.files[file.name] = sha(copied);
   }
   const config = {
     version: 3,

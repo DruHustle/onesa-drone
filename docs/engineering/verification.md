@@ -1,5 +1,32 @@
 # Verification scope and release gates
 
+## Built release package audit — 31 October 2026
+
+The follow-up review of dev d66f0af exercised the actual built frontend through
+the controlled Vercel packager. Its original suffix policy rejected the seven
+new JSON/GLB files; the emitted JavaScript also lacked the complete Three.js MIT
+notice. Earlier packager fixtures contained only HTML and JavaScript.
+
+The correction requires the trusted catalogue's thirteen NVIDIA files and the
+exact renderer notice, validates pinned source bytes before output creation, and
+rechecks copied target bytes before producing the release manifest. Only the exact
+reviewed NVIDIA JSON/GLB paths are eligible. Existing hidden-file, symlink, source/
+environment identity, per-file and aggregate size restrictions remain enforced.
+The production build verifies the notice against the pinned installed package.
+
+Local verification passed all 28 packaging/transport cases, 47 release/custody
+cases and 12 frontend session/asset cases, plus the TypeScript production build
+and notice check. The new actual-build regression packaged 19 files totalling
+5,640,218 bytes, compared every delivered byte/hash with the build, and verified
+all thirteen NVIDIA files and the full installed Three.js notice. Missing and
+same-length corrupted references, arbitrary JSON/GLB files, unknown NVIDIA files
+and oversized JavaScript are explicitly refused.
+
+The actual-build packaging regression is now a mandatory named CI release step.
+This working-source result requires fresh exact-source CI and the existing hosted
+staging/release gates before main or production promotion. Synthetic package
+metadata grants no provider authority or hosted acceptance.
+
 ## NVIDIA reference environment — 31 October 2026
 
 The development change based on `340d14e` adds three independently packaged NVIDIA
