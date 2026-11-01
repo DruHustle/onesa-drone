@@ -28,6 +28,9 @@ PostgreSQL. See docs/architecture/decisions.md and docs/engineering/local-develo
 - Durable tenant-scoped mission/event/audit/telemetry records; private recipient tracking.
 - Procedural Three.js campus, animated aircraft, cameras, day/night/weather visuals,
   low-power rendering and command-free recorded replay.
+- Automatically loaded NVIDIA conveyor, cart and warehouse-rack reference models,
+  with an inspection camera, static previews, source attribution and graphics recovery.
+  The local derivatives add visual detail only; they do not validate flight physics.
 - Read-only operational assistant, analytics, incidents and service health observations.
 - Offline QGroundControl flight-plan inspection with an explicit PX4/ArduPilot
   navigation subset, local geometry and virtual-policy findings. No device commands.

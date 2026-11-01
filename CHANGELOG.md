@@ -16,6 +16,13 @@
 
 ## Unreleased — 0.1 simulation implementation
 
+- Add three locally hosted NVIDIA SimReady environment references from pinned
+  revision `4763fbfaa4f8e97658e68b57d01b4c86659e08b5`, retaining CC BY 4.0 attribution,
+  original provenance and rendered previews. Bounded downloads verify size and
+  SHA-256 before a static-only GLTF parse. A dedicated environment camera, keyboard
+  pan, retry, no-WebGL previews and graphics-context recovery preserve mission use.
+  These scene props have no connection to flight planning, telemetry or actuation.
+- Dispose replaced route-zone geometry and reference resources when scenes close.
 - Add a read-only QGroundControl plan preview for a bounded PX4/ArduPilot multirotor
   subset. Preserve source identity and navigation parameters, report virtual-policy
   conflicts, and reject unsupported frames, commands, fences and malformed files.
