@@ -3,6 +3,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type FormEvent,
@@ -106,6 +107,9 @@ function App() {
     [busy, setBusy] = useState(false),
     [connection, setConnection] = useState("connecting"),
     [mobile, setMobile] = useState(false),
+    [compactNavigation, setCompactNavigation] = useState(
+      () => matchMedia("(max-width: 850px)").matches,
+    ),
     [modal, setModal] = useState<"aircraft" | "delivery" | null>(null),
     [edit, setEdit] = useState<Aircraft | null>(null),
     [track, setTrack] = useState("");
@@ -131,6 +135,57 @@ function App() {
       value: DispatchPreview;
     } | null>(null),
     [routeIndex, setRouteIndex] = useState(0);
+  const navigationDialog = useRef<HTMLDialogElement>(null);
+  const desktopNavigation = useRef<HTMLElement>(null);
+  const navigationToggle = useRef<HTMLButtonElement>(null);
+  const navigationClose = useRef<HTMLButtonElement>(null);
+  const pageHeading = useRef<HTMLHeadingElement>(null);
+  const navigationDestination = useRef(false);
+  const navigationResizeFocus = useRef<"toggle" | "current" | null>(null);
+  useEffect(() => {
+    const query = matchMedia("(max-width: 850px)");
+    const change = () => {
+      const active = document.activeElement;
+      if (
+        active &&
+        (navigationDialog.current?.contains(active) ||
+          desktopNavigation.current?.contains(active) ||
+          active === navigationToggle.current)
+      )
+        navigationResizeFocus.current = query.matches ? "toggle" : "current";
+      setCompactNavigation(query.matches);
+      setMobile(false);
+    };
+    query.addEventListener("change", change);
+    return () => query.removeEventListener("change", change);
+  }, []);
+  useLayoutEffect(() => {
+    const dialog = navigationDialog.current;
+    const previousOverflow = document.body.style.overflow;
+    const open = compactNavigation && mobile && !!dialog;
+    if (open) {
+      dialog.showModal();
+      navigationClose.current?.focus({ preventScroll: true });
+      document.body.style.overflow = "hidden";
+    } else if (navigationDestination.current) {
+      navigationDestination.current = false;
+      pageHeading.current?.focus({ preventScroll: true });
+    }
+    if (navigationResizeFocus.current) {
+      const target =
+        navigationResizeFocus.current === "toggle"
+          ? navigationToggle.current
+          : desktopNavigation.current?.querySelector<HTMLButtonElement>(
+              '[aria-current="page"]',
+            );
+      target?.focus({ preventScroll: true });
+      navigationResizeFocus.current = null;
+    }
+    return () => {
+      dialog?.close();
+      if (open) document.body.style.overflow = previousOverflow;
+    };
+  }, [compactNavigation, mobile, user?.id]);
   const dispatch =
     dispatchState?.user_id === user?.id ? dispatchState?.value : null;
   const extra = extraState?.page === page ? extraState.value : null;
@@ -179,6 +234,7 @@ function App() {
     setPlaying(false);
     setRouteIndex(0);
     setConnection("connecting");
+    setMobile(false);
   }, []);
   const run = useCallback(async (fn: () => Promise<unknown>) => {
     const action = ++currentAction.current;
@@ -339,6 +395,7 @@ function App() {
     return () => clearInterval(timer);
   }, [playing, history]);
   const navigate = (p: string) => {
+    navigationDestination.current = compactNavigation && mobile;
     setPage(p);
     setMobile(false);
     setNotice("");
@@ -557,12 +614,9 @@ function App() {
   const telemetry =
     flight &&
     (replay !== null ? history?.telemetry[replay] : flight.last_telemetry);
-  return (
-    <div className="app">
-      <a className="skip-link" href="#main">
-        Skip to operations
-      </a>
-      <aside className={mobile ? "sidebar open" : "sidebar"}>
+  const navigation = (
+    <>
+      <div className="sidebar-heading">
         <a
           href="#dashboard"
           className="wordmark"
@@ -570,56 +624,145 @@ function App() {
         >
           ONESA <small>DRONE</small>
         </a>
-        <div className="workspace">
-          <span className="workspace-symbol">O</span>
-          <div>
-            Simulation workspace<small>{user.role} access</small>
-          </div>
-          <span aria-hidden="true">⌄</span>
-        </div>
-        <nav aria-label="Main navigation">
-          {groups.map(([group, ...items]) => (
-            <details key={group} open>
-              <summary>{group}</summary>
-              {items.map((item) => (
-                <button
-                  className={page === item ? "nav-item current" : "nav-item"}
-                  key={item}
-                  onClick={() => navigate(item)}
-                  aria-current={page === item ? "page" : undefined}
-                >
-                  <Icon name={item} />
-                  {item}
-                </button>
-              ))}
-            </details>
-          ))}
-        </nav>
-        <div className="sidebar-foot">
-          <span className="simulation-dot" /> Simulation mode
-          <small>Physical flight disabled</small>
+        {compactNavigation && (
           <button
-            className="quiet"
-            onClick={() =>
-              void run(async () => {
-                await api("/auth/logout", "POST", {});
-                setCSRF("");
-                resetWorkspace();
-                setUser(null);
-              })
-            }
+            ref={navigationClose}
+            type="button"
+            className="navigation-close"
+            aria-label="Close navigation"
+            onClick={() => setMobile(false)}
           >
-            Sign out
+            <span aria-hidden="true">×</span>
           </button>
+        )}
+      </div>
+      <div className="workspace">
+        <span className="workspace-symbol">O</span>
+        <div>
+          Simulation workspace<small>{user.role} access</small>
         </div>
-      </aside>
+        <span aria-hidden="true">⌄</span>
+      </div>
+      <nav aria-label="Main navigation">
+        {groups.map(([group, ...items]) => (
+          <details key={group} open>
+            <summary>{group}</summary>
+            {items.map((item) => (
+              <button
+                className={page === item ? "nav-item current" : "nav-item"}
+                key={item}
+                onClick={() => navigate(item)}
+                aria-current={page === item ? "page" : undefined}
+              >
+                <Icon name={item} />
+                {item}
+              </button>
+            ))}
+          </details>
+        ))}
+      </nav>
+      <div className="sidebar-foot">
+        <span className="simulation-dot" /> Simulation mode
+        <small>Physical flight disabled</small>
+        <button
+          className="quiet"
+          onClick={() =>
+            void run(async () => {
+              await api("/auth/logout", "POST", {});
+              setCSRF("");
+              resetWorkspace();
+              setUser(null);
+            })
+          }
+        >
+          Sign out
+        </button>
+      </div>
+    </>
+  );
+  return (
+    <div className="app">
+      <a className="skip-link" href="#main">
+        Skip to operations
+      </a>
+      {compactNavigation ? (
+        <dialog
+          ref={navigationDialog}
+          id="workspace-navigation"
+          className="sidebar navigation-drawer"
+          aria-label="Workspace navigation"
+          aria-modal="true"
+          inert={!mobile}
+          onCancel={(event) => {
+            event.preventDefault();
+            setMobile(false);
+          }}
+          onClose={(event) => {
+            if (!event.currentTarget.open) setMobile(false);
+          }}
+          onKeyDown={(event) => {
+            if (
+              event.key !== "Tab" ||
+              event.altKey ||
+              event.ctrlKey ||
+              event.metaKey
+            )
+              return;
+            const controls = Array.from(
+              event.currentTarget.querySelectorAll<HTMLElement>(
+                'a[href], button:not(:disabled), summary, [tabindex]:not([tabindex="-1"])',
+              ),
+            ).filter(
+              (node) =>
+                node.tabIndex >= 0 &&
+                !node.matches(":disabled") &&
+                !node.closest("[hidden], [inert]") &&
+                getComputedStyle(node).visibility === "visible" &&
+                node.getClientRects().length > 0,
+            );
+            const first = controls[0];
+            const last = controls.at(-1);
+            if (
+              (event.shiftKey && document.activeElement === first) ||
+              (!event.shiftKey && document.activeElement === last)
+            ) {
+              event.preventDefault();
+              (event.shiftKey ? last : first)?.focus();
+            }
+          }}
+          onClick={(event) => {
+            if (event.target !== event.currentTarget) return;
+            const bounds = event.currentTarget.getBoundingClientRect();
+            if (
+              event.clientX < bounds.left ||
+              event.clientX > bounds.right ||
+              event.clientY < bounds.top ||
+              event.clientY > bounds.bottom
+            )
+              setMobile(false);
+          }}
+        >
+          {navigation}
+        </dialog>
+      ) : (
+        <aside
+          ref={desktopNavigation}
+          id="workspace-navigation"
+          className="sidebar"
+        >
+          {navigation}
+        </aside>
+      )}
       <div className="main-shell">
         <header className="topbar">
           <button
+            ref={navigationToggle}
             className="menu"
             aria-label="Toggle navigation"
-            aria-expanded={mobile}
-            onClick={() => setMobile(!mobile)}
+            aria-controls="workspace-navigation"
+            aria-haspopup="dialog"
+            aria-expanded={compactNavigation && mobile}
+            onClick={() => setMobile((value) => !value)}
           >
             ☰
           </button>
@@ -644,7 +787,9 @@ function App() {
           <div className="page-heading">
             <div>
               <p className="eyebrow">ONESA DRONE / SIMULATION OPERATIONS</p>
-              <h1>{page === "Dashboard" ? "Mission overview" : page}</h1>
+              <h1 ref={pageHeading} tabIndex={-1}>
+                {page === "Dashboard" ? "Mission overview" : page}
+              </h1>
               <p>
                 {page === "Dashboard"
                   ? "A clear view of your aerial logistics operations."
