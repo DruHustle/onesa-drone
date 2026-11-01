@@ -221,7 +221,11 @@ input[type="range"] {
   flex-direction: column;
   z-index: 20;
 }
-.sidebar > .wordmark {
+.sidebar-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   margin: 0 10px 28px;
 }
 .workspace {
@@ -252,6 +256,7 @@ input[type="range"] {
 }
 .sidebar nav {
   overflow: auto;
+  min-height: 0;
   flex: 1;
   scrollbar-width: thin;
 }
@@ -1241,21 +1246,54 @@ dialog > .actions {
   :root {
     --scene-height: 350px;
   }
-  .sidebar {
-    width: 220px;
-    transform: translateX(-100%);
-    transition: transform 0.2s;
-  }
-  .sidebar.open {
-    transform: translateX(0);
+  .sidebar.navigation-drawer {
+    width: min(320px, calc(100vw - 48px));
+    max-width: none;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: 0;
+    padding: 16px 18px 20px;
+    border: 0;
+    border-right: 1px solid var(--onesa-divider);
+    border-radius: 0;
+    color: var(--onesa-text);
+    overscroll-behavior: contain;
     box-shadow: 10px 0 50px #0005;
+  }
+  .navigation-drawer:not([open]) {
+    display: none;
+  }
+  .navigation-drawer::backdrop {
+    background: #0008;
+    backdrop-filter: none;
+  }
+  .sidebar-heading {
+    margin: 0 0 16px;
+  }
+  .navigation-close {
+    flex: 0 0 var(--onesa-control-size);
+    width: var(--onesa-control-size);
+    height: var(--onesa-control-size);
+    padding: 0;
+    font-size: 24px;
+  }
+  .navigation-drawer :is(.wordmark, summary, .nav-item, .sidebar-foot button) {
+    min-height: var(--onesa-control-size);
+  }
+  .navigation-drawer summary {
+    align-items: center;
+  }
+  .navigation-drawer nav {
+    overscroll-behavior: contain;
   }
   .main-shell {
     margin-left: 0;
   }
   .menu {
     display: block;
-    min-height: 36px;
+    min-height: var(--onesa-control-size);
+    min-width: var(--onesa-control-size);
+    flex-shrink: 0;
     border: 0;
     padding: 4px 8px;
     background: transparent;
