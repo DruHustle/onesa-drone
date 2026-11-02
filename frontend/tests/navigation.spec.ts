@@ -114,8 +114,8 @@ test("closed mobile navigation is absent from keyboard and accessibility navigat
     // invariant, and report the actual target/bounds if it never becomes usable.
     await expect
       .poll(
-        () =>
-          page.evaluate(() => {
+        async () => {
+          const state = await page.evaluate(() => {
             const active = document.activeElement;
             if (!active || active === document.body)
               return { outsideNavigation: true, fullyVisible: true };
@@ -130,12 +130,59 @@ test("closed mobile navigation is absent from keyboard and accessibility navigat
                 rect.top >= 0 &&
                 rect.bottom <= innerHeight,
             };
-          }),
+          });
+          return state.outsideNavigation && state.fullyVisible
+            ? "visible"
+            : JSON.stringify(state);
+        },
         {
           message: `Tab stop ${i + 1} must stay visible outside closed navigation`,
         },
       )
-      .toMatchObject({ outsideNavigation: true, fullyVisible: true });
+      .toBe("visible");
+  }
+});
+
+test("focused camera controls stay visible when the delayed scene becomes a fallback", async ({
+  page,
+}) => {
+  let releaseScene!: () => void;
+  const sceneReady = new Promise<void>((resolve) => {
+    releaseScene = resolve;
+  });
+  await page.route("**/src/DroneScene.tsx*", async (route) => {
+    await sceneReady;
+    await route.continue();
+  });
+  try {
+    await workspace(page);
+    await expect(
+      page.getByText("Loading lightweight 3D campus…"),
+    ).toBeVisible();
+    const camera = page.getByLabel("Camera", { exact: true });
+    for (let i = 0; i < 6; i++) await page.keyboard.press("Tab");
+    await expect(camera).toBeFocused();
+    // Some browsers reveal the next tab stop at the bottom edge. A late scene
+    // must not move its already-focused controls below that visible edge.
+    await camera.evaluate((node) => {
+      node.scrollIntoView({ block: "end" });
+      window.scrollBy(0, 8);
+    });
+    const before = await camera.boundingBox();
+    expect(before!.y + before!.height).toBeLessThanOrEqual(844);
+    releaseScene();
+    await expect(page.getByTestId("reference-status")).toHaveText(
+      "Static model previews",
+    );
+    await expect(camera).toBeFocused();
+    await expect
+      .poll(async () => {
+        const bounds = await camera.boundingBox();
+        return bounds ? bounds.y + bounds.height : Infinity;
+      })
+      .toBeLessThanOrEqual(844);
+  } finally {
+    releaseScene();
   }
 });
 

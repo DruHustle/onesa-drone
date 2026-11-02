@@ -614,31 +614,6 @@ function App() {
   );
   const scene = (
     <div className="visual">
-      <Suspense
-        fallback={
-          <div className="scene-loading">Loading lightweight 3D campus…</div>
-        }
-      >
-        <DroneScene
-          mission={page === "Digital twins" ? undefined : flight}
-          sample={replay !== null ? history?.telemetry[replay] : undefined}
-          lowPower={lowPower}
-          night={night}
-          weather={weather}
-          view={view}
-          category={
-            page === "Digital twins"
-              ? inspectedAircraft?.category
-              : aircraft?.category
-          }
-        />
-      </Suspense>
-      <div className="visual-top">
-        <Badge
-          state={replay !== null ? "replay" : flight?.state || "standby"}
-        />
-        <span>VIRTUAL AIRSPACE / {prefs.region.toUpperCase()}</span>
-      </div>
       <div className="scene-controls">
         <label>
           Camera
@@ -678,6 +653,33 @@ function App() {
           />{" "}
           Low power
         </label>
+      </div>
+      <div className="scene-view">
+        <Suspense
+          fallback={
+            <div className="scene-loading">Loading lightweight 3D campus…</div>
+          }
+        >
+          <DroneScene
+            mission={page === "Digital twins" ? undefined : flight}
+            sample={replay !== null ? history?.telemetry[replay] : undefined}
+            lowPower={lowPower}
+            night={night}
+            weather={weather}
+            view={view}
+            category={
+              page === "Digital twins"
+                ? inspectedAircraft?.category
+                : aircraft?.category
+            }
+          />
+        </Suspense>
+        <div className="visual-top">
+          <Badge
+            state={replay !== null ? "replay" : flight?.state || "standby"}
+          />
+          <span>VIRTUAL AIRSPACE / {prefs.region.toUpperCase()}</span>
+        </div>
       </div>
     </div>
   );

@@ -515,6 +515,7 @@ main#main {
   overflow: hidden;
   background: #bdd2d6;
 }
+.scene-view,
 .scene-shell {
   position: relative;
 }
