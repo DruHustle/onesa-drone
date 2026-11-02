@@ -99,9 +99,15 @@ export type User = {
   id: string;
   email: string;
   role: string;
-  tenant_id: string;
+  tenant_id: string | null;
   csrf: string;
+  identity_managed?: boolean;
+  global_admin?: boolean;
+  account_url?: string;
+  access_url?: string;
+  name?: string;
 };
+export type Workspace = { id: string; name: string; role: string };
 export type History = {
   events: {
     id: string;

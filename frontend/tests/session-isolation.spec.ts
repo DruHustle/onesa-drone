@@ -58,6 +58,8 @@ async function syntheticSessions(page: Page) {
         case "/api/v1/auth/logout":
           session = "";
           return json({ ok: true });
+        case "/api/v1/auth/config":
+          return json({ shared_account: false });
         case "/api/v1/auth/me":
           return json({ detail: "Sign in required" }, 401);
         case "/api/v1/operations":

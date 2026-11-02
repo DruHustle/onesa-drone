@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from uuid import uuid4
 from fastapi import FastAPI, Request, Response, HTTPException, Depends, Header
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import StreamingResponse, JSONResponse, RedirectResponse
 from sqlalchemy import select, func, text
 from sqlalchemy.exc import SQLAlchemyError
 from .monitoring import Hysteresis
@@ -19,6 +19,15 @@ from .config import Settings
 from .db import Store
 from .models import Tenant, User, Session, Aircraft, Mission, MissionEvent, Audit, Telemetry, Incident
 from .security import digest, password_hash, password_valid, Limiter, DUMMY_HASH, HASH_PREFIX
+from . import onesa_identity as identity_protocol
+from .identity import (
+    IdentityService,
+    IdentitySession,
+    public_account,
+    TRANSACTION_COOKIE,
+    TRANSACTION_COOKIE_PATH,
+    TRANSACTION_SECONDS,
+)
 from .schemas import (
     Login,
     AircraftIn,
@@ -31,6 +40,8 @@ from .schemas import (
     UserIn,
     IncidentIn,
     IncidentUpdate,
+    IdentityStart,
+    WorkspaceSelection,
 )
 from .service import (
     j,
@@ -55,7 +66,8 @@ log = logging.getLogger("onesa.drone")
 def create_app(settings=None):
     cfg = settings or Settings()
     cfg.validate()
-    store = Store(cfg.database_url)
+    store = Store(cfg.database_url, identity_enabled=cfg.identity_enabled)
+    identity_service = IdentityService(cfg, store) if cfg.identity_enabled else None
     limiter = Limiter()
     worker_monitor = Hysteresis()
     wake = asyncio.Event()
@@ -141,6 +153,11 @@ def create_app(settings=None):
     app.state.store = store
     app.state.settings = cfg
     app.state.health = health
+    app.state.identity = identity_service
+
+    @app.exception_handler(identity_protocol.IdentityError)
+    async def identity_error(request, error):
+        return JSONResponse({"detail": error.message, "code": error.code}, error.status)
 
     @app.middleware("http")
     async def boundary(request, call_next):
@@ -197,6 +214,13 @@ def create_app(settings=None):
 
     def auth(request: Request):
         token = request.cookies.get("drone_session", "")
+        if identity_service:
+            account = identity_service.authenticate(token)
+            if request.method not in {"GET", "HEAD"}:
+                origin(request)
+                if not secrets.compare_digest(request.headers.get("x-csrf-token", ""), account["csrf"]):
+                    raise HTTPException(403, "CSRF validation failed")
+            return account
         with store.session() as db:
             s = db.get(Session, digest(token)) if token else None
             u = db.get(User, s.user_id) if s and s.expires > time.time() else None
@@ -215,14 +239,21 @@ def create_app(settings=None):
                 "expires": s.expires,
             }
 
-    def operator(a=Depends(auth)):
+    def workspace(a=Depends(auth)):
+        if not a["tenant_id"]:
+            raise HTTPException(409, "Choose a workspace to continue")
+        return a
+
+    def operator(a=Depends(workspace)):
         if a["role"] not in {"operator", "admin"}:
             raise HTTPException(403, "Operator role required")
         return a
 
-    def admin(a=Depends(auth)):
+    def admin(request: Request, a=Depends(workspace)):
         if a["role"] != "admin":
             raise HTTPException(403, "Administrator role required")
+        if identity_service and request.method not in {"GET", "HEAD"}:
+            identity_service.require_fresh(a["_identity"])
         return a
 
     def key(value: str = Header(alias="Idempotency-Key")):
@@ -274,6 +305,8 @@ def create_app(settings=None):
     @app.post("/api/v1/auth/login")
     def login(data: Login, request: Request, response: Response):
         origin(request)
+        if identity_service:
+            raise HTTPException(409, "Use your shared Onesa account to sign in")
         limiter.check("login:" + ((request.client.host if request.client else "") + data.email.lower()), 6)
         limiter.check("login-peer:" + (request.client.host if request.client else "unknown"), 12)
         limiter.check("login-account:" + digest(data.email.strip().lower()), 6)
@@ -313,10 +346,172 @@ def create_app(settings=None):
 
     @app.get("/api/v1/auth/me")
     def me(a=Depends(auth)):
-        return a
+        return public_account(a)
+
+    @app.get("/api/v1/auth/config")
+    def auth_config():
+        return {"shared_account": bool(identity_service)}
+
+    @app.post("/api/v1/auth/identity/start")
+    def identity_start(data: IdentityStart, request: Request, response: Response):
+        origin(request)
+        if not identity_service:
+            raise HTTPException(404, "Shared sign-in is not configured")
+        limiter.check("identity-login:" + (request.client.host if request.client else "unknown"), 12)
+        previous = auth(request) if data.reauthenticate else None
+        pending = identity_service.begin(previous, request.cookies.get("drone_session", ""))
+        response.set_cookie(
+            TRANSACTION_COOKIE,
+            pending.browser,
+            httponly=True,
+            secure=cfg.secure,
+            samesite="lax",
+            max_age=TRANSACTION_SECONDS,
+            path=TRANSACTION_COOKIE_PATH,
+        )
+        return {
+            "authorization_url": identity_protocol.authorization_url(
+                identity_service.config,
+                pending.state,
+                pending.nonce,
+                pending.verifier,
+                reauthenticate=data.reauthenticate,
+            )
+        }
+
+    @app.get("/api/v1/auth/identity/callback")
+    def identity_callback(request: Request, code: str = "", state: str = "", error: str = ""):
+        if not identity_service:
+            raise HTTPException(404, "Shared sign-in is not configured")
+        response = RedirectResponse("/", status_code=303)
+        response.delete_cookie(TRANSACTION_COOKIE, path=TRANSACTION_COOKIE_PATH)
+        central_token = None
+        try:
+            keys = list(request.query_params.keys())
+            if (
+                set(keys) - {"code", "state", "error", "error_description", "iss"}
+                or any(len(request.query_params.getlist(key)) != 1 for key in keys)
+                or len(str(request.url.query)) > 8192
+                or request.query_params.get("iss", identity_service.config.issuer)
+                != identity_service.config.issuer
+            ):
+                raise identity_protocol.IdentityError(
+                    "identity_callback_invalid", "Sign-in has expired. Please start again"
+                )
+            pending = identity_service.consume(state, request.cookies.get(TRANSACTION_COOKIE, ""))
+            if error:
+                raise identity_protocol.IdentityError("identity_cancelled", "Sign-in was cancelled")
+            central_token = identity_protocol.exchange_code(
+                identity_service.config, code, identity_service.decrypt(pending.encrypted_verifier)
+            )
+            account = identity_protocol.validate_session(identity_service.config, central_token)
+            if pending.subject and account.subject != pending.subject:
+                raise identity_protocol.IdentityError(
+                    "identity_account_changed", "Confirm the same Onesa account"
+                )
+            if pending.subject:
+                identity_service.require_fresh(account)
+            token, lifetime = identity_service.create_session(account, central_token, pending)
+            old = request.cookies.get("drone_session")
+            if old:
+                with store.transaction() as db:
+                    previous = db.get(IdentitySession, digest(old))
+                    if previous:
+                        db.delete(previous)
+            response.set_cookie(
+                "drone_session",
+                token,
+                httponly=True,
+                secure=cfg.secure,
+                samesite="strict",
+                max_age=lifetime,
+                path="/",
+            )
+        except identity_protocol.IdentityError as failure:
+            if central_token:
+                try:
+                    identity_protocol.revoke_session(identity_service.config, central_token)
+                except identity_protocol.IdentityError:
+                    pass
+            # Only fixed local error codes enter the URL. Upstream text, codes,
+            # tokens, state and email addresses never enter the frontend URL.
+            response.headers["location"] = "/?account_error=" + failure.code
+        return response
+
+    @app.get("/api/v1/auth/workspaces")
+    def identity_workspaces(a=Depends(auth)):
+        if not identity_service:
+            raise HTTPException(404, "Shared sign-in is not configured")
+        return {"workspaces": identity_service.workspaces(a["_identity"])}
+
+    @app.post("/api/v1/auth/workspace")
+    def select_workspace(data: WorkspaceSelection, request: Request, a=Depends(auth)):
+        if not identity_service:
+            raise HTTPException(404, "Shared sign-in is not configured")
+        choices = {row["id"]: row for row in identity_service.workspaces(a["_identity"])}
+        if data.tenant_id not in choices:
+            raise HTTPException(403, "Workspace access is required")
+        if a["global_admin"]:
+            identity_service.require_fresh(a["_identity"])
+        with store.transaction(data.tenant_id) as db:
+            row = db.scalar(
+                select(IdentitySession)
+                .where(IdentitySession.token_hash == digest(request.cookies.get("drone_session", "")))
+                .with_for_update()
+            )
+            if not row or row.expires <= time.time():
+                raise HTTPException(401, "Sign in with your Onesa account")
+            if (
+                row.issuer != identity_service.config.issuer
+                or row.subject != a["identity_subject"]
+                or row.csrf != a["csrf"]
+                or row.tenant_id != a["tenant_id"]
+            ):
+                raise HTTPException(409, "Your workspace changed; refresh before choosing again")
+            previous = row.tenant_id
+            row.tenant_id = data.tenant_id
+            row.csrf = secrets.token_urlsafe(24)
+            audit(
+                db,
+                data.tenant_id,
+                a["id"],
+                "identity.workspace_selected",
+                {"previous_tenant_id": previous, "global_admin": a["global_admin"]},
+                request.state.correlation,
+            )
+        return public_account(
+            {**a, "tenant_id": row.tenant_id, "csrf": row.csrf, "role": choices[row.tenant_id]["role"]}
+        )
 
     @app.post("/api/v1/auth/logout")
-    def logout(request: Request, response: Response, a=Depends(auth)):
+    def logout(request: Request, response: Response):
+        if identity_service:
+            # Local logout is authorized by the existing browser-bound session,
+            # Origin and CSRF. It must not depend on the issuer being reachable.
+            origin(request)
+            with store.transaction() as db:
+                row = db.get(IdentitySession, digest(request.cookies.get("drone_session", "")))
+                encrypted_token = row.encrypted_token if row else None
+                if row:
+                    if not secrets.compare_digest(request.headers.get("x-csrf-token", ""), row.csrf):
+                        raise HTTPException(403, "CSRF validation failed")
+                    db.delete(row)
+            response.delete_cookie("drone_session", path="/")
+            central_signed_out = False
+            if encrypted_token:
+                try:
+                    central_signed_out = identity_protocol.revoke_session(
+                        identity_service.config, identity_service.decrypt(encrypted_token), all_sessions=True
+                    )
+                except identity_protocol.IdentityError:
+                    pass
+            return {
+                "ok": central_signed_out,
+                "shared_account": True,
+                "local_signed_out": True,
+                "central_signed_out": central_signed_out,
+            }
+        auth(request)
         with store.transaction() as db:
             s = db.get(Session, digest(request.cookies["drone_session"]))
             # Another logout or an administrator can revoke this session after
@@ -327,12 +522,12 @@ def create_app(settings=None):
         return {"ok": True}
 
     @app.get("/api/v1/operations")
-    def operations(a=Depends(auth)):
+    def operations(a=Depends(workspace)):
         with store.session() as db:
             return snapshot(db, a["tenant_id"])
 
     @app.get("/api/v1/stream")
-    async def stream(request: Request, a=Depends(auth)):
+    async def stream(request: Request, a=Depends(workspace)):
         limiter.check("stream:" + a["id"], 12)
         if health["streams"] >= 32:
             raise HTTPException(429, "Telemetry connection capacity reached")
@@ -341,11 +536,27 @@ def create_app(settings=None):
 
         async def events():
             try:
-                for _ in range(300):
+                for frame in range(300):
                     if await request.is_disconnected():
                         return
 
                     def read_frame():
+                        if identity_service:
+                            # Existing streams also stop after account/membership
+                            # revocation; each new request always validates live.
+                            if frame % 10 == 0:
+                                current = identity_service.authenticate(request.cookies["drone_session"])
+                                if current["tenant_id"] != a["tenant_id"]:
+                                    return None
+                            with store.session() as db:
+                                session = db.get(IdentitySession, token_hash)
+                                if (
+                                    not session
+                                    or session.expires <= time.time()
+                                    or session.tenant_id != a["tenant_id"]
+                                ):
+                                    return None
+                                return snapshot(db, a["tenant_id"])
                         with store.session() as db:
                             s = db.get(Session, token_hash)
                             u = db.get(User, a["id"])
@@ -365,6 +576,8 @@ def create_app(settings=None):
                         return
                     yield "event: telemetry\ndata: " + j(data) + "\n\n"
                     await asyncio.sleep(1)
+            except (HTTPException, identity_protocol.IdentityError):
+                yield "event: expired\ndata: {}\n\n"
             except SQLAlchemyError:
                 yield 'event: unavailable\ndata: {"reason":"storage"}\n\n'
             finally:
@@ -375,7 +588,7 @@ def create_app(settings=None):
         )
 
     @app.get("/api/v1/dispatch/preview")
-    def dispatch_preview(a=Depends(auth)):
+    def dispatch_preview(a=Depends(workspace)):
         limiter.check("dispatch:" + a["tenant_id"] + ":" + a["id"], 6)
         with store.session() as db:
             missions = list(
@@ -414,7 +627,7 @@ def create_app(settings=None):
             return result
 
     @app.post("/api/v1/flight-plans/preview")
-    def flight_plan_preview(data: FlightPlanIn, a=Depends(auth)):
+    def flight_plan_preview(data: FlightPlanIn, a=Depends(workspace)):
         limiter.check("flight-plan:" + a["tenant_id"] + ":" + a["id"], 6)
         with store.session() as db:
             constraints = policy(db, a["tenant_id"])
@@ -572,7 +785,7 @@ def create_app(settings=None):
         return result
 
     @app.get("/api/v1/missions/{identifier}/history")
-    def history(identifier: str, a=Depends(auth)):
+    def history(identifier: str, a=Depends(workspace)):
         with store.session() as db:
             owned(db, Mission, identifier, a["tenant_id"])
             events = list(
@@ -628,13 +841,13 @@ def create_app(settings=None):
             }
 
     @app.get("/api/v1/scenarios")
-    def scenarios(a=Depends(auth)):
+    def scenarios(a=Depends(workspace)):
         return json.loads(
             (Path(__file__).resolve().parents[2] / "simulation/scenarios/catalog.json").read_text()
         )
 
     @app.get("/api/v1/settings")
-    def settings_get(a=Depends(auth)):
+    def settings_get(a=Depends(workspace)):
         with store.session() as db:
             return SettingsIn(**json.loads(db.get(Tenant, a["tenant_id"]).settings)).model_dump()
 
@@ -657,6 +870,8 @@ def create_app(settings=None):
 
     @app.post("/api/v1/users", status_code=201)
     def new_user(data: UserIn, request: Request, a=Depends(admin)):
+        if identity_service:
+            raise HTTPException(409, "Manage shared accounts and workspace access in Onesa administration")
         with store.transaction(a["tenant_id"]) as db:
             if db.scalar(select(User).where(User.email == data.email.lower().strip())):
                 raise HTTPException(409, "Account cannot be created")
@@ -680,6 +895,8 @@ def create_app(settings=None):
 
     @app.post("/api/v1/users/{identifier}/disable")
     def disable_user(identifier: str, request: Request, a=Depends(admin)):
+        if identity_service:
+            raise HTTPException(409, "Manage shared accounts and workspace access in Onesa administration")
         with store.transaction(a["tenant_id"]) as db:
             u = owned(db, User, identifier, a["tenant_id"])
             if u.id == a["id"]:
@@ -691,7 +908,7 @@ def create_app(settings=None):
             return {"ok": True}
 
     @app.get("/api/v1/security")
-    def security(a=Depends(auth)):
+    def security(a=Depends(workspace)):
         with store.session() as db:
             audits = list(
                 db.scalars(
@@ -768,7 +985,7 @@ def create_app(settings=None):
             return {"id": row.id, "state": row.state}
 
     @app.get("/api/v1/infrastructure")
-    def infra(a=Depends(auth)):
+    def infra(a=Depends(workspace)):
         with store.session() as db:
             db.execute(text("SELECT 1"))
         age = time.time() - health["worker_last_tick"] if health["worker_last_tick"] else None
@@ -833,7 +1050,7 @@ def create_app(settings=None):
         }
 
     @app.post("/api/v1/assistant")
-    async def assistant(data: AssistantIn, request: Request, a=Depends(auth)):
+    async def assistant(data: AssistantIn, request: Request, a=Depends(workspace)):
         limiter.check("assistant:" + a["id"], 10)
 
         def read_context():

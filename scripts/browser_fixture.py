@@ -54,6 +54,7 @@ def main():
             "COOKIE_SECURE": "false",
             "ONESA_AI_URL": "",
             "ONESA_AI_DELEGATED_SESSION": "",
+            "ONESA_IDENTITY_ENABLED": "false",
         }
         child = subprocess.Popen(
             [

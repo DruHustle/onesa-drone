@@ -11,6 +11,14 @@ class Login(Strict):
     password: str = Field(min_length=1, max_length=200)
 
 
+class IdentityStart(Strict):
+    reauthenticate: bool = False
+
+
+class WorkspaceSelection(Strict):
+    tenant_id: str = Field(min_length=36, max_length=36)
+
+
 class Point(Strict):
     lat: float = Field(ge=-85, le=85)
     lon: float = Field(ge=-180, le=180)

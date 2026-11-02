@@ -8,8 +8,9 @@ from .models import Base, Tenant, SchemaRevision
 
 
 class Store:
-    def __init__(self, url):
+    def __init__(self, url, identity_enabled=False):
         self.lock = RLock()
+        self.identity_enabled = identity_enabled
         opts = {"pool_pre_ping": True}
         if url.startswith("sqlite:"):
             opts["connect_args"] = {"check_same_thread": False, "timeout": 5}
@@ -48,12 +49,39 @@ class Store:
                 raise RuntimeError(
                     "Schema source differs from applied migration; explicit migration required"
                 )
+            if self.identity_enabled:
+                from .identity import IdentityBase
+
+                IdentityBase.metadata.create_all(conn)
+                checksum = self.identity_checksum()
+                applied = conn.execute(
+                    select(SchemaRevision.checksum).where(SchemaRevision.version == "0002-identity")
+                ).scalar_one_or_none()
+                if applied is None:
+                    conn.execute(
+                        SchemaRevision.__table__.insert().values(version="0002-identity", checksum=checksum)
+                    )
+                elif applied != checksum:
+                    raise RuntimeError("Shared identity schema differs from applied migration")
+
+    def identity_checksum(self):
+        from .identity import IdentityBase
+
+        ddl = "\n".join(
+            str(CreateTable(table).compile(dialect=self.engine.dialect))
+            for table in sorted(IdentityBase.metadata.tables.values(), key=lambda t: t.name)
+        )
+        return hashlib.sha256(ddl.encode()).hexdigest()
 
     def verify(self):
         with self.session() as db:
             row = db.get(SchemaRevision, "0001")
             if not row or row.checksum != self.checksum():
                 raise RuntimeError("Operational schema migration is missing or incompatible")
+            if self.identity_enabled:
+                identity = db.get(SchemaRevision, "0002-identity")
+                if not identity or identity.checksum != self.identity_checksum():
+                    raise RuntimeError("Shared identity migration is missing or incompatible")
 
     @contextmanager
     def transaction(self, tenant_id=None):
