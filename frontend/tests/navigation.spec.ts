@@ -110,20 +110,32 @@ test("closed mobile navigation is absent from keyboard and accessibility navigat
   await expect(toggle).toHaveAttribute("aria-expanded", "false");
   for (let i = 0; i < 8; i++) {
     await page.keyboard.press("Tab");
-    expect(
-      await page.evaluate(() => {
-        const active = document.activeElement;
-        if (!active || active === document.body) return true;
-        const rect = active.getBoundingClientRect();
-        return (
-          !active.closest(".sidebar") &&
-          rect.left >= 0 &&
-          rect.right <= innerWidth &&
-          rect.top >= 0 &&
-          rect.bottom <= innerHeight
-        );
-      }),
-    ).toBe(true);
+    // Focus scrolling can settle after the key event. Keep the full-viewport
+    // invariant, and report the actual target/bounds if it never becomes usable.
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const active = document.activeElement;
+            if (!active || active === document.body)
+              return { outsideNavigation: true, fullyVisible: true };
+            const rect = active.getBoundingClientRect();
+            return {
+              target: active.outerHTML,
+              bounds: rect.toJSON(),
+              outsideNavigation: !active.closest(".sidebar"),
+              fullyVisible:
+                rect.left >= 0 &&
+                rect.right <= innerWidth &&
+                rect.top >= 0 &&
+                rect.bottom <= innerHeight,
+            };
+          }),
+        {
+          message: `Tab stop ${i + 1} must stay visible outside closed navigation`,
+        },
+      )
+      .toMatchObject({ outsideNavigation: true, fullyVisible: true });
   }
 });
 
