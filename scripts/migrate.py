@@ -6,7 +6,7 @@ from backend.app.db import Store
 if __name__ == "__main__":
     cfg = Settings()
     cfg.validate()
-    store = Store(cfg.database_url)
+    store = Store(cfg.database_url, identity_enabled=cfg.identity_enabled)
     store.initialize()
     store.verify()
-    print("Schema 0001 verified. No hardware capability enabled.")
+    print("Operational and enabled identity schemas verified. No hardware capability enabled.")

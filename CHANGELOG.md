@@ -16,6 +16,15 @@
 
 ## Unreleased — 0.1 simulation implementation
 
+- Add optional shared Onesa sign-in and central administrator access. Users keep
+  one account across AI Platform, Company Portal, Drone and Robot; Drone receives
+  current permissions through the registered issuer and retains tenant boundaries.
+- Add explicit workspace selection, fresh MFA for administrator changes, central
+  account-management links and sign-out across applications. No local Drone
+  password is created for a shared account and no email-based linking occurs.
+- Add the opt-in, additive identity migration without rewriting existing users,
+  data or the original schema fingerprint. Deployment remains gated on issuer
+  registration, migration, exact-source acceptance and the owner execution path.
 - Add three locally hosted NVIDIA SimReady environment references from pinned
   revision `4763fbfaa4f8e97658e68b57d01b4c86659e08b5`, retaining CC BY 4.0 attribution,
   original provenance and rendered previews. Bounded downloads verify size and

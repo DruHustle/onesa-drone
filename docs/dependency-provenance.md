@@ -13,6 +13,8 @@ no package lifecycle script runs during frontend install. No external 3D asset i
 | FastAPI | PyPI fastapi; fastapi/fastapi | MIT |
 | Uvicorn / HTTPX | PyPI uvicorn, httpx; encode maintainers | BSD-3-Clause |
 | SQLAlchemy | PyPI sqlalchemy; sqlalchemy/sqlalchemy | MIT |
+| cryptography 50.0.2 | PyPI cryptography; pyca/cryptography, installed distribution metadata | Apache-2.0 OR BSD-3-Clause; Fernet protects shared account grants and PKCE verifiers at rest |
+| cffi 2.1.1 / pycparser 3.1 | Pinned cryptography dependencies; python-cffi/cffi and eliben/pycparser | MIT-0 / BSD-3-Clause, as declared by the installed distributions |
 | psycopg / psycopg-binary | PyPI psycopg; psycopg/psycopg | LGPL-3.0 with stated linking exception; review redistribution and bundled libpq/OpenSSL notices |
 | Python / Alpine | Official Docker Library Python image, pinned manifest digest | Python PSF and distribution/package-specific licenses |
 | pytest / Ruff / pip-audit | PyPI tooling; pytest-dev, astral-sh, pypa | MIT / MIT / Apache-2.0 |
