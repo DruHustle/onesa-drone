@@ -4,6 +4,61 @@
   --scene-height: 440px;
   --onesa-divider: #dce3e6;
 }
+.identity-workspace {
+  display: grid;
+  gap: 22px;
+  width: min(100% - 40px, 620px);
+  margin: 8vh auto;
+  overflow-wrap: anywhere;
+}
+.identity-workspace .wordmark {
+  justify-self: start;
+  margin-bottom: 24px;
+  text-decoration: none;
+}
+.identity-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+}
+.identity-actions > p {
+  flex-basis: 100%;
+}
+.identity-actions button,
+.identity-actions a,
+.workspace button {
+  min-height: 44px;
+  min-width: 44px;
+}
+.identity-actions a {
+  display: inline-flex;
+  align-items: center;
+}
+.identity-link {
+  padding: 12px 16px;
+  border-radius: 5px;
+  text-decoration: none;
+}
+.error.identity-notice {
+  display: grid;
+  justify-content: stretch;
+  gap: 8px;
+}
+.identity-notice .identity-link {
+  justify-self: start;
+}
+.identity-empty {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--onesa-border);
+  padding: 22px;
+  border-radius: 6px;
+}
+.identity-role {
+  color: var(--onesa-accent);
+  font-weight: 600;
+}
 .flight-plan-preview,
 .flight-plan-result {
   display: grid;
@@ -460,6 +515,7 @@ main#main {
   overflow: hidden;
   background: #bdd2d6;
 }
+.scene-view,
 .scene-shell {
   position: relative;
 }
@@ -1343,6 +1399,23 @@ dialog > .actions {
   .login-form {
     padding: 40px 30px;
     max-width: 520px;
+  }
+  .login-shared {
+    grid-template-rows: max-content 1fr;
+  }
+  .login-shared .login-visual {
+    padding: 24px 30px;
+  }
+  .login-shared .login-visual .wordmark {
+    margin-bottom: 16px;
+  }
+  .login-shared .login-visual h1 {
+    font-size: 28px;
+  }
+  .login-shared .login-visual > p,
+  .login-shared .login-visual > small,
+  .login-shared .login-orbit {
+    display: none;
   }
   .control-list {
     gap: 0 20px;

@@ -195,6 +195,18 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "IdentityStart": {
+        "additionalProperties": false,
+        "properties": {
+          "reauthenticate": {
+            "default": false,
+            "title": "Reauthenticate",
+            "type": "boolean"
+          }
+        },
+        "title": "IdentityStart",
+        "type": "object"
+      },
       "IncidentIn": {
         "additionalProperties": false,
         "properties": {
@@ -498,6 +510,22 @@
         ],
         "title": "ValidationError",
         "type": "object"
+      },
+      "WorkspaceSelection": {
+        "additionalProperties": false,
+        "properties": {
+          "tenant_id": {
+            "maxLength": 36,
+            "minLength": 36,
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id"
+        ],
+        "title": "WorkspaceSelection",
+        "type": "object"
       }
     }
   },
@@ -711,6 +739,116 @@
         "summary": "Assistant"
       }
     },
+    "/api/v1/auth/config": {
+      "get": {
+        "operationId": "auth_config_api_v1_auth_config_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Auth Config"
+      }
+    },
+    "/api/v1/auth/identity/callback": {
+      "get": {
+        "operationId": "identity_callback_api_v1_auth_identity_callback_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "code",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Code",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "State",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "error",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Error",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Identity Callback"
+      }
+    },
+    "/api/v1/auth/identity/start": {
+      "post": {
+        "operationId": "identity_start_api_v1_auth_identity_start_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdentityStart"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Identity Start"
+      }
+    },
     "/api/v1/auth/login": {
       "post": {
         "operationId": "login_api_v1_auth_login_post",
@@ -777,6 +915,58 @@
           }
         },
         "summary": "Me"
+      }
+    },
+    "/api/v1/auth/workspace": {
+      "post": {
+        "operationId": "select_workspace_api_v1_auth_workspace_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceSelection"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Select Workspace"
+      }
+    },
+    "/api/v1/auth/workspaces": {
+      "get": {
+        "operationId": "identity_workspaces_api_v1_auth_workspaces_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Identity Workspaces"
       }
     },
     "/api/v1/dispatch/preview": {

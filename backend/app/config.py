@@ -21,6 +21,12 @@ class Settings:
     ai_origin: str = os.getenv("ONESA_AI_ORIGIN", "")
     ai_tenant: str = os.getenv("ONESA_AI_TENANT_ID", "")
     ai_cookie: str = os.getenv("ONESA_AI_COOKIE_NAME", "onesa_session")
+    identity_enabled: bool = os.getenv("ONESA_IDENTITY_ENABLED", "false") == "true"
+    identity_issuer: str = os.getenv("ONESA_IDENTITY_ISSUER", "")
+    identity_client_id: str = os.getenv("ONESA_IDENTITY_CLIENT_ID", "")
+    identity_client_secret: str = field(default=os.getenv("ONESA_IDENTITY_CLIENT_SECRET", ""), repr=False)
+    identity_callback: str = os.getenv("ONESA_IDENTITY_CALLBACK", "")
+    identity_encryption_key: str = field(default=os.getenv("ONESA_IDENTITY_ENCRYPTION_KEY", ""), repr=False)
 
     def validate(self):
         origin = urlsplit(self.origin)
@@ -47,3 +53,31 @@ class Settings:
             from integrations.ai.consumer import https_base
 
             https_base(self.ai_url)
+        if self.identity_enabled:
+            from cryptography.fernet import Fernet
+
+            try:
+                Fernet(self.identity_encryption_key.encode("ascii"))
+            except (ValueError, UnicodeError):
+                raise ValueError("Shared sign-in requires a server-held identity encryption key") from None
+            issuer = urlsplit(self.identity_issuer)
+            local = issuer.scheme == "http" and issuer.hostname in {"127.0.0.1", "localhost"}
+            if (
+                not issuer.hostname
+                or issuer.username
+                or issuer.password
+                or issuer.query
+                or issuer.fragment
+                or self.identity_issuer.endswith("/")
+                or not self.identity_issuer.endswith("/api/v1/identity")
+                or (issuer.scheme != "https" and not local)
+                or (local and not self.origin.startswith(("http://127.0.0.1:", "http://localhost:")))
+            ):
+                raise ValueError("Identity issuer must be an exact HTTPS Onesa identity issuer")
+            if (
+                not 3 <= len(self.identity_client_id) <= 100
+                or not self.identity_client_id.isascii()
+                or not 32 <= len(self.identity_client_secret) <= 1024
+                or self.identity_callback != self.origin + "/api/v1/auth/identity/callback"
+            ):
+                raise ValueError("Shared sign-in requires a client, secret and exact same-origin callback")

@@ -12,6 +12,11 @@ import {
 import { createRoot } from "react-dom/client";
 import { api, setCSRF, SessionChangedError } from "./api";
 import FlightPlanPreview from "./FlightPlanPreview";
+import {
+  accountError,
+  startSharedSignIn,
+  WorkspaceChooser,
+} from "./SharedAccount";
 import type {
   Aircraft,
   Mission,
@@ -85,6 +90,9 @@ function Empty({ children }: { children: ReactNode }) {
   return <div className="empty">{children}</div>;
 }
 function App() {
+  const [sharedAccount, setSharedAccount] = useState<boolean | null>(null);
+  const [choosingWorkspace, setChoosingWorkspace] = useState(false);
+  const [signOutAccountUrl, setSignOutAccountUrl] = useState("");
   const [user, setUser] = useState<User | null>(null),
     [boot, setBoot] = useState(true),
     [page, setPage] = useState("Dashboard"),
@@ -103,7 +111,7 @@ function App() {
       region: "illustrative-campus",
     }),
     [selected, setSelected] = useState(""),
-    [notice, setNotice] = useState(""),
+    [notice, setNotice] = useState(accountError),
     [busy, setBusy] = useState(false),
     [connection, setConnection] = useState("connecting"),
     [mobile, setMobile] = useState(false),
@@ -207,6 +215,7 @@ function App() {
     currentAction.current++;
     setBusy(false);
     setNotice("");
+    setSignOutAccountUrl("");
     setData({
       aircraft: [],
       missions: [],
@@ -262,15 +271,25 @@ function App() {
       .then((u) => {
         setUser(u);
         setCSRF(u.csrf);
+        setSharedAccount(!!u.identity_managed);
       })
-      .catch(() => {})
+      .catch(async () => {
+        try {
+          const config = await api<{ shared_account: boolean }>("/auth/config");
+          setSharedAccount(config.shared_account);
+        } catch {
+          setNotice(
+            "Sign-in is temporarily unavailable. Reload this page to try again.",
+          );
+        }
+      })
       .finally(() => setBoot(false));
     return () => {
       mounted.current = false;
     };
   }, []);
   useEffect(() => {
-    if (!user) return;
+    if (!user?.tenant_id) return;
     let stopped = false,
       source: EventSource | undefined,
       timer: ReturnType<typeof setTimeout>;
@@ -330,7 +349,7 @@ function App() {
     setHistory(null);
     setReplay(null);
     setPlaying(false);
-    if (!user) return;
+    if (!user?.tenant_id) return;
     const path =
       page === "Cybersecurity"
         ? "/security"
@@ -433,6 +452,22 @@ function App() {
     prefs.units === "imperial"
       ? `${(n * 3.28084).toFixed(0)} ft`
       : `${n.toFixed(0)} m`;
+  async function signOut() {
+    const result = await api<{ central_signed_out?: boolean }>(
+      "/auth/logout",
+      "POST",
+      {},
+    );
+    setCSRF("");
+    resetWorkspace();
+    setUser(null);
+    if (result.central_signed_out === false) {
+      setSignOutAccountUrl(user?.account_url || "");
+      setNotice(
+        "You are signed out of Drone. Sign-out from your other Onesa applications could not be confirmed. Open your Onesa account to finish signing out everywhere.",
+      );
+    }
+  }
   const canOperate = !!user && user.role !== "viewer";
   if (location.pathname.startsWith("/track/"))
     return <Tracking token={location.pathname.split("/")[2]} />;
@@ -444,7 +479,7 @@ function App() {
     );
   if (!user)
     return (
-      <div className="login">
+      <div className={sharedAccount ? "login login-shared" : "login"}>
         <div className="login-visual">
           <span className="wordmark">
             ONESA <small>DRONE</small>
@@ -466,50 +501,78 @@ function App() {
         </div>
         <main className="login-form">
           <p className="eyebrow">MISSION OPERATIONS</p>
-          <h2>Sign in to your workspace</h2>
-          <p>Use your individually provisioned operator account.</p>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              const f = new FormData(e.currentTarget);
-              void run(async () => {
-                const u = await api<User>("/auth/login", "POST", {
-                  email: f.get("email"),
-                  password: f.get("password"),
+          <h2>
+            {sharedAccount
+              ? "One account. Every Onesa application."
+              : "Sign in to your workspace"}
+          </h2>
+          <p>
+            {sharedAccount
+              ? "Use your Onesa account for AI Platform, Company Portal, Drone and Robot. Your workspace access follows you."
+              : "Use your individually provisioned operator account."}
+          </p>
+          {sharedAccount ? (
+            <div className="identity-actions">
+              <button
+                className="primary"
+                disabled={busy}
+                onClick={() => void run(() => startSharedSignIn())}
+              >
+                {busy ? "Opening Onesa sign-in…" : "Continue with Onesa"}
+              </button>
+              <p className="fine">
+                New to Onesa? Create your account on the next screen.
+              </p>
+            </div>
+          ) : sharedAccount === false ? (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const f = new FormData(e.currentTarget);
+                void run(async () => {
+                  const u = await api<User>("/auth/login", "POST", {
+                    email: f.get("email"),
+                    password: f.get("password"),
+                  });
+                  resetWorkspace();
+                  setCSRF(u.csrf);
+                  setUser(u);
                 });
-                resetWorkspace();
-                setCSRF(u.csrf);
-                setUser(u);
-              });
-            }}
-          >
-            <label>
-              Email
-              <input
-                name="email"
-                type="email"
-                required
-                autoComplete="username"
-              />
-            </label>
-            <label>
-              Password
-              <input
-                name="password"
-                type="password"
-                required
-                autoComplete="current-password"
-                maxLength={200}
-              />
-            </label>
-            <button className="primary" disabled={busy}>
-              Sign in <span aria-hidden="true">→</span>
-            </button>
-          </form>
+              }}
+            >
+              <label>
+                Email
+                <input
+                  name="email"
+                  type="email"
+                  required
+                  autoComplete="username"
+                />
+              </label>
+              <label>
+                Password
+                <input
+                  name="password"
+                  type="password"
+                  required
+                  autoComplete="current-password"
+                  maxLength={200}
+                />
+              </label>
+              <button className="primary" disabled={busy}>
+                Sign in <span aria-hidden="true">→</span>
+              </button>
+            </form>
+          ) : null}
           {notice && (
-            <p role="alert" className="error">
-              {notice}
-            </p>
+            <div role="alert" className="error identity-notice">
+              <p>{notice}</p>
+              {signOutAccountUrl && (
+                <a className="identity-link" href={signOutAccountUrl}>
+                  Open Onesa account
+                </a>
+              )}
+            </div>
           )}
           <p className="fine">
             Aircraft performance and environments are illustrative. This
@@ -518,6 +581,32 @@ function App() {
         </main>
       </div>
     );
+  if (user.identity_managed && (!user.tenant_id || choosingWorkspace))
+    return (
+      <WorkspaceChooser
+        user={user}
+        busy={busy}
+        notice={notice}
+        onSelect={(id) =>
+          void run(async () => {
+            const account = await api<User>("/auth/workspace", "POST", {
+              tenant_id: id,
+            });
+            setCSRF(account.csrf);
+            resetWorkspace();
+            setPage("Dashboard");
+            setUser(account);
+            setChoosingWorkspace(false);
+          })
+        }
+        onBack={() => {
+          setChoosingWorkspace(false);
+          setNotice("");
+        }}
+        onConfirm={() => void run(() => startSharedSignIn(true))}
+        onSignOut={() => void run(signOut)}
+      />
+    );
   const active = data.missions.filter((m) =>
     ["taking_off", "outbound", "delivering", "returning", "landing"].includes(
       m.state,
@@ -525,31 +614,6 @@ function App() {
   );
   const scene = (
     <div className="visual">
-      <Suspense
-        fallback={
-          <div className="scene-loading">Loading lightweight 3D campus…</div>
-        }
-      >
-        <DroneScene
-          mission={page === "Digital twins" ? undefined : flight}
-          sample={replay !== null ? history?.telemetry[replay] : undefined}
-          lowPower={lowPower}
-          night={night}
-          weather={weather}
-          view={view}
-          category={
-            page === "Digital twins"
-              ? inspectedAircraft?.category
-              : aircraft?.category
-          }
-        />
-      </Suspense>
-      <div className="visual-top">
-        <Badge
-          state={replay !== null ? "replay" : flight?.state || "standby"}
-        />
-        <span>VIRTUAL AIRSPACE / {prefs.region.toUpperCase()}</span>
-      </div>
       <div className="scene-controls">
         <label>
           Camera
@@ -589,6 +653,33 @@ function App() {
           />{" "}
           Low power
         </label>
+      </div>
+      <div className="scene-view">
+        <Suspense
+          fallback={
+            <div className="scene-loading">Loading lightweight 3D campus…</div>
+          }
+        >
+          <DroneScene
+            mission={page === "Digital twins" ? undefined : flight}
+            sample={replay !== null ? history?.telemetry[replay] : undefined}
+            lowPower={lowPower}
+            night={night}
+            weather={weather}
+            view={view}
+            category={
+              page === "Digital twins"
+                ? inspectedAircraft?.category
+                : aircraft?.category
+            }
+          />
+        </Suspense>
+        <div className="visual-top">
+          <Badge
+            state={replay !== null ? "replay" : flight?.state || "standby"}
+          />
+          <span>VIRTUAL AIRSPACE / {prefs.region.toUpperCase()}</span>
+        </div>
       </div>
     </div>
   );
@@ -639,9 +730,25 @@ function App() {
       <div className="workspace">
         <span className="workspace-symbol">O</span>
         <div>
-          Simulation workspace<small>{user.role} access</small>
+          Simulation workspace
+          <small>
+            {user.global_admin ? "Onesa administrator" : `${user.role} access`}
+          </small>
         </div>
-        <span aria-hidden="true">⌄</span>
+        {user.identity_managed ? (
+          <button
+            className="quiet"
+            aria-label="Switch workspace"
+            onClick={() => {
+              setChoosingWorkspace(true);
+              setNotice("");
+            }}
+          >
+            ⌄
+          </button>
+        ) : (
+          <span aria-hidden="true">⌄</span>
+        )}
       </div>
       <nav aria-label="Main navigation">
         {groups.map(([group, ...items]) => (
@@ -664,18 +771,21 @@ function App() {
       <div className="sidebar-foot">
         <span className="simulation-dot" /> Simulation mode
         <small>Physical flight disabled</small>
-        <button
-          className="quiet"
-          onClick={() =>
-            void run(async () => {
-              await api("/auth/logout", "POST", {});
-              setCSRF("");
-              resetWorkspace();
-              setUser(null);
-            })
-          }
-        >
-          Sign out
+        {user.identity_managed && (
+          <div className="identity-actions">
+            <a href={user.account_url}>Onesa account</a>
+            {user.role === "admin" && (
+              <button
+                className="quiet"
+                onClick={() => void run(() => startSharedSignIn(true))}
+              >
+                Confirm administrator sign-in
+              </button>
+            )}
+          </div>
+        )}
+        <button className="quiet" onClick={() => void run(signOut)}>
+          {user.identity_managed ? "Sign out of Onesa" : "Sign out"}
         </button>
       </div>
     </>
@@ -1965,72 +2075,105 @@ function App() {
                   </p>
                 </section>
                 <section>
-                  <h2>Tenant access</h2>
-                  {extra?.map((u: any) => (
-                    <div className="user-row" key={u.id}>
-                      <span>
-                        {u.email}
-                        <small>
-                          {u.role} · {u.active ? "active" : "disabled"}
-                        </small>
-                      </span>
-                      {u.id !== user.id && u.active && (
-                        <button
-                          onClick={() =>
-                            void run(async () => {
-                              await api(`/users/${u.id}/disable`, "POST", {});
-                              setExtra({ page, value: await api("/users") });
-                            })
-                          }
-                        >
-                          Disable
-                        </button>
-                      )}
+                  <h2>
+                    {user.identity_managed
+                      ? "Shared account access"
+                      : "Tenant access"}
+                  </h2>
+                  {user.identity_managed ? (
+                    <div className="identity-actions">
+                      <p>
+                        Manage users and workspace memberships once in Onesa
+                        administration. Onesa administrators can administer
+                        every application.
+                      </p>
+                      <a
+                        className="primary identity-link"
+                        href={user.access_url || user.account_url}
+                      >
+                        Manage Onesa accounts
+                      </a>
+                      <p className="fine">
+                        Drone workspace permissions apply to simulation.
+                        Physical flight remains disabled.
+                      </p>
                     </div>
-                  ))}
-                  <h3>Provision an individual account</h3>
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      const form = e.currentTarget;
-                      const f = new FormData(form);
-                      void run(async () => {
-                        await api("/users", "POST", Object.fromEntries(f));
-                        setExtra({ page, value: await api("/users") });
-                        form.reset();
-                      });
-                    }}
-                  >
-                    <label>
-                      Email
-                      <input
-                        name="email"
-                        type="email"
-                        required
-                        maxLength={160}
-                      />
-                    </label>
-                    <label>
-                      Initial password
-                      <input
-                        name="password"
-                        type="password"
-                        required
-                        minLength={14}
-                        maxLength={200}
-                        autoComplete="new-password"
-                      />
-                    </label>
-                    <label>
-                      Role
-                      <select name="role">
-                        <option value="viewer">Viewer</option>
-                        <option value="operator">Operator</option>
-                        <option value="admin">Administrator</option>
-                      </select>
-                    </label>
-                    <button disabled={busy}>Create account</button>
-                  </form>
+                  ) : (
+                    <>
+                      {extra?.map((u: any) => (
+                        <div className="user-row" key={u.id}>
+                          <span>
+                            {u.email}
+                            <small>
+                              {u.role} · {u.active ? "active" : "disabled"}
+                            </small>
+                          </span>
+                          {u.id !== user.id && u.active && (
+                            <button
+                              onClick={() =>
+                                void run(async () => {
+                                  await api(
+                                    `/users/${u.id}/disable`,
+                                    "POST",
+                                    {},
+                                  );
+                                  setExtra({
+                                    page,
+                                    value: await api("/users"),
+                                  });
+                                })
+                              }
+                            >
+                              Disable
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                      <h3>Provision an individual account</h3>
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          const form = e.currentTarget;
+                          const f = new FormData(form);
+                          void run(async () => {
+                            await api("/users", "POST", Object.fromEntries(f));
+                            setExtra({ page, value: await api("/users") });
+                            form.reset();
+                          });
+                        }}
+                      >
+                        <label>
+                          Email
+                          <input
+                            name="email"
+                            type="email"
+                            required
+                            maxLength={160}
+                          />
+                        </label>
+                        <label>
+                          Initial password
+                          <input
+                            name="password"
+                            type="password"
+                            required
+                            minLength={14}
+                            maxLength={200}
+                            autoComplete="new-password"
+                          />
+                        </label>
+                        <label>
+                          Role
+                          <select name="role">
+                            <option value="viewer">Viewer</option>
+                            <option value="operator">Operator</option>
+                            <option value="admin">Administrator</option>
+                          </select>
+                        </label>
+                        <button disabled={busy}>Create account</button>
+                      </form>
+                    </>
+                  )}
                 </section>
               </div>
             ) : (

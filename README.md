@@ -40,6 +40,7 @@ PostgreSQL. See docs/architecture/decisions.md and docs/engineering/local-develo
 [Mission contract](docs/architecture/mission-lifecycle.md) ·
 [Verification](docs/engineering/verification.md) ·
 [Deployment and costs](infrastructure/deployment.md) ·
+[Shared Onesa account](docs/engineering/shared-account.md) ·
 [Regulatory intake matrix](docs/regulatory-requirements.md)
 
 The local assistant is a deterministic summary until the existing Onesa AI adapter
