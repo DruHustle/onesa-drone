@@ -25,6 +25,10 @@
 - Add the opt-in, additive identity migration without rewriting existing users,
   data or the original schema fingerprint. Deployment remains gated on issuer
   registration, migration, exact-source acceptance and the owner execution path.
+- Prepare an explicit owner release profile for shared identity with matched private
+  configuration and genuine browser PKCE/MFA sign-in. Keep existing delivery, tenant,
+  viewer, persistence, restore and responsive WebGL checks; source tests do not
+  establish hosted qualification or deployment.
 - Add three locally hosted NVIDIA SimReady environment references from pinned
   revision `4763fbfaa4f8e97658e68b57d01b4c86659e08b5`, retaining CC BY 4.0 attribution,
   original provenance and rendered previews. Bounded downloads verify size and

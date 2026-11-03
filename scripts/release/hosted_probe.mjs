@@ -2,6 +2,7 @@
 import { createRequire } from "node:module";
 import { existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
+import { signInIdentity, scopeIdentityRequests } from "./oracle_drone_identity_browser.mjs";
 import {
   installAutomationSession,
   assertFixtureOrigin,
@@ -14,7 +15,7 @@ const AxeBuilder = require("@axe-core/playwright").default;
 const chunks = [];
 for await (const chunk of process.stdin) {
   chunks.push(chunk);
-  if (Buffer.concat(chunks).length > 16384)
+  if (Buffer.concat(chunks).length > 65536)
     throw Error("Fixture size exceeded");
 }
 const fixture = JSON.parse(Buffer.concat(chunks));
@@ -26,7 +27,9 @@ if (
   ].includes(fixture.origin)
 )
   throw Error("Foreign probe origin refused");
-if (!fixture.email || !fixture.password || fixture.password.length < 14)
+const shared = fixture.qualification_profile === "shared-identity-v1";
+if (fixture.qualification_profile && !shared) throw Error("Unknown qualification profile");
+if (!shared && (!fixture.email || !fixture.password || fixture.password.length < 14))
   throw Error("Owned fixture identity required");
 const executablePath =
   process.platform === "linux"
@@ -52,11 +55,12 @@ const context = await browser.newContext({
   viewport: { width: 1440, height: 950 },
   reducedMotion: "reduce",
 });
-await installAutomationSession(
-  context,
-  fixture.origin,
-  fixture.protection_bypass,
-);
+if (shared) {
+  if (fixture.identity.origin !== fixture.origin) throw Error("Identity origin differs");
+  await scopeIdentityRequests(context, fixture.identity, fixture.protection_bypass);
+} else {
+  await installAutomationSession(context, fixture.origin, fixture.protection_bypass);
+}
 const errors = [];
 const checks = {};
 const page = await context.newPage();
@@ -66,10 +70,15 @@ try {
   assertFixtureOrigin(page.url(), fixture.origin);
   if (initial?.status() !== 200)
     throw Error("Canonical frontend unavailable or protected session missing");
+  if (shared) {
+    await signInIdentity(page, context, fixture.identity, {droneBypass: fixture.protection_bypass});
+    checks.shared_identity = true;
+  } else {
   await page.getByLabel("Email", { exact: true }).fill(fixture.email);
   assertFixtureOrigin(page.url(), fixture.origin);
   await page.getByLabel("Password", { exact: true }).fill(fixture.password);
   await page.getByRole("button", { name: "Sign in", exact: false }).click();
+  }
   await expect(
     page.getByRole("heading", { name: "Mission overview", exact: true }),
   ).toBeVisible({ timeout: 25000 });
@@ -154,6 +163,7 @@ try {
       views,
       live_ai_invoked: false,
       physical_interfaces_used: false,
+      qualification_profile: shared ? "shared-identity-v1" : "legacy-password-v1",
     }),
   );
 } finally {

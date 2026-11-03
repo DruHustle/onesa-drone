@@ -56,6 +56,7 @@ jobs:
           node --test scripts/test_vercel_package.mjs
           node --test scripts/release/vercel_transport_guard.test.cjs
           node --test scripts/release/probe_policy.test.mjs
+          node --test scripts/release/oracle_drone_identity_browser.test.mjs
           node --check scripts/release/hosted_probe.mjs
           npm --prefix frontend run test:unit
           npm --prefix frontend run build
