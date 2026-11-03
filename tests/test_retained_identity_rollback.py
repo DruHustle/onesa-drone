@@ -6,10 +6,14 @@ Neither run qualifies a different historical Docker image.
 """
 
 import importlib.util
+import json
 import os
 from pathlib import Path
 import secrets
 import sqlite3
+import subprocess
+import sys
+from dataclasses import asdict
 from uuid import uuid4
 
 import pytest
@@ -43,6 +47,51 @@ def settings(url):
         ai_url="",
         ai_session="",
     )
+
+
+def workflow(config, request, *, runtime_role="drone_login", require_runtime_grants=True):
+    """Use the same exiting-process boundary as each real image invocation.
+
+    The native worker can dispose an idle engine while another thread holds a
+    connection from its previous pool. The owner runner ends that application
+    process before restoring or removing its database. A long-lived pytest
+    process must not substitute garbage-collection timing for that boundary.
+    """
+    path = Path(__file__).resolve().parents[1] / "scripts/release/oracle_drone_rollback.py"
+    program = """
+import importlib.util,json,sys
+from pathlib import Path
+from backend.app.config import Settings
+path=Path(sys.argv[1])
+sys.path.insert(0,str(path.parent))
+spec=importlib.util.spec_from_file_location('drone_rollback_native_child',path)
+module=importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+namespace={}
+exec(compile(module.WORKFLOWS,str(path),'exec'),namespace)
+value=json.load(sys.stdin)
+result=namespace['exercise'](Settings(**value['settings']),value['request'],runtime_role=value['runtime_role'],require_runtime_grants=value['require_runtime_grants'])
+json.dump(result,sys.stdout)
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", program, str(path)],
+        input=json.dumps(
+            {
+                "settings": asdict(config),
+                "request": request,
+                "runtime_role": runtime_role,
+                "require_runtime_grants": require_runtime_grants,
+            }
+        ),
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+        cwd=path.parents[2],
+    )
+    assert result.returncode == 0, result.stderr[-8000:]
+    assert len(result.stdout) <= 65536
+    return json.loads(result.stdout)
 
 
 def test_schema_preflight_failure_closes_real_database_connections(proof, tmp_path, monkeypatch):
@@ -92,7 +141,7 @@ def test_retained_workflow_survives_an_actual_sqlite_copy(proof, tmp_path, envir
         schema = {row.version: row.checksum for row in db.scalars(select(SchemaRevision))}
     store.engine.dispose()
     accounts = proof["seed_principals"](url)
-    seeded = proof["exercise"](
+    seeded = workflow(
         settings(url),
         {"phase": "seed", "schema": schema, "fixture": {"accounts": accounts}},
         require_runtime_grants=False,
@@ -104,7 +153,7 @@ def test_retained_workflow_survives_an_actual_sqlite_copy(proof, tmp_path, envir
     # response interception or fabricated authentication/session is involved.
     with sqlite3.connect(source) as original, sqlite3.connect(restored) as copy:
         original.backup(copy)
-    observed = proof["exercise"](
+    observed = workflow(
         settings("sqlite:///" + str(restored)),
         {"phase": "verify", "schema": schema, "fixture": seeded["fixture"]},
         require_runtime_grants=False,
@@ -152,12 +201,12 @@ def test_retained_workflow_uses_real_restricted_postgresql_role(proof, environme
             isolated.dispose()
         accounts = proof["seed_principals"](url.render_as_string(hide_password=False))
         runtime = url.set(username=role, password=password).render_as_string(hide_password=False)
-        seeded = proof["exercise"](
+        seeded = workflow(
             settings(runtime),
             {"phase": "seed", "schema": schema, "fixture": {"accounts": accounts}},
             runtime_role=role,
         )
-        observed = proof["exercise"](
+        observed = workflow(
             settings(runtime),
             {"phase": "verify", "schema": schema, "fixture": seeded["fixture"]},
             runtime_role=role,
