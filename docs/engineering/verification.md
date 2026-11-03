@@ -1,5 +1,17 @@
 # Verification scope and release gates
 
+## Shared identity owner profile — source verification
+
+`python3 -m unittest discover -s scripts/release -p 'test_*.py'` includes the explicit
+shared-account profile: source/helper pins, configuration preservation, credential
+lifetime, actual subject/workspace/session binding, additive grants and retention of
+the complete native delivery and permission scenario. The private test subjects are
+existing scoped identities; tests never provision, elevate or disable central users.
+`node --test scripts/release/oracle_drone_identity_browser.test.mjs` checks exact
+origins, S256 callback state, fresh authenticator counters and no-redirect protected
+preview access. These disposable fixtures do not replace the actual hosted browser,
+backup/restore, immutable source readback or owner release gates.
+
 ## Built release package audit — 31 October 2026
 
 The follow-up review of dev d66f0af exercised the actual built frontend through
@@ -480,3 +492,24 @@ runner now specifies preview explicitly, creates production with automatic domai
 assignment disabled, and rejects crossed targets, non-READY state or foreign
 operation metadata before assigning an alias. The new refusal regression joins the
 release suite. No production backend had been activated at this observation.
+
+## Shared-identity retained-image compatibility gate
+
+The shared qualification profile now requires a source- and configuration-bound
+`retained-identity-disabled-v1` proof before hosted staging initialization. The
+candidate creates synthetic additive schema and data in an isolated PostgreSQL
+container. Actual retained images must authenticate the same local users and
+complete native simulation workflows after a genuine dump and restore, using
+the restricted runtime grants. Exact operation-owned container custody and
+successful absence readback are prerequisites for a PASS receipt; later phases
+must retain that receipt's binding and signed qualification digest.
+
+Local source verification exercises the real API and simulation worker across a
+SQLite copy, plus cleanup and receipt refusal cases. The ordinary PostgreSQL CI
+job runs the same API programs against actual restricted test roles. The local
+SQLite path explicitly does not qualify PostgreSQL grants, and neither source
+test path qualifies an unseen retained Docker image. No hosted database,
+application, recovery controller or provider configuration was changed while
+implementing this gate. Owner-hosted image compatibility, restore qualification
+and authenticated staging and production acceptance remain separate observed
+release requirements.

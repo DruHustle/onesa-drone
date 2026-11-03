@@ -16,8 +16,15 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
+
+# The owner invokes this pinned file with Python isolated mode. Only its own
+# installed directory may supply the reviewed sibling helper.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+if __name__ == "__main__":
+    sys.modules["oracle_drone"] = sys.modules[__name__]
+import oracle_drone_identity as shared_identity
 
 PLAN = Path("/etc/onesa/oracle-drone-release.json")
 ORIGINS = {
@@ -140,7 +147,12 @@ def validate_plan(plan, binding):
             "Slot routing mismatch",
         )
         require(config["project"] == "onesa-drone-oracle-" + slot, "Foreign Compose project")
-        hashes = {name: digest(private(name)) for name in config["configuration_sha256"]}
+        hashes = {
+            name: shared_identity.credential_pin(name)
+            if plan.get("qualification_profile") == shared_identity.PROFILE and name == config["fixture_file"]
+            else digest(private(name))
+            for name in config["configuration_sha256"]
+        }
         if config.get("protection_bypass_file"):
             require(
                 config["protection_bypass_file"] in hashes, "Automation access is not configuration-bound"
@@ -216,6 +228,7 @@ def validate_plan(plan, binding):
         plan["physical_authority"] is False and plan["synthetic_data_only"] is True,
         "Simulation-only release scope required",
     )
+    shared_identity.source_profile(plan, binding)
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -226,9 +239,13 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 class Client:
     def __init__(self, api, origin):
         require(
-            (origin, api) in {(value[0], value[1]) for value in ORIGINS.values()}, "Foreign HTTP destination"
+            (origin, api)
+            in {(value[0], value[1]) for value in ORIGINS.values()}
+            | {(value[0], value[0]) for value in ORIGINS.values()},
+            "Foreign HTTP destination",
         )
         self.api, self.origin, self.csrf = api, origin, ""
+        self.protection_bypass = None
         self.jar = http.cookiejar.CookieJar()
         self.opener = urllib.request.build_opener(NoRedirect(), urllib.request.HTTPCookieProcessor(self.jar))
 
@@ -240,6 +257,12 @@ class Client:
             "X-CSRF-Token": self.csrf,
             "User-Agent": "OnesaDroneOwnerQualification/1",
         }
+        if self.protection_bypass:
+            require(
+                self.api == self.origin == ORIGINS["staging"][0],
+                "Exact staging protection destination required",
+            )
+            headers["x-vercel-protection-bypass"] = self.protection_bypass
         if method != "GET":
             headers["Idempotency-Key"] = __import__("uuid").uuid4().hex
         request = urllib.request.Request(
@@ -284,74 +307,317 @@ class Runner:
         self.folder = private(self.plan["evidence_root"], directory=True)
         self.count = 0
         self.component = binding["component"]
-        self.check_context()
+        record = self.check_context()
+        if self.plan.get("qualification_profile") == shared_identity.PROFILE and phase in {
+            "staging",
+            "deploy",
+        }:
+            shared_identity.renew_credentials(self, record)
 
     def check_context(self):
-        keys = [
-            ("context_id", "context"),
-            ("qualification_id", "qualification"),
-            ("authorization_id", "authorization"),
-            ("operation_id", "deployment-intent"),
-        ]
-        key, kind = next((key, kind) for key, kind in keys if self.context.get(key))
-        identifier = str(UUID(self.context[key]))
-        store = private(self.plan["issuer_store"], directory=True)
-        trust = json.loads(private(store / "trust.json").read_text())
-        anchor = json.loads(private("/etc/onesa/oracle-release-trust.json").read_text())["installations"].get(
-            str(store)
-        )
+        """Verify the exact reserved operation and its complete signed ancestry.
+
+        Historical production inspection remains read-only and may inspect expired
+        or revoked authority. No other phase may use historical authority or borrow
+        an unrelated authorization ID from a caller's context.
+        """
+        self.context_records = []
+        supplied = set(self.context)
+        if self.phase == "staging":
+            require(supplied == {"context_id"}, "Exact staging context required")
+            key, kind = "context_id", "context"
+        elif self.phase == "deploy":
+            require(supplied == {"operation_id", "authorization_id"}, "Exact reserved deployment required")
+            key, kind = "operation_id", "deployment-intent"
+        elif self.phase == "production":
+            require(
+                supplied == {"operation_id", "read_only"} and self.context["read_only"] is True,
+                "Historical inspection must remain read-only",
+            )
+            key, kind = "operation_id", "deployment-intent"
+        else:
+            require(self.phase == "operations", "Unknown signed runner phase")
+            if supplied == {"context_id"}:
+                key, kind = "context_id", "context"
+            elif supplied == {"qualification_id", "owner_decision"}:
+                require(self.context["owner_decision"] == "approve", "Exact owner decision required")
+                key, kind = "qualification_id", "qualification"
+            else:
+                require(
+                    supplied == {"authorization_id", "before_deployment"}
+                    and self.context["before_deployment"] is True,
+                    "Exact predeployment authority required",
+                )
+                key, kind = "authorization_id", "authorization"
+        historical = self.phase == "production"
+        identifier = self.context[key]
         require(
-            anchor and anchor["active"] and anchor["key_id"] == trust["key_id"],
+            isinstance(identifier, str) and str(UUID(identifier)) == identifier,
+            "Canonical signed context identifier required",
+        )
+        store = private(self.plan["issuer_store"], directory=True)
+        trust_path, policy_path = private(store / "trust.json"), private(store / "policy.json")
+        public, ledger = private(store / "public.pem"), private(store / "records.sqlite")
+        anchor_path = private("/etc/onesa/oracle-release-trust.json")
+        trust = json.loads(trust_path.read_bytes(), object_pairs_hook=shared_identity.unique)
+        registry = json.loads(anchor_path.read_bytes(), object_pairs_hook=shared_identity.unique)
+        anchor = registry.get("installations", {}).get(str(store))
+        require(
+            registry.get("schema_version") == 1
+            and anchor
+            and anchor.get("active") is True
+            and all(
+                anchor.get(field) == trust[field]
+                for field in ["installation_id", "key_id", "verifier_sha256", "policy_sha256"]
+            ),
             "Uncommissioned runner custody",
         )
-        with sqlite3.connect("file:" + str(private(store / "records.sqlite")) + "?mode=ro", uri=True) as db:
-            row = db.execute("SELECT envelope,revoked FROM records WHERE id=?", (identifier,)).fetchone()
-            require(row and (not row[1] or self.phase == "production"), "Signed context missing/revoked")
-            envelope = json.loads(row[0])
-            record, signature = envelope["record"], envelope["signature"]
-            require(
-                record["kind"] == kind and record["binding"] == self.binding,
-                "Context belongs to another source or phase",
-            )
-            require(
-                signature["algorithm"] == "Ed25519"
-                and signature["key_id"] == digest(private(store / "public.pem")) == trust["key_id"],
-                "Foreign context signer",
-            )
-            if self.phase != "production":
+        executable = private(Path(__file__).resolve())
+        verifier = executable.with_name("oracle_owner.py")
+        if not verifier.exists():
+            verifier = executable.parent.parent / "oracle_owner.py"
+        verifier = private(verifier)
+        openssl = Path("/usr/bin/openssl")
+        require(
+            digest(verifier) == trust["verifier_sha256"]
+            and digest(policy_path) == trust["policy_sha256"]
+            and digest(public) == trust["key_id"]
+            and digest(openssl) == trust["openssl_sha256"],
+            "Commissioned source/policy/key pin changed",
+        )
+        policy = json.loads(policy_path.read_bytes(), object_pairs_hook=shared_identity.unique)
+        scope = self.binding["repository"] + ":" + self.binding["component"]
+        profile = policy["components"].get(scope)
+        require(
+            profile
+            and set(profile["runners"]) == set(CHECKS)
+            and all(CHECKS[phase] <= set(profile["required_checks"][phase]) for phase in CHECKS),
+            "Commissioned component/check policy required",
+        )
+        runner = profile["runners"][self.phase]
+        require(
+            runner["path"] == str(executable)
+            and runner["sha256"] == digest(executable)
+            and executable.is_relative_to(private(trust["runner_root"], directory=True)),
+            "Pinned owner runner source changed",
+        )
+        instant = datetime.now(timezone.utc)
+        records, indexed, active = {}, {}, set()
+        context_state = None
+        deployment_state = None
+        latest_decision = None
+        with sqlite3.connect("file:" + str(ledger) + "?mode=ro", uri=True, timeout=20) as db:
+
+            def verify(selected, expected_kind):
                 require(
-                    datetime.fromisoformat(record["issued_at"])
-                    <= datetime.now(timezone.utc)
-                    < datetime.fromisoformat(record["expires_at"]),
-                    "Context expired",
+                    isinstance(selected, str) and str(UUID(selected)) == selected,
+                    "Canonical ancestor identifier required",
                 )
-            if self.phase == "staging":
+                require(selected not in active, "Signed context ancestry cycle")
+                if selected in records:
+                    require(records[selected]["kind"] == expected_kind, "Signed ancestor kind changed")
+                    return records[selected]
+                require(len(records) < 8, "Signed context ancestry bound")
+                row = db.execute(
+                    "SELECT envelope,revoked,parent,kind,scope,created FROM records WHERE id=?", (selected,)
+                ).fetchone()
+                require(row and (historical or row[1] == 0), "Signed context missing/revoked")
+                envelope = json.loads(row[0], object_pairs_hook=shared_identity.unique)
+                record, signature = envelope["record"], envelope["signature"]
                 require(
-                    db.execute("SELECT state FROM contexts WHERE id=?", (identifier,)).fetchone()
-                    == ("reserved",),
-                    "Staging context has not been durably reserved",
+                    signature["algorithm"] == "Ed25519" and signature["key_id"] == trust["key_id"],
+                    "Foreign context signer",
                 )
-        with tempfile.TemporaryDirectory(dir=self.folder) as directory:
-            payload, sig = Path(directory) / "payload", Path(directory) / "signature"
-            payload.write_bytes(canonical(record))
-            sig.write_bytes(base64.b64decode(signature["value"], validate=True))
-            payload.chmod(0o600)
-            sig.chmod(0o600)
-            self.run(
-                [
-                    "/usr/bin/openssl",
-                    "pkeyutl",
-                    "-verify",
-                    "-rawin",
-                    "-pubin",
-                    "-inkey",
-                    str(store / "public.pem"),
-                    "-sigfile",
-                    str(sig),
-                    "-in",
-                    str(payload),
-                ]
+                require(
+                    type(record["schema_version"]) is int
+                    and record["schema_version"] == 1
+                    and record["id"] == selected
+                    and record["kind"] == row[3] == expected_kind
+                    and record["parent"] == row[2]
+                    and record["issued_at"] == row[5]
+                    and row[4] == scope
+                    and record["binding"] == self.binding,
+                    "Signed context source/phase/index differs",
+                )
+                provenance = record["owner_provenance"]
+                require(
+                    type(record["workflow_run_id"]) is int
+                    and record["workflow_run_id"] == 0
+                    and record["execution_context"]
+                    == (
+                        "owner-operated-oracle-staging"
+                        if expected_kind in {"context", "qualification"}
+                        else "owner-operated-oracle-release"
+                    )
+                    and provenance["owner"] == "DruHustle"
+                    and provenance["mechanism"] == "commissioned-pinned-OpenSSH-and-authenticated-owner"
+                    and provenance["installation_id"] == trust["installation_id"]
+                    and provenance["verifier_sha256"] == trust["verifier_sha256"],
+                    "Owner-run signed provenance required",
+                )
+                issued, expiry = (
+                    datetime.fromisoformat(record[field]) for field in ["issued_at", "expires_at"]
+                )
+                require(
+                    issued.tzinfo is not None
+                    and expiry.tzinfo is not None
+                    and timedelta(0) < expiry - issued <= timedelta(hours=24)
+                    and (historical or issued <= instant < expiry),
+                    "Signed context or ancestor expired",
+                )
+                with tempfile.TemporaryDirectory(dir=self.folder) as directory:
+                    payload, sig = Path(directory) / "payload", Path(directory) / "signature"
+                    payload.write_bytes(canonical(record))
+                    payload.chmod(0o600)
+                    sig.write_bytes(base64.b64decode(signature["value"], validate=True))
+                    sig.chmod(0o600)
+                    self.run(
+                        [
+                            str(openssl),
+                            "pkeyutl",
+                            "-verify",
+                            "-rawin",
+                            "-pubin",
+                            "-inkey",
+                            str(public),
+                            "-sigfile",
+                            str(sig),
+                            "-in",
+                            str(payload),
+                        ]
+                    )
+                active.add(selected)
+                records[selected], indexed[selected] = record, row
+                if expected_kind == "context":
+                    require(
+                        record["parent"] is None
+                        and record["details"]["qualification_environment"] == "staging",
+                        "Original staging context required",
+                    )
+                elif expected_kind == "qualification":
+                    verify(record["parent"], "context")
+                elif expected_kind == "authorization-attempt":
+                    require(
+                        record["details"]["decision"] == "PENDING", "Original owner decision attempt required"
+                    )
+                    verify(record["parent"], "qualification")
+                elif expected_kind == "authorization":
+                    require(
+                        record["details"]["decision"] == "approve"
+                        and record["details"]["physical_hardware_authorized"] is False,
+                        "Scoped owner software authorization required",
+                    )
+                    verify(record["parent"], "qualification")
+                    attempt = verify(record["details"]["attempt_id"], "authorization-attempt")
+                    require(attempt["parent"] == record["parent"], "Owner decision qualification changed")
+                else:
+                    require(
+                        expected_kind == "deployment-intent"
+                        and record["details"]["authorization"] == record["parent"]
+                        and type(record["details"]["provider_request_budget"]) is int
+                        and record["details"]["provider_request_budget"] == 1
+                        and record["details"]["automatic_retry"] is False,
+                        "Single reserved deployment intent required",
+                    )
+                    verify(record["parent"], "authorization")
+                active.remove(selected)
+                return record
+
+            record = verify(identifier, kind)
+            contexts = [value for value in records.values() if value["kind"] == "context"]
+            require(len(contexts) == 1, "One original qualification context required")
+            context_state = db.execute(
+                "SELECT state FROM contexts WHERE id=?", (contexts[0]["id"],)
+            ).fetchone()
+            require(
+                context_state == ("reserved" if kind == "context" else "consumed",),
+                "Signed context is not durably reserved/consumed",
             )
+            if kind == "deployment-intent":
+                authorization = records[record["parent"]]
+                deployment_state = db.execute(
+                    "SELECT state,authorization,qualification FROM deployments WHERE id=?", (identifier,)
+                ).fetchone()
+                require(
+                    deployment_state
+                    and deployment_state[1:] == (authorization["id"], authorization["parent"])
+                    and deployment_state[0]
+                    in (
+                        {"request-recorded", "deployed-unverified", "accepted"}
+                        if historical
+                        else {"request-recorded"}
+                    ),
+                    "Exact deployment reservation required",
+                )
+                if not historical:
+                    require(
+                        self.context["authorization_id"] == authorization["id"],
+                        "Caller authorization differs from reserved operation",
+                    )
+            if not historical and kind in {"authorization", "deployment-intent"}:
+                authorization = record if kind == "authorization" else records[record["parent"]]
+                latest_decision = db.execute(
+                    "SELECT id FROM records WHERE scope=? AND kind='authorization-attempt' ORDER BY sequence DESC LIMIT 1",
+                    (scope,),
+                ).fetchone()
+                require(
+                    latest_decision == (authorization["details"]["attempt_id"],),
+                    "Owner authorization superseded by a newer decision",
+                )
+            # Detect revocation or reservation changes while signatures were checked.
+            for selected, expected in indexed.items():
+                require(
+                    db.execute(
+                        "SELECT envelope,revoked,parent,kind,scope,created FROM records WHERE id=?",
+                        (selected,),
+                    ).fetchone()
+                    == expected,
+                    "Signed authority changed during verification",
+                )
+            require(
+                db.execute("SELECT state FROM contexts WHERE id=?", (contexts[0]["id"],)).fetchone()
+                == context_state,
+                "Qualification reservation changed during verification",
+            )
+            if deployment_state is not None:
+                require(
+                    db.execute(
+                        "SELECT state,authorization,qualification FROM deployments WHERE id=?", (identifier,)
+                    ).fetchone()
+                    == deployment_state,
+                    "Deployment reservation changed during verification",
+                )
+            if latest_decision is not None:
+                require(
+                    db.execute(
+                        "SELECT id FROM records WHERE scope=? AND kind='authorization-attempt' ORDER BY sequence DESC LIMIT 1",
+                        (scope,),
+                    ).fetchone()
+                    == latest_decision,
+                    "Owner decision changed during verification",
+                )
+        require(
+            json.loads(private(anchor_path).read_bytes(), object_pairs_hook=shared_identity.unique)
+            == registry
+            and json.loads(private(trust_path).read_bytes(), object_pairs_hook=shared_identity.unique)
+            == trust
+            and digest(private(policy_path)) == trust["policy_sha256"]
+            and digest(private(public)) == trust["key_id"]
+            and digest(private(verifier)) == trust["verifier_sha256"]
+            and digest(private(executable)) == runner["sha256"]
+            and digest(openssl) == trust["openssl_sha256"],
+            "Commissioned custody changed during verification",
+        )
+        if not historical:
+            require(
+                all(
+                    datetime.now(timezone.utc) < datetime.fromisoformat(value["expires_at"])
+                    for value in records.values()
+                ),
+                "Signed authority expired during verification",
+            )
+        self.context_records = list(records.values())
+        return record
 
     def run(self, args, data=None, timeout=180, persist_stdout=True):
         self.count += 1
@@ -438,6 +704,49 @@ class Runner:
         )
         return image
 
+    def accepted_runtime(self, slot):
+        config = self.plan["slots"][slot]
+        raw = self.run(
+            ["/usr/bin/docker", "inspect", "--type=container", config["project"] + "-api-1"],
+            persist_stdout=False,
+        )
+        require(len(raw) <= 1024 * 1024, "Runtime observation size bound")
+        rows = json.loads(raw, object_pairs_hook=shared_identity.unique)
+        require(isinstance(rows, list) and len(rows) == 1, "One exact accepted runtime required")
+        row = rows[0]
+        require(
+            re.fullmatch(r"[a-f0-9]{64}", row["Id"])
+            and row["Name"] == "/" + config["project"] + "-api-1"
+            and row["Image"] == self.plan["runtime_images"][self.plan["api_image"]]
+            and row["Config"]["Labels"]["org.onesa.source-commit"] == self.binding["candidate_commit"]
+            and row["State"]["Running"] is True
+            and row["State"]["Status"] == "running"
+            and row["State"]["Health"]["Status"] == "healthy",
+            "Accepted runtime changed or unhealthy",
+        )
+        images = shared_identity.values(config["images_env"])
+        expected = shared_identity.values(images["DRONE_RUNTIME_ENV_FILE"])
+        values = dict(item.split("=", 1) for item in row["Config"]["Env"])
+        require(
+            len(values) == len(row["Config"]["Env"])
+            and all(values.get(key) == value for key, value in expected.items()),
+            "Running identity configuration differs",
+        )
+        fingerprint = {
+            "Config": row["Config"],
+            "HostConfig": row["HostConfig"],
+            "Mounts": row["Mounts"],
+            "Networks": {
+                name: value["NetworkID"] for name, value in row["NetworkSettings"]["Networks"].items()
+            },
+        }
+        return {
+            "container_id": row["Id"],
+            "image_id": row["Image"],
+            "source_commit": self.binding["candidate_commit"],
+            "configuration_sha256": hashlib.sha256(canonical(fingerprint)).hexdigest(),
+        }
+
     def preserved(self):
         for name, image in self.plan["preserved_containers"].items():
             actual = self.run(["/usr/bin/docker", "inspect", "--format", "{{.Image}}", name]).decode().strip()
@@ -467,6 +776,26 @@ class Runner:
             before = self.verify_storage(slot)
             self.compose(slot, "up", "-d", "--wait", "--wait-timeout", "90", "db")
             self.compose(slot, "run", "--rm", "-T", "migrate")
+            if self.plan.get("qualification_profile") == shared_identity.PROFILE:
+                # The additive migration is owned by the existing migrator. Only
+                # its two new session tables gain the established runtime role.
+                sql = b"BEGIN; GRANT SELECT,INSERT,UPDATE,DELETE ON public.identity_transactions,public.identity_sessions TO drone_runtime; COMMIT;"
+                self.compose(
+                    slot,
+                    "exec",
+                    "-T",
+                    "db",
+                    "psql",
+                    "-X",
+                    "-q",
+                    "-v",
+                    "ON_ERROR_STOP=1",
+                    "-U",
+                    "drone_owner",
+                    "-d",
+                    "drone",
+                    data=sql,
+                )
             self.compose(slot, "up", "-d", "--wait", "--wait-timeout", "90", "api")
             self.identity(slot)
             require(before == self.verify_storage(slot), "Existing Drone records changed during image update")
@@ -527,25 +856,49 @@ class Runner:
 
     def api_check(self, slot, workflow=False):
         config = self.plan["slots"][slot]
-        fixture = json.loads(private(config["fixture_file"]).read_text())
+        shared = self.plan.get("qualification_profile") == shared_identity.PROFILE
+        fixture = (
+            shared_identity.credentials(self.plan, self.binding, slot)["accounts"]
+            if shared
+            else json.loads(private(config["fixture_file"]).read_text())
+        )
         require(
-            all(
+            shared
+            or all(
                 re.fullmatch(r"[a-z0-9._+-]+@example\.test", account["email"])
                 and len(account["password"]) >= 14
                 for account in fixture.values()
             ),
             "Only owned synthetic fixture identities are permitted",
         )
-        api, origin = config["api_origin"], config["origin"]
+        api, origin = (config["origin"] if shared else config["api_origin"]), config["origin"]
         guest = Client(api, origin)
+        if shared and config.get("protection_bypass_file"):
+            guest.protection_bypass = private(config["protection_bypass_file"]).read_text().strip()
         require(
             guest.call("/api/v1/health")["mode"] == "simulation"
             and guest.call("/api/v1/ready")["status"] == "ready",
             "Live/readiness unavailable",
         )
         guest.call("/api/v1/operations", expected=401)
+        require(
+            guest.call("/api/v1/auth/config")["shared_account"] is shared,
+            "Explicit authentication profile differs",
+        )
+        if shared:
+            guest.call(
+                "/api/v1/auth/login",
+                "POST",
+                {"email": fixture["operator"]["email"], "password": "not-a-credential"},
+                409,
+            )
+            self.verify_identity_probe()
         client = Client(api, origin)
-        user = client.login(fixture["operator"])
+        user = (
+            shared_identity.login(self, client, slot, "operator")
+            if shared
+            else client.login(fixture["operator"])
+        )
         require(user["role"] == "admin", "Fixture role differs")
         operations = client.call("/api/v1/operations")
         require(operations["mode"] == "simulation" and operations["aircraft"], "Illustrative fleet missing")
@@ -578,12 +931,19 @@ class Runner:
             )
             token, mission = mission["tracking_token"], mission["mission"]
             foreign = Client(api, origin)
-            foreign.login(fixture["foreign"])
+            if shared:
+                shared_identity.login(self, foreign, slot, "foreign")
+            else:
+                foreign.login(fixture["foreign"])
             foreign.call("/api/v1/missions/" + mission["id"] + "/history", expected=404)
             viewer = fixture["viewer"]
-            self.ensure_viewer(client, viewer)
+            if not shared:
+                self.ensure_viewer(client, viewer)
             reader = Client(api, origin)
-            reader.login(viewer)
+            if shared:
+                shared_identity.login(self, reader, slot, "viewer")
+            else:
+                reader.login(viewer)
             reader.call(
                 "/api/v1/missions/" + mission["id"] + "/commands",
                 "POST",
@@ -649,13 +1009,18 @@ try:physical_command('arm')
 except PermissionError:pass
 else:raise AssertionError('Physical command accepted')
 if DATABASE is not None:url=url.set(database=DATABASE)
-s=Store(url.render_as_string(hide_password=False));s.verify()
+identity_enabled=getattr(cfg,'identity_enabled',False)
+s=Store(url.render_as_string(hide_password=False),**({'identity_enabled':True} if identity_enabled else {}));s.verify()
 with s.session() as db:
     assert db.execute(text('SELECT ssl FROM pg_stat_ssl WHERE pid=pg_backend_pid()')).scalar() is True
     assert db.execute(text("SELECT current_user")).scalar()=='drone_login'
     for table,privilege in [('audits','DELETE'),('audits','UPDATE'),('mission_events','DELETE')]:
         assert db.execute(text('SELECT has_table_privilege(current_user,:table,:privilege)'),{'table':table,'privilege':privilege}).scalar() is False
     assert db.execute(text("SELECT has_schema_privilege(current_user,'public','CREATE')")).scalar() is False
+    if identity_enabled:
+        for table in ['identity_transactions','identity_sessions']:
+            for privilege in ['SELECT','INSERT','UPDATE','DELETE']:
+                assert db.execute(text('SELECT has_table_privilege(current_user,:table,:privilege)'),{'table':table,'privilege':privilege}).scalar() is True
     counts={m.__tablename__:db.scalar(select(func.count()).select_from(m)) for m in [Tenant,Aircraft,Mission,MissionEvent,Audit,Telemetry]}
     for tenant in db.scalars(select(Tenant)):
         rows=list(db.scalars(select(Audit).where(Audit.tenant_id==tenant.id)))
@@ -677,9 +1042,11 @@ print(json.dumps({'counts':counts,'schema_verified':True,'tls_and_wrong_ca':True
 
     def rollback_readiness(self):
         recovery = json.loads(private(self.plan["rollback_file"]).read_text())
+        shared = self.plan.get("qualification_profile") == shared_identity.PROFILE
         require(
             recovery["source_commit"] == self.binding["candidate_commit"]
-            and recovery["strategy"] == "first-release-disable-only"
+            and recovery["strategy"]
+            == ("retained-identity-disabled-v1" if shared else "first-release-disable-only")
             and recovery["preserve_database"] is True
             and recovery["physical_interfaces_disabled"] is True,
             "First-release rollback plan differs",
@@ -697,6 +1064,11 @@ print(json.dumps({'counts':counts,'schema_verified':True,'tls_and_wrong_ca':True
             )
         for name, expected in self.plan["retained_artifacts"].items():
             require(digest(private(name)) == expected, "Rollback artifact is missing or changed")
+        if shared:
+            import oracle_drone_rollback
+
+            return oracle_drone_rollback.gate(self)
+        return None
 
     def frontend_files(self, slot):
         artifact = private(self.plan["slots"][slot]["frontend_artifact"], directory=True)
@@ -863,40 +1235,68 @@ print(json.dumps({'counts':counts,'schema_verified':True,'tls_and_wrong_ca':True
             "Canonical frontend alias differs from the provider receipt",
         )
 
+    def probe_arguments(self, entrypoint=None):
+        command = [
+            "/usr/bin/docker",
+            "run",
+            "--rm",
+            "--pull=never",
+            "-i",
+            "--read-only",
+            "--cap-drop",
+            "ALL",
+            "--security-opt",
+            "no-new-privileges:true",
+            "--memory",
+            "1024m",
+            "--cpus",
+            "0.5",
+            "--pids-limit",
+            "256",
+            "-e",
+            "LP_NUM_THREADS=2",
+            "-e",
+            "XDG_CONFIG_HOME=/tmp/onesa-chromium-config",
+            "-e",
+            "XDG_CACHE_HOME=/tmp/onesa-chromium-cache",
+            "--tmpfs",
+            "/tmp:rw,nosuid,nodev,size=192m",
+        ]
+        if entrypoint:
+            command += ["--entrypoint", entrypoint]
+        return command + [self.plan["runtime_images"][self.plan["probe_image"]]]
+
+    def verify_identity_probe(self):
+        paths = ["oracle_drone_identity_browser.mjs", "probe_policy.mjs"]
+        raw = self.run(
+            self.probe_arguments(entrypoint="sha256sum")
+            + ["/probe/scripts/release/" + name for name in paths]
+        )
+        require(len(raw) <= 4096, "Bounded identity helper inspection required")
+        observed = dict(line.split(None, 1)[::-1] for line in raw.decode().splitlines())
+        expected = {
+            "/probe/scripts/release/" + name: digest(private(Path(__file__).with_name(name)))
+            for name in paths
+        }
+        require(observed == expected, "Identity probe bytes differ from the reviewed installed helpers")
+
     def browser(self, slot, workflow=False):
         config = self.plan["slots"][slot]
-        fixture = json.loads(private(config["fixture_file"]).read_text())["operator"]
-        body = {**fixture, "origin": config["origin"], "workflow": workflow}
+        shared = self.plan.get("qualification_profile") == shared_identity.PROFILE
+        if shared:
+            self.verify_identity_probe()
+            body = {
+                "identity": shared_identity.request(self, slot),
+                "qualification_profile": shared_identity.PROFILE,
+            }
+        else:
+            body = json.loads(private(config["fixture_file"]).read_text())["operator"]
+        body = {**body, "origin": config["origin"], "workflow": workflow}
         bypass = config.get("protection_bypass_file")
         if bypass:
             body["protection_bypass"] = private(bypass).read_text().strip()
         raw = self.run(
-            [
-                "/usr/bin/docker",
-                "run",
-                "--rm",
-                "-i",
-                "--read-only",
-                "--cap-drop",
-                "ALL",
-                "--security-opt",
-                "no-new-privileges:true",
-                "--memory",
-                "1024m",
-                "--cpus",
-                "0.5",
-                "--pids-limit",
-                "256",
-                "-e",
-                "LP_NUM_THREADS=2",
-                "-e",
-                "XDG_CONFIG_HOME=/tmp/onesa-chromium-config",
-                "-e",
-                "XDG_CACHE_HOME=/tmp/onesa-chromium-cache",
-                "--tmpfs",
-                "/tmp:rw,nosuid,nodev,size=192m",
-                self.plan["runtime_images"][self.plan["probe_image"]],
-            ],
+            self.probe_arguments(),
             canonical(body),
             timeout=300,
         )
@@ -916,6 +1316,12 @@ print(json.dumps({'counts':counts,'schema_verified':True,'tls_and_wrong_ca':True
         )
         if workflow:
             require(observed["checks"].get("complete_delivery") is True, "Hosted delivery not demonstrated")
+        if shared:
+            require(
+                observed.get("qualification_profile") == shared_identity.PROFILE
+                and observed["checks"].get("shared_identity") is True,
+                "Shared identity browser acceptance missing",
+            )
 
     def backup_restore(self):
         slot = "staging"
@@ -995,7 +1401,7 @@ print(json.dumps({'counts':counts,'schema_verified':True,'tls_and_wrong_ca':True
         self.preserved()
         self.frontend_files("staging")
         self.frontend_files("production")
-        self.rollback_readiness()
+        rollback_proof = self.rollback_readiness()
         slot = "staging" if self.phase == "staging" else "production"
         deployment = None
         if self.phase == "staging":
@@ -1008,16 +1414,17 @@ print(json.dumps({'counts':counts,'schema_verified':True,'tls_and_wrong_ca':True
                 self.initialize_backend(slot)
                 self.api_check(slot, workflow=True)
                 self.verify_storage(slot)
-                # First-release rollback preserves the database while withdrawing
-                # the single simulation process; restart proves retained persistence.
+                # Restart the candidate simulation process and require its
+                # persisted records to survive independently of the rollback proof.
                 before = self.verify_storage(slot)
                 self.compose(slot, "stop", "api")
                 self.compose(slot, "up", "-d", "--wait", "--wait-timeout", "90", "api")
                 self.identity(slot)
                 require(before == self.verify_storage(slot), "Restart lost persisted records")
+                deployment = self.identity(slot)
             else:
                 self.identity(slot)
-                self.deploy_frontend(slot, self.context["context_id"])
+                deployment = self.deploy_frontend(slot, self.context["context_id"])
                 self.browser(slot, workflow=True)
             self.backup_restore()
         elif self.phase == "operations":
@@ -1063,6 +1470,12 @@ print(json.dumps({'counts':counts,'schema_verified':True,'tls_and_wrong_ca':True
         else:
             raise ValueError("Unknown phase")
         self.preserved()
+        runtime = (
+            self.accepted_runtime(slot)
+            if self.plan.get("qualification_profile") == shared_identity.PROFILE
+            and self.phase in {"staging", "production"}
+            else None
+        )
         # Each phase reaches this only after its real commands and observations pass.
         return {
             "binding": self.binding,
@@ -1073,6 +1486,9 @@ print(json.dumps({'counts':counts,'schema_verified':True,'tls_and_wrong_ca':True
             "checks": {name: "PASS" for name in CHECKS[self.phase]},
             "observed_at": datetime.now(timezone.utc).isoformat(),
             "physical_authority": False,
+            "qualification_profile": self.plan.get("qualification_profile", "legacy-password-v1"),
+            **({"rollback_proof": rollback_proof} if rollback_proof is not None else {}),
+            **({"backend_runtime": runtime} if runtime is not None else {}),
         }
 
 

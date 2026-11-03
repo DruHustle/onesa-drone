@@ -144,3 +144,92 @@ credentials. Browser tests use local synthetic identity responses for shared
 sign-in, pending access, workspace selection, administrator confirmation and
 honest partial-logout recovery. They do not constitute hosted
 SSO acceptance or physical-flight qualification.
+
+## Owner qualification integration
+
+The source includes the explicit `shared-identity-v1` qualification profile for
+the existing independent backend and frontend components. A plan binds exact
+source, client and encryption-key hashes, matched probe helpers, isolated existing
+synthetic subjects/workspaces and the private fixture lifetime. Only the six
+identity settings may differ from the retained runtime and migrator configurations.
+The existing owner custody, signed context, exact-source image/security checks,
+one-request provider budget and simulation restrictions remain required.
+
+For this profile only, the fixture file's configuration pin hashes its canonical
+credential payload, excluding exactly `created_at` and `expires_at`. Every actor,
+password, MFA seed, scope, source and preview credential stays pinned. All other
+configuration files retain their byte hashes. After verification of a reserved
+owner staging context or recorded deployment intent, the runner can refresh that
+environment's time envelope once, for at most one hour and no later than the
+earliest expiry in its complete signed ancestry. The owner decision, exact source,
+commissioned runner and durable reservation are verified again before replacement.
+It durably records private intent and completion, preserves concurrent changes
+and refuses an uncertain replay. Actual browser/API acquisition always
+requires a current lease. A renewal changes neither runtime configuration nor
+release authority, and it cannot extend an already running browser's expiry.
+
+Backend qualification starts a real browser-bound PKCE transaction at the exact
+application origin and completes Portal password/MFA and the actual callback. It
+verifies the returned subject, workspace and role before using the product cookie
+on that same host. It never transfers a browser cookie to the separate API host or
+creates a replacement password user. The ordinary API scenario still completes a
+simulation delivery, checks foreign-tenant denial and viewer command denial, and
+verifies monitoring, history and private tracking. The existing identity migration
+adds only its two session tables and their restricted runtime grants.
+
+Frontend qualification uses **Continue with Onesa** and retains the existing live
+telemetry, complete delivery, replay, tracking, WebGL, responsive and accessibility
+journeys. Protected previews use isolated no-redirect handshakes and host-only
+automation cookies; credentials are never global browser headers. Source tests
+exercise refusal and private-session boundaries. They do not establish deployed
+identity, hosted acceptance or production authority.
+
+### Retained-image rollback qualification
+
+The shared profile requires `retained-identity-disabled-v1` in the existing
+configuration-pinned rollback file. Its `environments.staging` and
+`environments.production` entries name the retained `source_commit`, immutable
+`image_id`, `runtime_sha256` and `migrator_sha256`. These hashes refer to the
+plan's retained configuration files, so later frontend qualification does not
+depend on a mutable currently serving runtime file. Both retained configurations
+must leave shared identity absent or disabled. The existing native profile keeps
+its `first-release-disable-only` policy.
+
+Before staging changes any hosted schema or service, the commissioned runner
+executes `oracle_drone_rollback.py` and its matched container-custody helper. The
+candidate image initializes the real additive schema in a disposable PostgreSQL
+database and creates new synthetic users with fixed local UUIDs, tenants and
+roles. A separate owner connection applies the existing restricted runtime
+grants. The application itself runs as its image's nonroot user and connects as
+the restricted database role. It creates a real delivery checkpoint, dumps and
+restores the database, and runs each pinned prior image against that restored
+schema. The native application verifies password authentication, immutable user
+and tenant identities, viewer and foreign-tenant refusal, CSRF, continued
+simulation delivery, telemetry, audit chains, private tracking and scoped logout.
+
+The sandbox has no network, published ports, hosted database URL, real account
+credentials or external AI credentials. Only a private Unix socket is shared
+between bounded containers; database files remain in temporary memory storage.
+Loopback HTTP and synthetic database settings are explicit proof overrides.
+The prior runtime and migrator bytes remain pinned, and the proof neither changes
+them nor rewrites any hosted schema. The actual retained image's source label,
+immutable identity and runtime user must agree with the plan.
+
+Successful qualification binds both environments' results to the current signed
+context, candidate source, image identities, configuration hashes and actual
+schema fingerprints. This is a newly observed compatibility result under that
+qualification; it does not assert a previously accepted deployment. Operations
+and production reuse the same private receipt, and the later signed qualification
+must contain its exact digest. They cannot rerun or substitute a production proof.
+No PASS receipt is written until every operation-owned container is positively
+observed absent and the private socket directory is removed. A timed-out create,
+ambiguous daemon result, changed ownership or uncertain removal retains the
+diagnostics and fails without retrying the operation or touching unrelated
+containers.
+
+`tests/test_retained_identity_rollback.py` exercises the same real API programs
+with local SQLite copies and, when `DRONE_TEST_DATABASE_URL` is present, actual
+PostgreSQL restricted-role grants in newly created test databases. SQLite
+explicitly reports the grant check as `NOT_RUN`, which the owner gate rejects.
+Native source tests do not replace the required retained-image Docker dump and
+restore proof or authenticated hosted acceptance.
