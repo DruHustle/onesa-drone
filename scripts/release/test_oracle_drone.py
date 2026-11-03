@@ -179,6 +179,24 @@ class PlanTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, message):
                 d.validate_plan(self.plan, self.binding)
 
+    def test_secret_finding_in_any_runtime_image_is_refused(self):
+        for name in ("api_image", "database_image", "probe_image"):
+            with self.subTest(image=name):
+                image = self.plan[name]
+                entry = self.plan["security_reports"][image]
+                path = Path(entry["path"])
+                original = path.read_bytes()
+                try:
+                    report = json.loads(original)
+                    report["Results"].append({"Target": "synthetic", "Secrets": [{"RuleID": "fixture"}]})
+                    path.write_bytes(d.canonical(report))
+                    entry["sha256"] = d.digest(path)
+                    with self.assertRaisesRegex(ValueError, "security gate"):
+                        d.validate_plan(self.plan, self.binding)
+                finally:
+                    path.write_bytes(original)
+                    entry["sha256"] = d.digest(path)
+
     def test_physical_or_real_data_scope_refused(self):
         for key, value in [("physical_authority", True), ("synthetic_data_only", False)]:
             original = self.plan[key]
