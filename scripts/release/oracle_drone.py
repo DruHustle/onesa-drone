@@ -214,9 +214,12 @@ def validate_plan(plan, binding):
         require(
             report.get("Results")
             and all(
-                v.get("Severity") not in {"HIGH", "CRITICAL"}
+                not r.get("Secrets")
+                and all(
+                    v.get("Severity") not in {"HIGH", "CRITICAL"}
+                    for v in r.get("Vulnerabilities") or []
+                )
                 for r in report["Results"]
-                for v in r.get("Vulnerabilities") or []
             ),
             "Runtime security gate failed",
         )
