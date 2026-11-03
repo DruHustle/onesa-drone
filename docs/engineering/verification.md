@@ -1,5 +1,10 @@
 # Verification scope and release gates
 
+The owner release-plan verifier rejects a secret finding in any scanned API,
+database or probe image. Its synthetic regression also retains the existing
+image-identity, scan-freshness and high/critical vulnerability checks; a passing
+fixture does not qualify a hosted image or deployment.
+
 ## Shared identity owner profile — source verification
 
 `python3 -m unittest discover -s scripts/release -p 'test_*.py'` includes the explicit
