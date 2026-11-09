@@ -7,11 +7,11 @@
     "node": ">=24.12 <25"
   },
   "scripts": {
-    "dev": "vite --host 127.0.0.1 --port 3400",
-    "build": "node scripts/check_renderer_notice.mjs && tsc -b && vite build",
-    "typecheck": "tsc -b",
-    "test:unit": "node --test tests/*.test.mjs",
-    "test:e2e": "playwright test"
+    "dev": "vite drone/web --host 127.0.0.1 --port 3400 --config drone/web/vite.config.ts",
+    "build": "node drone/web/scripts/check_renderer_notice.mjs && tsc -p drone/web/tsconfig.json && vite build drone/web --config drone/web/vite.config.ts --outDir ../../dist",
+    "typecheck": "tsc -p drone/web/tsconfig.json",
+    "test:unit": "node --test drone/web/tests/*.test.mjs drone/mobile/tests/*.test.mjs",
+    "test:e2e": "playwright test -c playwright.config.ts"
   },
   "dependencies": {
     "react": "19.3.1",

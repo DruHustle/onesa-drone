@@ -1,0 +1,28 @@
+{
+  "name": "@onesa/drone-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "main": "node_modules/expo/AppEntry.js",
+  "type": "module",
+  "engines": {
+    "node": ">=24.12 <25"
+  },
+  "scripts": {
+    "start": "expo start --dev-client",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "prebuild:ios": "expo prebuild --platform ios",
+    "prebuild:android": "expo prebuild --platform android",
+    "test": "node --test tests/*.test.mjs",
+    "export": "expo export --platform all"
+  },
+  "dependencies": {
+    "expo": "58.0.23",
+    "expo-secure-store": "58.0.2",
+    "expo-system-ui": "58.0.7",
+    "react": "19.3.0",
+    "react-native": "0.88.1",
+    "react-native-safe-area-context": "5.11.1",
+    "react-native-svg": "15.16.0"
+  }
+}

@@ -21,9 +21,13 @@ inherited proxies, automatic provider retries and cross-provider fallback are di
 The delegated identity/credential is mapped to one exact tenant; another tenant uses
 the explicit local summary without contacting either provider. Known provider/model/
 revision/usage remain attached to each result, without claiming unknown token counts.
+The portable Onesa profile permits only `default`; unsupported model IDs and invalid
+header/cookie credential syntax fail before history is transmitted. Its result also
+retains the supplied inference backend and request identifier. Contradictory mock/real
+metadata cannot become a successful advisory. Unknown provenance remains unknown.
 
 This transport is a reviewed source copy of AI Platform `app/consumer.py`, SHA256
-`48ff4e7f5a48deb46385a5ae8239cd5bea50c55e227846846ff6666829f98378`.
+`0a0727e6beae63dd011def7bb4b68bf5c31a735b4ddb9f3e8a8e7a4688720829`.
 Builds use only local bytes and locked httpx; no sibling package or shared runtime is
 imported. Updates need a new inspected copy/hash, independent checks and rollback.
 

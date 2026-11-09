@@ -1,7 +1,11 @@
 # Onesa Drone engineering policy
 
-This repository is independent. Use dev → staging → main with PRs and exact-source
-checks. Preserve concurrent work and data. No paid resources without budget approval.
+This product lives in the standalone `DruHustle/onesa-drone` repository. Preserve
+independent builds, releases, authentication, data and runtime dependencies; do not
+create nested Git repositories or sibling submodules. Run product commands from
+this repository root. Its root workflows execute all product and native compile
+checks. Use dev → staging → main with PRs and exact-source checks.
+Preserve concurrent work and data. No paid resources without budget approval.
 No license is assigned. Credentials, customer records and private deployment bundles
 must never enter Git or CI artifacts. Use synthetic fixtures and inspect staged diffs.
 
@@ -11,7 +15,7 @@ The separate safety supervisor must validate every launch. Simulation, replay an
 real observations must remain distinct. A visual twin is not validated flight physics.
 
 Use Node 24 and Python 3.11. Run backend tests, frontend typecheck/build, browser
-checks and scripts/repository_hygiene.py before staging. Record actual results and
+checks and `python3 scripts/repository_hygiene.py` before staging. Record actual results and
 unverified gates. Pin dependencies and design artifacts; no runtime sibling imports.
 Appearance follows prefers-color-scheme only. Respect reduced motion and forced colors.
 

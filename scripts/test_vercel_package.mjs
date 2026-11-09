@@ -27,10 +27,10 @@ async function fixture(t) {
     "export const simulation=true;",
   );
   await mkdir(join(dist, "models"), { recursive: true });
-  await cp(new URL("../frontend/public/models/nvidia", import.meta.url),
+  await cp(new URL("../frontend/drone/web/public/models/nvidia", import.meta.url),
     join(dist, "models/nvidia"), { recursive: true });
   await mkdir(join(dist, "licenses"), { recursive: true });
-  await cp(new URL("../frontend/public/licenses/three.txt", import.meta.url),
+  await cp(new URL("../frontend/drone/web/public/licenses/three.txt", import.meta.url),
     join(dist, "licenses/three.txt"));
   return {
     root,
@@ -64,7 +64,7 @@ test("prebuilt routing keeps API before SPA and no private cache or indexing", a
     "public, max-age=31536000, immutable",
   );
   assert.equal(Object.keys(result.files).length, 16);
-  const catalogBytes = await readFile(new URL("../frontend/src/nvidia-manifest.json", import.meta.url));
+  const catalogBytes = await readFile(new URL("../frontend/drone/web/src/nvidia-manifest.json", import.meta.url));
   const expected = new Map([["models/nvidia/manifest.json", catalogBytes]]);
   for (const asset of JSON.parse(catalogBytes).assets) {
     for (const key of ["glb", "thumbnail", "licenseFile", "sourceFile"]) {
@@ -77,7 +77,7 @@ test("prebuilt routing keeps API before SPA and no private cache or indexing", a
     }
   }
   expected.set("licenses/three.txt",
-    await readFile(new URL("../frontend/public/licenses/three.txt", import.meta.url)));
+    await readFile(new URL("../frontend/drone/web/public/licenses/three.txt", import.meta.url)));
   for (const [path, bytes] of expected) {
     assert.deepEqual(await readFile(join(args.output, ".vercel/output/static", path)), bytes);
     assert.equal(result.files[path], createHash("sha256").update(bytes).digest("hex"));
@@ -102,6 +102,24 @@ test("foreign backend, environment swaps and missing source identities fail befo
     { backendOrigin: "https://drone-api-staging.onesa.eu/extra" },
   ])
     await assert.rejects(packageVercel({ ...args, ...patch }));
+});
+
+test("canonical packages retain the complete product source identity", async (t) => {
+  const { args } = await fixture(t);
+  const sourceBinding = {
+    schema_version: 2, repository: "DruHustle/onesa-ug", repository_id: 1444746154,
+    product: "drone", source_path: "onesa-drone", candidate_commit: args.sourceCommit,
+    source_tree: "b".repeat(40), product_source_tree: "c".repeat(40), branch: "main",
+  };
+  for (const change of [{ repository_id: 1 }, { product: "robot" }, { branch: "staging" },
+    { source_path: "onesa-robot" }, { candidate_commit: "d".repeat(40) }, { release_authorized: true }]) {
+    await assert.rejects(packageVercel({ ...args, sourceBinding: { ...sourceBinding, ...change } }), /canonical Drone/);
+    await assert.rejects(access(args.output));
+  }
+  const result = await packageVercel({ ...args, sourceBinding });
+  assert.deepEqual(result.source_binding, sourceBinding);
+  assert.deepEqual(JSON.parse(await readFile(join(args.output, "release.json"))).source_binding, sourceBinding);
+  assert.equal(Object.hasOwn(result, "release_authorized"), false);
 });
 
 test("hidden credentials and symlinks cannot enter a public artifact", async (t) => {

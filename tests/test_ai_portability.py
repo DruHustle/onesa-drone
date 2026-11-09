@@ -69,7 +69,8 @@ def test_same_drone_advisory_uses_either_provider_without_business_logic_changes
                     "contract_version": CONTRACT_VERSION,
                     "outcome": "completed",
                     "text": "Read-only advisory",
-                    "model": {"model_identifier": "mock-model", "real_inference": False},
+                    "model": {"model_identifier": "mock-model", "backend": "mock", "real_inference": False},
+                    "request_id": "00000000-0000-4000-8000-000000000001",
                 },
             )
         assert request.headers["Authorization"] == "Bearer synthetic-key"
@@ -103,6 +104,46 @@ def test_same_drone_advisory_uses_either_provider_without_business_logic_changes
     assert paths == ["/api/v1/inference/completions", "/v1/chat/completions"]
     assert first["provenance"]["model"] == "mock-model" and second["provenance"]["model"] == "other-model"
     assert first["provenance"]["contract_version"] == CONTRACT_VERSION
+    assert first["provenance"]["backend"] == "mock"
+    assert first["provenance"]["request_id"] == "00000000-0000-4000-8000-000000000001"
+    assert second["provenance"]["backend"] is None
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"ai_model": "unsupported-model"},
+        {"ai_session": "synthetic; other=cookie"},
+        {"ai_csrf": "synthetic\r\nOther: header"},
+        {"ai_provider": "openai-compatible", "ai_api_key": "synthetic\x00"},
+    ],
+)
+def test_invalid_portable_configuration_never_transmits_operational_context(monkeypatch, changes):
+    def forbidden(_):
+        pytest.fail("Invalid configuration must not transmit private operational context")
+
+    install_transport(monkeypatch, forbidden)
+    result = asyncio.run(advise("Explain", CONTEXT, replace(config(), **changes), "tenant"))
+    assert result["provider_status"] == "unavailable-or-contract-unqualified"
+    assert result["source"] == "deterministic-operational-summary"
+
+
+def test_conflicting_provenance_cannot_claim_live_advice(monkeypatch):
+    def handler(_):
+        return httpx.Response(
+            200,
+            json={
+                "contract_version": CONTRACT_VERSION,
+                "outcome": "completed",
+                "text": "provider output",
+                "model": {"model_identifier": "mock-model", "backend": "mock", "real_inference": True},
+            },
+        )
+
+    install_transport(monkeypatch, handler)
+    result = asyncio.run(advise("Explain", CONTEXT, config(), "tenant"))
+    assert result["provider_status"] == "unavailable-or-contract-unqualified"
+    assert result["source"] == "deterministic-operational-summary"
 
 
 @pytest.mark.parametrize("provider", ["onesa", "onesa-legacy", "openai-compatible", "disabled"])

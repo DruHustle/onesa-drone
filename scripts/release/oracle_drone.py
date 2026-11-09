@@ -12,6 +12,7 @@ import sqlite3
 import stat
 import subprocess
 import sys
+import tarfile
 import tempfile
 import time
 import urllib.error
@@ -27,6 +28,10 @@ if __name__ == "__main__":
 import oracle_drone_identity as shared_identity
 
 PLAN = Path("/etc/onesa/oracle-drone-release.json")
+CANONICAL_PLAN = Path("/etc/onesa/oracle-drone-canonical-release.json")
+CANONICAL_REPOSITORY = "DruHustle/onesa-ug"
+CANONICAL_REPOSITORY_ID = 1444746154
+CANONICAL_INSTALL_PARENT = Path("/usr/local/lib/onesa-release")
 ORIGINS = {
     "staging": ("https://drone-staging.onesa.eu", "https://drone-api-staging.onesa.eu", 18541),
     "production": ("https://drone.onesa.eu", "https://drone-api.onesa.eu", 18540),
@@ -113,13 +118,162 @@ def write(path, value):
         os.fsync(stream.fileno())
 
 
+DRONE_SOURCE_FIELDS = {
+    "schema_version",
+    "repository",
+    "repository_id",
+    "product",
+    "source_path",
+    "candidate_commit",
+    "source_tree",
+    "product_source_tree",
+    "branch",
+}
+DRONE_COMPONENTS = {"backend", "frontend"}
+DRONE_INSTALL_FILES = {
+    "oracle_owner.py", "oracle_install.py", "runners/oracle_drone.py",
+    "runners/oracle_drone_identity.py", "runners/oracle_drone_rollback.py",
+    "runners/oracle_drone_rollback_containers.py", "runners/oracle_drone_identity_browser.mjs",
+    "runners/probe_policy.mjs", "runners/hosted_probe.mjs", "runners/vercel_transport_guard.cjs",
+}
+
+
+def source_binding(value):
+    require(
+        isinstance(value, dict) and DRONE_SOURCE_FIELDS <= set(value),
+        "Complete canonical Drone source identity required",
+    )
+    source = {key: value[key] for key in DRONE_SOURCE_FIELDS}
+    require(
+        type(source["schema_version"]) is int
+        and source["schema_version"] == 2
+        and source["repository"] == CANONICAL_REPOSITORY
+        and type(source["repository_id"]) is int
+        and source["repository_id"] == CANONICAL_REPOSITORY_ID
+        and source["product"] == "drone"
+        and source["source_path"] == "onesa-drone"
+        and source["branch"] == "main"
+        and value.get("component", "backend") in DRONE_COMPONENTS
+        and all(
+            isinstance(source[key], str) and re.fullmatch(r"[a-f0-9]{40}", source[key])
+            for key in ("candidate_commit", "source_tree", "product_source_tree")
+        ),
+        "Canonical exact-main Drone application scope refused",
+    )
+    return source
+
+
+def component_scope(binding):
+    if binding.get("repository") == CANONICAL_REPOSITORY:
+        source_binding(binding)
+        return CANONICAL_REPOSITORY + ":drone:" + binding["component"]
+    return binding["repository"] + ":" + binding["component"]
+
+
+def source_inventory(path, binding):
+    """Reconstruct the product Git tree from data without extracting or running it."""
+    source = source_binding(binding)
+    path = Path(path)
+    require(0 < path.stat().st_size <= 128 * 1024 * 1024, "Bounded product archive required")
+    nodes, files, seen = {}, {}, set()
+    total = 0
+    with tarfile.open(path, "r:") as archive:
+        for index, member in enumerate(archive):
+            name = member.name
+            parts = name.rstrip("/").split("/")
+            require(index < 20000 and isinstance(name, str) and len(name) <= 1024
+                    and not name.startswith("/") and "\\" not in name
+                    and all(part not in {"", ".", ".."} for part in parts)
+                    and (member.isfile() or member.isdir()), "Product archive type/path refused")
+            normalized = "/".join(parts)
+            require(normalized not in seen, "Duplicate product archive path")
+            seen.add(normalized)
+            node = nodes
+            for part in parts[:-1]:
+                node = node.setdefault(part, {})
+                require(isinstance(node, dict), "Product archive directory alias")
+            if member.isdir():
+                require(isinstance(node.setdefault(parts[-1], {}), dict), "Product archive directory alias")
+                continue
+            total += member.size
+            require(0 <= member.size <= 32 * 1024 * 1024 and total <= 128 * 1024 * 1024,
+                    "Product archive content bound")
+            stream = archive.extractfile(member)
+            require(stream is not None, "Product archive member unavailable")
+            data = stream.read(member.size + 1)
+            require(len(data) == member.size and parts[-1] not in node, "Product archive member differs")
+            node[parts[-1]] = (b"100755" if member.mode & 0o111 else b"100644",
+                              hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data).digest())
+            files[normalized] = hashlib.sha256(data).hexdigest()
+
+    def tree(node):
+        value = b""
+        for name, entry in sorted(node.items(), key=lambda item: (item[0] + ("/" if isinstance(item[1], dict) else "")).encode()):
+            mode, identity = (b"40000", tree(entry)) if isinstance(entry, dict) else entry
+            value += mode + b" " + name.encode() + b"\0" + identity
+        return hashlib.sha1(b"tree " + str(len(value)).encode() + b"\0" + value).digest()
+
+    require(tree(nodes).hex() == source["product_source_tree"], "Archive differs from exact product Git tree")
+    require({"backend/app/main.py", "scripts/release/oracle_owner.py", "scripts/release/oracle_drone.py"} <= set(files),
+            "Complete Drone product source required")
+    return files
+
+
+def canonical_custody(plan, binding, policy, verifier):
+    source = source_binding(binding)
+    root = CANONICAL_INSTALL_PARENT / ("drone-canonical-" + source["source_tree"])
+    require(verifier == root / "oracle_owner.py" and Path(__file__).resolve() == root / "runners/oracle_drone.py",
+            "Canonical Drone immutable installation path differs")
+    tool = policy.get("toolchain", {})
+    require(type(policy.get("schema_version")) is int and policy["schema_version"] == 2
+            and isinstance(tool, dict)
+            and set(tool) == {"source_binding", "source_commit", "source_tree", "source_sha256", "source_archives", "files"}
+            and tool.get("source_binding") == source and tool.get("source_commit") == source["candidate_commit"]
+            and tool.get("source_tree") == source["source_tree"]
+            and tool.get("source_sha256") == binding["source_sha256"],
+            "Canonical Drone commissioned toolchain differs")
+    files = tool["files"]
+    require(isinstance(files, dict) and set(files) == DRONE_INSTALL_FILES
+            and all(isinstance(pin, str) and re.fullmatch(r"[a-f0-9]{64}", pin) for pin in files.values())
+            and plan["tool_sha256"] == {str(root / name): pin for name, pin in files.items()},
+            "Canonical Drone complete helper custody required")
+    require(plan.get("transport_guard") == str(root / "runners/vercel_transport_guard.cjs"),
+            "Canonical Drone selected transport guard differs from immutable installation")
+    for name, pin in files.items():
+        require(digest(private(root / name)) == pin, "Canonical Drone immutable helper changed")
+    names = {CANONICAL_REPOSITORY + ":drone:" + component for component in DRONE_COMPONENTS}
+    require(set(policy.get("components", {})) == names
+            and all(type(profile.get("qualification_attempt_limit")) is int
+                    and profile["qualification_attempt_limit"] == 1 for profile in policy["components"].values()),
+            "Canonical Drone paired one-context policy required")
+    archives = tool["source_archives"]
+    require(isinstance(archives, dict) and set(archives) == {
+        "drone-runtime-onesa-drone-backend", "drone-runtime-onesa-drone-frontend",
+    }, "Canonical Drone CI archive set differs")
+    for name, pin in archives.items():
+        path = private(root / "source-artifacts" / (name + ".zip"))
+        require(isinstance(pin, str) and re.fullmatch(r"[a-f0-9]{64}", pin)
+                and 0 < path.stat().st_size <= 24 * 1024 and digest(path) == pin,
+                "Canonical Drone CI archive changed")
+    inventory = source_inventory(private(plan["source_archive"]), binding)
+    require(all(inventory.get("scripts/release/" + Path(name).name) == pin for name, pin in files.items()),
+            "Canonical Drone runner bytes differ from product source")
+
+
 def validate_plan(plan, binding):
     require(
-        binding.get("repository") == "DruHustle/onesa-drone"
+        binding.get("repository") in {"DruHustle/onesa-drone", CANONICAL_REPOSITORY}
         and binding.get("component") in {"backend", "frontend"},
         "Foreign component",
     )
     require(plan["bindings"].get(binding["component"]) == binding, "Changed source/artifact binding")
+    if binding["repository"] == CANONICAL_REPOSITORY:
+        source = source_binding(binding)
+        require(plan.get("source_binding") == source and set(plan["bindings"]) == DRONE_COMPONENTS
+                and all(value.get("component") == component and source_binding(value) == source
+                        and value.get("target_environment") == "production"
+                        for component, value in plan["bindings"].items()),
+                "Canonical Drone paired application source required")
     require(
         binding["target_environment"] == "production"
         and re.fullmatch(r"[a-f0-9]{40}", binding["candidate_commit"]),
@@ -185,6 +339,8 @@ def validate_plan(plan, binding):
         "Slot isolation required",
     )
     require(digest(private(plan["source_archive"])) == binding["source_sha256"], "Source archive changed")
+    if binding["repository"] == CANONICAL_REPOSITORY:
+        source_inventory(private(plan["source_archive"]), binding)
     require(
         digest(private(plan["build_manifests"][binding["component"]])) == binding["build_sha256"],
         "Native build identity changed",
@@ -195,6 +351,13 @@ def validate_plan(plan, binding):
         and native["source_tree"] == binding["source_tree"],
         "Build belongs to another source",
     )
+    if binding["repository"] == CANONICAL_REPOSITORY:
+        require(native.get("repository") == CANONICAL_REPOSITORY
+                and native.get("source_path") == "onesa-drone"
+                and native.get("product_source_tree") == binding["product_source_tree"]
+                and native.get("verification_only") is True and native.get("release_authorized") is False
+                and native.get("mode") == "simulation" and native.get("component") == binding["component"],
+                "Canonical native build provenance differs")
     if binding["component"] == "backend":
         require(
             native["image_id"] == plan["api_image"] and native["architecture"] == "arm64",
@@ -304,7 +467,8 @@ class Client:
 class Runner:
     def __init__(self, binding, context, phase):
         require(os.geteuid() == 0 and not os.getenv("GITHUB_ACTIONS"), "External root-owner runner required")
-        self.plan = json.loads(private(PLAN).read_text())
+        selected_plan = CANONICAL_PLAN if binding.get("repository") == CANONICAL_REPOSITORY else PLAN
+        self.plan = json.loads(private(selected_plan).read_text(), object_pairs_hook=shared_identity.unique)
         validate_plan(self.plan, binding)
         self.binding, self.context, self.phase = binding, context, phase
         self.folder = private(self.plan["evidence_root"], directory=True)
@@ -389,7 +553,9 @@ class Runner:
             "Commissioned source/policy/key pin changed",
         )
         policy = json.loads(policy_path.read_bytes(), object_pairs_hook=shared_identity.unique)
-        scope = self.binding["repository"] + ":" + self.binding["component"]
+        scope = component_scope(self.binding)
+        if self.binding["repository"] == CANONICAL_REPOSITORY:
+            canonical_custody(self.plan, self.binding, policy, verifier)
         profile = policy["components"].get(scope)
         require(
             profile
@@ -1083,6 +1249,9 @@ print(json.dumps({'counts':counts,'schema_verified':True,'tls_and_wrong_ca':True
             "Frontend artifact identity differs",
         )
         require(manifest["backend_origin"] == ORIGINS[slot][1], "Frontend/API environment crossed")
+        if self.binding["repository"] == CANONICAL_REPOSITORY:
+            require(manifest.get("source_binding") == source_binding(self.binding),
+                    "Canonical frontend package source differs")
         for name, expected in manifest["files"].items():
             require(not name.startswith("/") and ".." not in Path(name).parts, "Artifact path refused")
             require(digest(artifact / ".vercel/output/static" / name) == expected, "Frontend bytes changed")
@@ -1147,7 +1316,10 @@ print(json.dumps({'counts':counts,'schema_verified':True,'tls_and_wrong_ca':True
                 {
                     "operation_id": operation,
                     "request_budget": 1,
-                    "repository": "DruHustle/onesa-drone",
+                    "repository": self.binding["repository"],
+                    **({"schema_version": 2, "repository_id": CANONICAL_REPOSITORY_ID,
+                        "product": "drone", "source_path": "onesa-drone"}
+                       if self.binding["repository"] == CANONICAL_REPOSITORY else {}),
                     "component": "frontend",
                     "environment": "production" if self.phase == "deploy" else "staging",
                 },
