@@ -9,6 +9,23 @@ test('the create budget survives process interruption and rejects a foreign targ
 test('simultaneous processes reserve one create atomically',async()=>{
  const p=fixture();try{const code=`try{require(${JSON.stringify(modulePath)}).createGuard(${JSON.stringify(p)})('https://api.vercel.com','POST','/v13/deployments');process.exit(0)}catch{process.exit(73)}`;const codes=await Promise.all([child(code),child(code)]);assert.deepEqual(codes.sort(),[0,73]);}finally{fs.rmSync(p,{recursive:true});}
 });
+test('canonical Drone transport has a literal repository/product identity and the same one-create budget',()=>{
+ const p=fixture();
+ try{
+  const file=path.join(p,'scope.json'),legacy=JSON.parse(fs.readFileSync(file));
+  const canonical={...legacy,repository:'DruHustle/onesa-ug',schema_version:2,repository_id:1444746154,product:'drone',source_path:'onesa-drone'};
+  for(const changed of [{repository_id:1},{repository_id:'1444746154'},{product:'robot'},{source_path:'onesa-robot'},{schema_version:1},{component:'backend'},{repository:'DruHustle/onesa-drone'}]){
+   fs.writeFileSync(file,JSON.stringify({...canonical,...changed}));assert.throws(()=>createGuard(p));
+  }
+  const missing={...canonical};delete missing.product;fs.writeFileSync(file,JSON.stringify(missing));assert.throws(()=>createGuard(p));
+  fs.writeFileSync(file,JSON.stringify(canonical));const check=createGuard(p);
+  assert.throws(()=>check('https://foreign.invalid','POST','/v13/deployments'));
+  check('https://api.vercel.com','POST','/v13/deployments');
+  assert.throws(()=>createGuard(p)('https://api.vercel.com','POST','/v13/deployments'));
+  const recorded=JSON.parse(fs.readFileSync(path.join(p,'create-request.json')));
+  assert.equal(recorded.repository,'DruHustle/onesa-ug');assert.equal(recorded.product,'drone');assert.equal(recorded.automatic_retry,false);
+ }finally{fs.rmSync(p,{recursive:true});}
+});
 for(const kind of ['fetch','http'])test(`${kind} transport cannot send a second deployment create`,async()=>{
  const p=fixture();let count=0;const server=http.createServer((req,res)=>{count++;req.resume();res.writeHead(201,{'Content-Type':'application/json'});res.end('{}');});
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const origin='http://127.0.0.1:'+server.address().port;

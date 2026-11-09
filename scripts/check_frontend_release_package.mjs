@@ -40,7 +40,7 @@ try {
   }
   assert.equal(result.bytes, byteCount);
   assert.deepEqual(JSON.parse(await readFile(join(output, "release.json"))), result);
-  const catalogBytes = await readFile("frontend/src/nvidia-manifest.json");
+  const catalogBytes = await readFile("frontend/drone/web/src/nvidia-manifest.json");
   assert.deepEqual(await readFile(join(delivered, "models/nvidia/manifest.json")), catalogBytes);
   const catalog = JSON.parse(catalogBytes);
   let references = 0;

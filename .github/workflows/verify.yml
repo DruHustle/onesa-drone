@@ -91,3 +91,167 @@ jobs:
           path: ${{ runner.temp }}/drone-runtime-manifests/frontend.json
           retention-days: 1
           if-no-files-found: error
+  mobile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24.22.1'
+      - name: 'Release requirement: Bundle mobile app and test simulation-only mission contract'
+        run: |
+          cd frontend/drone/mobile
+          npm ci --ignore-scripts --no-audit --no-fund
+          npx --no-install expo install --check
+          npm test
+          npx --no-install expo export --platform all --output-dir "$RUNNER_TEMP/onesa-drone-mobile-bundles"
+          npx --no-install expo prebuild --platform android --no-install
+          node --input-type=module -e "import {readFileSync} from 'node:fs'; const c=JSON.parse(readFileSync('app.json')); if(c.expo.extra.hardwareFlightEnabled!==false||c.expo.extra.simulationOnly!==true)process.exit(1);"
+  mobile-android:
+    needs: mobile
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      CI: '1'
+      EXPO_NO_TELEMETRY: '1'
+    steps:
+      - name: Verify hosted execution, visibility and included-allowance policy
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_PRIVATE: ${{ github.event.repository.private }}
+          PRIVATE_VALIDATION_ENABLED: ${{ vars.ONESA_PRIVATE_HOSTED_VALIDATION_ENABLED }}
+        run: |
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          actual=$(gh api "repos/$GITHUB_REPOSITORY" --jq ".private")
+          test "$actual" = "$EXPECTED_PRIVATE" || { echo "Repository visibility changed"; exit 1; }
+          if [ "$actual" = true ] && [ "$PRIVATE_VALIDATION_ENABLED" != true ]; then
+            echo "Private hosted verification requires explicit included-allowance opt-in"
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24.22.1'
+          cache: npm
+          cache-dependency-path: frontend/drone/mobile/package-lock.json
+      - name: Install locked mobile dependencies
+        working-directory: frontend/drone/mobile
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Generate Android sources from the locked local Expo template
+        run: python3 -m scripts.mobile_native_compile prepare --platform android --output "$RUNNER_TEMP/drone-native-android"
+      - name: Select the reviewed JDK and Android SDK versions
+        run: |
+          test -d "$JAVA_HOME_17_X64"
+          echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
+          echo "$JAVA_HOME_17_X64/bin" >> "$GITHUB_PATH"
+          test -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-37.0' 'build-tools;37.0.0' 'ndk;27.1.12297006'
+          # The published API 37.0 platform needs RN's integer compileSdk alias.
+          test -f "$ANDROID_HOME/platforms/android-37.0/android.jar"
+          if [ ! -e "$ANDROID_HOME/platforms/android-37" ]; then
+            ln -s android-37.0 "$ANDROID_HOME/platforms/android-37"
+          fi
+      - name: 'Release requirement: Compile arm64 Android debug application'
+        working-directory: frontend/drone/mobile
+        run: |
+          for attempt in 1 2 3; do
+            build_log="$RUNNER_TEMP/drone-android-build-$attempt.log"
+            set +e
+            ./android/gradlew -p android :app:assembleDebug -PreactNativeArchitectures=arm64-v8a --no-daemon --console=plain 2>&1 | tee "$build_log"
+            build_status=${PIPESTATUS[0]}
+            set -e
+            if [ "$build_status" -eq 0 ]; then
+              exit 0
+            fi
+            # Retry only observed dependency download failures within this bounded job.
+            # Compilation and test errors retain their original nonzero status.
+            if [ "$attempt" -eq 3 ] || ! grep -Eq 'Received status code (502|503|504)|Server returned HTTP response code: (502|503|504)|Downloading from https://.*failed: timeout|java\.net\.SocketTimeoutException' "$build_log"; then
+              exit "$build_status"
+            fi
+            echo "Transient dependency download failure; retrying Android build ($attempt/3)."
+            sleep "$((10 * attempt))"
+          done
+      - name: 'Release requirement: Qualify Android native output and source proof'
+        run: python3 -m scripts.mobile_native_compile qualify --platform android --output "$RUNNER_TEMP/drone-native-android"
+      - name: 'Release requirement: Retain Android native compile evidence'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: mobile-android-native-compile
+          path: |
+            ${{ runner.temp }}/drone-native-android/compile-proof.json
+            ${{ runner.temp }}/drone-native-android/OnesaDrone-arm64-debug.apk
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+  mobile-ios:
+    needs: mobile
+    runs-on: macos-26
+    timeout-minutes: 50
+    env:
+      CI: '1'
+      EXPO_NO_TELEMETRY: '1'
+    steps:
+      - name: Verify hosted execution, visibility and included-allowance policy
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_PRIVATE: ${{ github.event.repository.private }}
+          PRIVATE_VALIDATION_ENABLED: ${{ vars.ONESA_PRIVATE_HOSTED_VALIDATION_ENABLED }}
+        run: |
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          actual=$(gh api "repos/$GITHUB_REPOSITORY" --jq ".private")
+          test "$actual" = "$EXPECTED_PRIVATE" || { echo "Repository visibility changed"; exit 1; }
+          if [ "$actual" = true ] && [ "$PRIVATE_VALIDATION_ENABLED" != true ]; then
+            echo "Private hosted verification requires explicit included-allowance opt-in"
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24.22.1'
+          cache: npm
+          cache-dependency-path: frontend/drone/mobile/package-lock.json
+      - name: Install locked mobile dependencies
+        working-directory: frontend/drone/mobile
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Generate iOS sources from the locked local Expo template
+        run: python3 -m scripts.mobile_native_compile prepare --platform ios --output "$RUNNER_TEMP/drone-native-ios"
+      - name: Record native toolchain and resolve local module pods
+        working-directory: frontend/drone/mobile
+        run: |
+          xcodebuild -version
+          pod --version
+          pod install --project-directory=ios
+      - name: 'Release requirement: Compile arm64 iOS simulator without distribution signing'
+        working-directory: frontend/drone/mobile
+        run: >-
+          xcodebuild -workspace ios/OnesaDrone.xcworkspace -scheme OnesaDrone
+          -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator'
+          -derivedDataPath .validation/ios-build ARCHS=arm64 ONLY_ACTIVE_ARCH=YES
+          ENABLE_DEBUG_DYLIB=NO CODE_SIGNING_ALLOWED=NO build
+      - name: 'Release requirement: Qualify iOS native output and source proof'
+        run: python3 -m scripts.mobile_native_compile qualify --platform ios --output "$RUNNER_TEMP/drone-native-ios"
+      - name: 'Release requirement: Retain iOS native compile evidence'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: mobile-ios-native-compile
+          path: |
+            ${{ runner.temp }}/drone-native-ios/compile-proof.json
+            ${{ runner.temp }}/drone-native-ios/OnesaDrone-arm64-simulator.tar.gz
+            ${{ runner.temp }}/drone-native-ios/Podfile.lock
+            ${{ runner.temp }}/drone-native-ios/swiftpm-*-Package.resolved
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0

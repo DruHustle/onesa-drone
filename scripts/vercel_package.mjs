@@ -35,6 +35,7 @@ export async function packageVercel({
   environment,
   backendOrigin,
   sourceCommit,
+  sourceBinding,
   projectId,
   orgId,
 }) {
@@ -51,6 +52,20 @@ export async function packageVercel({
     !/^[A-Za-z0-9_]{12,100}$/.test(orgId)
   )
     throw new Error("Observed project, team and full source identity required");
+  if (sourceBinding !== undefined) {
+    const fields = ["schema_version", "repository", "repository_id", "product", "source_path",
+      "candidate_commit", "source_tree", "product_source_tree", "branch"];
+    if (!sourceBinding || typeof sourceBinding !== "object" || Array.isArray(sourceBinding)
+      || Object.keys(sourceBinding).length !== fields.length
+      || fields.some((field) => !Object.hasOwn(sourceBinding, field))
+      || sourceBinding.schema_version !== 2 || sourceBinding.repository !== "DruHustle/onesa-ug"
+      || sourceBinding.repository_id !== 1444746154 || sourceBinding.product !== "drone"
+      || sourceBinding.source_path !== "onesa-drone" || sourceBinding.branch !== "main"
+      || sourceBinding.candidate_commit !== sourceCommit
+      || ["candidate_commit", "source_tree", "product_source_tree"].some(
+        (field) => typeof sourceBinding[field] !== "string" || !/^[a-f0-9]{40}$/.test(sourceBinding[field]),
+      )) throw new Error("Exact canonical Drone package source required");
+  }
   dist = resolve(dist);
   output = resolve(output);
   if (
@@ -113,6 +128,7 @@ export async function packageVercel({
     environment,
     backend_origin: backendOrigin,
     source_commit: sourceCommit,
+    ...(sourceBinding ? { source_binding: { ...sourceBinding } } : {}),
     project_id: projectId,
     org_id: orgId,
     bytes,
@@ -179,14 +195,22 @@ if (
   process.argv[1] &&
   resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
-  const [dist, output, environment, sourceCommit, projectId, orgId] =
+  const [dist, output, environment, sourceCommit, projectId, orgId, sourceBindingFile] =
     process.argv.slice(2);
+  let sourceBinding;
+  if (sourceBindingFile) {
+    const metadata = await lstat(sourceBindingFile);
+    if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.nlink !== 1
+      || metadata.size < 1 || metadata.size > 4096) throw new Error("Bounded source binding file required");
+    sourceBinding = JSON.parse(await readFile(sourceBindingFile, "utf8"));
+  }
   const result = await packageVercel({
     dist,
     output,
     environment,
     backendOrigin: origins[environment],
     sourceCommit,
+    sourceBinding,
     projectId,
     orgId,
   });
