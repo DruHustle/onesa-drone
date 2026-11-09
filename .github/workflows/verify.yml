@@ -161,7 +161,24 @@ jobs:
           fi
       - name: 'Release requirement: Compile arm64 Android debug application'
         working-directory: frontend/drone/mobile
-        run: ./android/gradlew -p android :app:assembleDebug -PreactNativeArchitectures=arm64-v8a --no-daemon --console=plain
+        run: |
+          for attempt in 1 2 3; do
+            build_log="$RUNNER_TEMP/drone-android-build-$attempt.log"
+            set +e
+            ./android/gradlew -p android :app:assembleDebug -PreactNativeArchitectures=arm64-v8a --no-daemon --console=plain 2>&1 | tee "$build_log"
+            build_status=${PIPESTATUS[0]}
+            set -e
+            if [ "$build_status" -eq 0 ]; then
+              exit 0
+            fi
+            # Retry only observed dependency download failures within this bounded job.
+            # Compilation and test errors retain their original nonzero status.
+            if [ "$attempt" -eq 3 ] || ! grep -Eq 'Received status code (502|503|504)|Server returned HTTP response code: (502|503|504)|Downloading from https://.*failed: timeout|java\.net\.SocketTimeoutException' "$build_log"; then
+              exit "$build_status"
+            fi
+            echo "Transient dependency download failure; retrying Android build ($attempt/3)."
+            sleep "$((10 * attempt))"
+          done
       - name: 'Release requirement: Qualify Android native output and source proof'
         run: python3 -m scripts.mobile_native_compile qualify --platform android --output "$RUNNER_TEMP/drone-native-android"
       - name: 'Release requirement: Retain Android native compile evidence'

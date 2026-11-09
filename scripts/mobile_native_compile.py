@@ -24,6 +24,7 @@ MOBILE_PATH = Path("frontend/drone/mobile")
 EXPO_VERSION = "58.0.23"
 TEMPLATE_SHA256 = "fd276079c5e909c66499ec9de19f91638909d4fb3eff8fa4afa2824aac249f11"
 GRADLE_VERSION = "9.4.1"
+GRADLE_NETWORK_TIMEOUT_MS = 60000
 # https://services.gradle.org/distributions/gradle-9.4.1-bin.zip.sha256
 GRADLE_SHA256 = "2ab2958f2a1e51120c326cad6f385153bb11ee93b3c216c5fccebfdfbb7ec6cb"
 ANDROID_VERSIONS = {"compileSdk": "37", "buildTools": "37.0.0", "ndkVersion": "27.1.12297006"}
@@ -96,6 +97,17 @@ def locked_inputs(mobile):
     return {"files_sha256": inputs, "dependencies": dependencies, "expo_template_sha256": TEMPLATE_SHA256}
 
 
+def pin_gradle_wrapper(wrapper):
+    text = regular_bytes(wrapper, 16 * 1024).decode()
+    expected = "distributionUrl=https\\://services.gradle.org/distributions/gradle-" + GRADLE_VERSION + "-bin.zip"
+    require(text.splitlines().count(expected) == 1 and "distributionSha256Sum=" not in text,
+            "Generated Gradle distribution differs")
+    timeouts = [line for line in text.splitlines() if line.startswith("networkTimeout=")]
+    require(timeouts == ["networkTimeout=10000"], "Generated Gradle network timeout differs")
+    text = text.replace("networkTimeout=10000", "networkTimeout=" + str(GRADLE_NETWORK_TIMEOUT_MS))
+    wrapper.write_text(text.rstrip() + "\ndistributionSha256Sum=" + GRADLE_SHA256 + "\n")
+
+
 def prepare(platform, output, root=ROOT):
     mobile = root / MOBILE_PATH
     inputs = locked_inputs(mobile)
@@ -114,12 +126,7 @@ def prepare(platform, output, root=ROOT):
     ], cwd=mobile, env={**os.environ, "CI": "1", "EXPO_NO_TELEMETRY": "1"}, check=True)
     require(locked_inputs(mobile) == inputs, "Native generation changed locked application inputs")
     if platform == "android":
-        wrapper = native / "gradle/wrapper/gradle-wrapper.properties"
-        text = regular_bytes(wrapper, 16 * 1024).decode()
-        expected = "distributionUrl=https\\://services.gradle.org/distributions/gradle-" + GRADLE_VERSION + "-bin.zip"
-        require(text.splitlines().count(expected) == 1 and "distributionSha256Sum=" not in text,
-                "Generated Gradle distribution differs")
-        wrapper.write_text(text.rstrip() + "\ndistributionSha256Sum=" + GRADLE_SHA256 + "\n")
+        pin_gradle_wrapper(native / "gradle/wrapper/gradle-wrapper.properties")
     else:
         require((native / (APP_NAME + ".xcodeproj/project.pbxproj")).is_file(),
                 "Generated iOS target differs")

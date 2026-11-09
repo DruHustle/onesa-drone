@@ -3,8 +3,10 @@
 import copy
 import hashlib
 import json
+import os
 from pathlib import Path
 import plistlib
+import re
 import stat
 import struct
 import subprocess
@@ -35,6 +37,84 @@ class NativeOutputTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+
+    def test_gradle_download_timeout_keeps_the_locked_distribution_and_checksum(self):
+        wrapper = self.root / "gradle-wrapper.properties"
+        original = (
+            "distributionUrl=https\\://services.gradle.org/distributions/gradle-9.4.1-bin.zip\n"
+            "networkTimeout=10000\nvalidateDistributionUrl=true\n"
+        )
+        wrapper.write_text(original)
+        native.pin_gradle_wrapper(wrapper)
+        updated = wrapper.read_text()
+        self.assertEqual(updated.count("networkTimeout="), 1)
+        self.assertIn("networkTimeout=60000\n", updated)
+        self.assertIn(original.splitlines()[0] + "\n", updated)
+        self.assertIn("validateDistributionUrl=true\n", updated)
+        self.assertTrue(updated.endswith("distributionSha256Sum=" + native.GRADLE_SHA256 + "\n"))
+        invalid = (
+            original.replace("9.4.1", "9.4.2"),
+            original.replace("networkTimeout=10000\n", ""),
+            original.replace("networkTimeout=10000", "networkTimeout=0"),
+            original + "networkTimeout=10000\n",
+            original + "networkTimeout=999999\n",
+            original + "distributionSha256Sum=" + "a" * 64 + "\n",
+        )
+        for value in invalid:
+            with self.subTest(value=value):
+                wrapper.write_text(value)
+                with self.assertRaises(ValueError):
+                    native.pin_gradle_wrapper(wrapper)
+                self.assertEqual(wrapper.read_text(), value)
+
+    def test_android_workflow_retries_only_bounded_transport_failures(self):
+        workflow = (native.ROOT / ".github/workflows/verify.yml").read_text()
+        match = re.search(
+            r"      - name: 'Release requirement: Compile arm64 Android debug application'\n"
+            r"        working-directory: frontend/drone/mobile\n        run: \|\n"
+            r"((?:          .*\n)+)", workflow,
+        )
+        self.assertIsNotNone(match)
+        script = "\n".join(line[10:] for line in match.group(1).splitlines())
+        mobile = self.root / "mobile"
+        (mobile / "android").mkdir(parents=True)
+        tools = self.root / "tools"
+        tools.mkdir()
+        sleep = tools / "sleep"
+        sleep.write_text("#!/bin/sh\nexit 0\n")
+        sleep.chmod(0o755)
+        gradle = mobile / "android/gradlew"
+        gradle.write_text('''#!/bin/bash
+count=0
+if [ -f "$RUNNER_TEMP/attempt-count" ]; then count=$(cat "$RUNNER_TEMP/attempt-count"); fi
+count=$((count + 1))
+printf '%s' "$count" > "$RUNNER_TEMP/attempt-count"
+case "$TEST_SCENARIO" in
+  success) exit 0 ;;
+  retry-success)
+    if [ "$count" -gt 1 ]; then exit 0; fi
+    echo 'java.net.SocketTimeoutException: Read timed out'; exit 9 ;;
+  compiler-error) echo 'Compilation failed: invalid source'; exit 7 ;;
+  persistent-network) echo 'Received status code 504 from server'; exit 9 ;;
+esac
+exit 99
+''')
+        gradle.chmod(0o755)
+        for scenario, status, attempts in (
+            ("success", 0, 1), ("retry-success", 0, 2),
+            ("compiler-error", 7, 1), ("persistent-network", 9, 3),
+        ):
+            with self.subTest(scenario=scenario):
+                output = self.root / scenario
+                output.mkdir()
+                result = subprocess.run(
+                    ["bash", "-eo", "pipefail", "-c", script], cwd=mobile,
+                    env={**os.environ, "PATH": str(tools) + os.pathsep + os.environ["PATH"],
+                         "RUNNER_TEMP": str(output), "TEST_SCENARIO": scenario},
+                    capture_output=True, text=True, timeout=10,
+                )
+                self.assertEqual(result.returncode, status, result.stdout + result.stderr)
+                self.assertEqual(int((output / "attempt-count").read_text()), attempts)
 
     def android(self, *, machine=183, extra=None):
         apk = self.root / "app-debug.apk"
