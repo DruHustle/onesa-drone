@@ -61,6 +61,8 @@ from integrations.onesa_ai.adapter import configured as ai_configured
 from integrations.mavlink.plan import PlanError, preview_plan
 
 log = logging.getLogger("onesa.drone")
+REQUEST_BODY_SECONDS = 5
+REQUEST_BODY_BYTES = 16384
 
 
 def create_app(settings=None):
@@ -167,16 +169,26 @@ def create_app(settings=None):
         try:
             limiter.check(request.client.host if request.client else "unknown", 300)
             size = request.headers.get("content-length", "0")
-            if not size.isdigit() or int(size) > 16384:
-                return JSONResponse({"detail": "Request body too large"}, 413)
-            # Bound chunked requests too; commands are small JSON documents.
+            if (
+                not size.isascii()
+                or not size.isdecimal()
+                or len(size) > 20
+                or int(size) > REQUEST_BODY_BYTES
+            ):
+                raise HTTPException(413, "Request body too large")
+            # A total deadline bounds both stalled and continuously trickled
+            # uploads. The same byte limit applies without Content-Length.
             chunks = []
             total = 0
-            async for chunk in request.stream():
-                total += len(chunk)
-                if total > 16384:
-                    return JSONResponse({"detail": "Request body too large"}, 413)
-                chunks.append(chunk)
+            try:
+                async with asyncio.timeout(REQUEST_BODY_SECONDS):
+                    async for chunk in request.stream():
+                        total += len(chunk)
+                        if total > REQUEST_BODY_BYTES:
+                            raise HTTPException(413, "Request body too large")
+                        chunks.append(chunk)
+            except TimeoutError:
+                raise HTTPException(408, "Timed out while receiving request body") from None
             request._body = b"".join(chunks)
             response = await call_next(request)
         except HTTPException as e:

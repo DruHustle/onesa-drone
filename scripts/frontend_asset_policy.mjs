@@ -18,7 +18,7 @@ const names = {
 // dist manifest. New reference identities require an explicit source review.
 export async function requiredPublicFiles() {
   const catalogBytes = await readFile(
-    new URL("../frontend/src/nvidia-manifest.json", import.meta.url),
+    new URL("../frontend/drone/web/src/nvidia-manifest.json", import.meta.url),
   );
   const catalog = JSON.parse(catalogBytes);
   const required = new Map([
@@ -49,7 +49,7 @@ export async function requiredPublicFiles() {
     }
   }
   const notice = await readFile(
-    new URL("../frontend/public/licenses/three.txt", import.meta.url),
+    new URL("../frontend/drone/web/public/licenses/three.txt", import.meta.url),
   );
   required.set("licenses/three.txt", {
     byteLength: notice.length,

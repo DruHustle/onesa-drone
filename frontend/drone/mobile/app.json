@@ -1,0 +1,35 @@
+{
+  "expo": {
+    "name": "Onesa Drone",
+    "slug": "onesa-drone-mobile",
+    "scheme": "onesadrone",
+    "version": "0.1.0",
+    "orientation": "default",
+    "userInterfaceStyle": "automatic",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "eu.onesa.drone",
+      "config": {
+        "usesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "eu.onesa.drone",
+      "permissions": []
+    },
+    "plugins": [
+      "expo-secure-store"
+    ],
+    "updates": {
+      "enabled": false
+    },
+    "extra": {
+      "hardwareFlightEnabled": false,
+      "simulationOnly": true
+    }
+  }
+}

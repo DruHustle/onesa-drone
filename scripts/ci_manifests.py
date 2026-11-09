@@ -3,13 +3,53 @@
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 import tarfile
 
+ROOT = Path(__file__).resolve().parents[1]
+
 
 def command(*args):
     return subprocess.check_output(args, text=True).strip()
+
+
+def source_binding(root=ROOT):
+    """Bind the actual Git repository and product subtree, never a legacy label."""
+    root = root.resolve()
+    checkout = Path(command("git", "-C", str(root), "rev-parse", "--show-toplevel")).resolve()
+    path = root.relative_to(checkout).as_posix()
+    if path == ".":
+        repository = "DruHustle/onesa-drone"
+    elif path == "onesa-drone":
+        repository = "DruHustle/onesa-ug"
+    else:
+        raise SystemExit("Unrecognized Drone source location")
+    origin = command("git", "-C", str(root), "remote", "get-url", "origin")
+    if origin not in {
+        f"https://github.com/{repository}",
+        f"https://github.com/{repository}.git",
+        f"git@github.com:{repository}.git",
+        f"ssh://git@github.com/{repository}.git",
+    } or os.environ.get("GITHUB_REPOSITORY", repository) != repository:
+        raise SystemExit("Drone source repository differs from its checked location")
+    if command("git", "-C", str(root), "status", "--porcelain", "--untracked-files=all", "--", "."):
+        raise SystemExit("Drone source contains uncommitted changes")
+    commit = command("git", "-C", str(root), "rev-parse", "HEAD")
+    value = {
+        "repository": repository,
+        "source_commit": commit,
+        "source_tree": command("git", "-C", str(root), "rev-parse", "HEAD^{tree}"),
+    }
+    if path != ".":
+        value["source_path"] = path
+        value["product_source_tree"] = command("git", "-C", str(root), "rev-parse", f"HEAD:{path}")
+        # Build provenance remains non-authorizing. Only the separately installed
+        # canonical owner consumer can bind it to hosted release qualification.
+        value["verification_only"] = True
+        value["release_authorized"] = False
+    return value
 
 
 def main():
@@ -18,15 +58,13 @@ def main():
     parser.add_argument("--image", required=True)
     parser.add_argument("--image-archive", type=Path, required=True)
     args = parser.parse_args()
-    commit = command("git", "rev-parse", "HEAD")
-    tree = command("git", "rev-parse", "HEAD^{tree}")
+    source = source_binding()
+    commit = source["source_commit"]
     args.output.mkdir(parents=True, exist_ok=False)
     for component in ["backend", "frontend"]:
         value = {
-            "repository": "DruHustle/onesa-drone",
+            **source,
             "component": component,
-            "source_commit": commit,
-            "source_tree": tree,
             "mode": "simulation",
         }
         if component == "backend":
@@ -55,7 +93,7 @@ def main():
             if label != commit:
                 raise SystemExit("Runtime image source label differs from checked source")
         else:
-            dist = Path("frontend/dist")
+            dist = ROOT / "frontend/dist"
             files = {
                 str(p.relative_to(dist)): hashlib.sha256(p.read_bytes()).hexdigest()
                 for p in sorted(dist.rglob("*"))
