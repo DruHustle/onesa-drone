@@ -1,7 +1,8 @@
 # Local development and demo
 
 Use Python 3.11 and Node 24.22.1. No production credentials are required.
-Commands are run from the independent repository root.
+Commands are run from the standalone `DruHustle/onesa-drone` repository root. The product
+retains independent frontend/backend builds and does not import sibling products.
 
 ```sh
 python3.11 -m venv .venv311

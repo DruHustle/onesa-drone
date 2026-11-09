@@ -1,6 +1,11 @@
 # Onesa Drone
 
-Canonical repository: [DruHustle/onesa-drone](https://github.com/DruHustle/onesa-drone).
+Canonical source: [DruHustle/onesa-drone](https://github.com/DruHustle/onesa-drone).
+Run product commands from this repository root. Drone retains independent builds,
+releases, authentication and data. Root workflows execute application, browser and
+native compile checks. Latest work from the former consolidated checkout is retained
+here. Historical release records preserve their original source identities; source
+restoration alone does not qualify a hosted release. See [standalone source](docs/engineering/standalone-source.md).
 
 **Intelligent Delivery Beyond Roads**
 
@@ -12,6 +17,8 @@ Its accepted application revision is `ff493035cbc11a31312f6fae9364825c761b992a`.
 The frontend runs on Vercel and the API and independent PostgreSQL databases run
 on existing Oracle capacity. Staging remains protected. Later source changes are
 not deployed merely because their repository checks pass.
+
+The frontend is organized as [web](frontend/drone/web/) and [iOS/Android mobile](frontend/drone/mobile/). The CHUBORY A77 mobile prototype supports offline mission drafts, route geometry, simulated position and a CHUBORY FLY video handoff; no device commands, verified GPS or remote live video are available. The existing Vercel release path remains compatible. See [frontend setup](frontend/README.md) and [mobile instructions](frontend/drone/mobile/README.md).
 
 The architecture combines a React/Three.js console, FastAPI, SQLAlchemy operational
 records, deterministic mission planning and an isolated safety supervisor. Local

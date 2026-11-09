@@ -1,5 +1,133 @@
 # Verification scope and release gates
 
+## Consolidated-source request and provenance boundaries
+
+Run product checks from the standalone `DruHustle/onesa-drone` repository root. The bounded ASGI
+regressions in `tests/test_request_boundary.py` exercise stalled and trickled request
+bodies, chunked oversize bodies and malformed or excessive Content-Length headers.
+The request reader now has a five-second total deadline and retains the existing
+16 KiB ceiling. It returns HTTP 408 or 413 with the same no-store/security headers
+and bounded request accounting as other responses, before invoking a route.
+These cases reproduced an unbounded body wait and malformed-length exceptions on
+the prior source. Completed valid requests retain the existing authentication and
+command behavior; no physical transport is introduced.
+
+`tests/test_ci_manifests.py` creates actual disposable Git repositories and verifies
+source attribution in both standalone and consolidated layouts. Consolidated build
+manifests identify `DruHustle/onesa-ug`, its exact commit/root tree, the `onesa-drone`
+source path and that product's tree. An unexpected origin, workflow repository,
+source location or uncommitted product change fails before publication. Consolidated
+manifests explicitly mark verification-only scope and no release authorization.
+The separate canonical owner consumer below retains that source identity; legacy
+records keep their original repository and signer. Hosted release-path
+migration, pinned browser/container qualification and hardware commissioning remain
+separate requirements.
+
+## Canonical Drone release consumer
+
+The explicit schema-2 source contains `repository: DruHustle/onesa-ug`, numeric
+repository ID `1444746154`, `product: drone`, `source_path: onesa-drone`, exact
+current-main `candidate_commit`, root `source_tree`, `product_source_tree`, and
+`branch: main`. Its component policy contains exactly
+`DruHustle/onesa-ug:drone:backend` and `DruHustle/onesa-ug:drone:frontend`, each with
+one source-specific qualification context and the existing four mandatory phase
+runners/checks. A source-only policy or a legacy component policy cannot grant
+this operational scope.
+
+`scripts/release/oracle_install.py` consumes a private manifest, policy, the
+complete product-relative `tool-source.tar`, the fixed reviewed executable set,
+and the two bounded genuine `drone-runtime-onesa-drone-*` CI ZIPs. The manifest
+contains the complete source tuple plus `files`, `policy_sha256`, and
+`tool_source_sha256`. Its `toolchain` contains `source_binding`, `source_commit`,
+`source_tree`, `source_sha256`, `source_archives`, and the same `files` pins.
+Each executable is compared to GitHub's exact current-main product blob; the tar
+is reconstructed as a Git tree without extraction or execution. Current owner
+promotion, all required root/product CI jobs and steps, genuine artifact bytes,
+and final source/run readbacks are still mandatory.
+
+The new immutable target is
+`/usr/local/lib/onesa-release/drone-canonical-<root-tree>`. A dry run creates
+nothing. Installation refuses an existing target, retains an interrupted target,
+and returns `INSTALLED_NOT_COMMISSIONED` with zero provider requests. The existing
+owner SSH/sudo identity and private stdin token remain required; the installer
+creates no credentials, Store, trust anchor or application state. Bootstrap and
+commissioning require independent source and policy pin review.
+
+Canonical runtime invocations select
+`/etc/onesa/oracle-drone-canonical-release.json`. Its `source_binding` and both
+component bindings must agree. `tool_sha256` contains every immutable installed
+executable at its exact path, including rollback and identity helpers. The
+selected `transport_guard` must be that installation's literal
+`runners/vercel_transport_guard.cjs` path; genuine helper pins cannot authorize
+another selected private file, even if its bytes are identical. The
+private native build manifests retain canonical repository/path/root/subtree
+identity and their nonauthorizing simulation flags. The source tar and CI ZIPs
+are checked again by the runner and owner at their respective boundaries.
+
+For the prebuilt frontend packager, the optional final argument is a bounded JSON
+file containing the same complete source binding. The programmatic interface is
+`packageVercel({ ...existingOptions, sourceBinding })`. Canonical packages retain
+`source_binding` in `release.json`; the runner rejects missing or mismatched
+identity. Existing legacy packaging calls remain supported. The provider guard
+accepts only the literal canonical Drone scope with the original one-create
+budget; a failed, uncertain or interrupted provider acknowledgement never grants
+another create attempt.
+
+The migration tests use real disposable Git trees/tars and Ed25519 Store records,
+plus bounded synthetic GitHub/provider responses. They exercise foreign or
+changed source, forged helper bytes, partial policies, relaxed context limits,
+malformed/aliased archives, immutable no-overwrite installation, source-bound
+runtime checks, retained reservations and canonical transport scope. Run them
+with `python3.11 -m unittest discover -s scripts/release -p 'test_*.py'`; root
+source-consumer tests also cover this fourth independent verifier.
+
+This source addition does not establish exclusive controller handoff. Before live
+commissioning, inspect the old issuers and unresolved operations, retain verified
+accepted recovery evidence under the original keys and verifier, then complete
+the existing staging, operations, compatible rollback and production acceptance
+with the exact canonical candidate. Do not retire a legacy repository or relabel
+its records on the strength of a local test, CI build or installed tool directory.
+All runtime and qualification paths continue to require simulation-only behavior.
+
+The 7 November 2026 source verification used Python 3.11.17 and Node 24.22.1.
+All 137 release cases, including 16 canonical migration cases, and all 94 root
+CI/source-consumer cases passed. The backend suite passed 254 cases with two
+PostgreSQL-only skips in the local SQLite environment. All 36 Node packaging,
+transport and identity cases and 13 frontend units passed, as did Ruff,
+TypeScript/build, the actual built-output package audit, generated-workflow
+verification and publication hygiene.
+
+The first hosted consumer run exposed a synthetic-owner fixture omission:
+real owner custody correctly refused Actions. The fixture now supplies its
+explicit synthetic owner identity, and a separate adverse case asserts the real
+refusal before API access. Independent source review also found and closed the
+selected transport-guard path gap described above. The final 139 release cases
+pass with `GITHUB_ACTIONS=true`, with Ruff and publication hygiene still clean.
+
+The Playwright CDN returned truncated archives. The same pinned Chrome for
+Testing 156.0.8078.4 was obtained from Google's official distribution and its
+version was read back. All 34 browser cases then failed before a browser could
+start because this workspace denies the required process-singleton socket
+(`Operation not permitted`). No browser journey passed locally. Required pinned
+CI browser/PostgreSQL/image gates and the independent hosted owner qualification
+remain outstanding for this source; no runtime, Store or provider was changed.
+
+The 4 November 2026 local source review used Python 3.11.17 and Node 24.22.1.
+The complete suite passed all 251 cases on a newly created disposable PostgreSQL
+17.6 instance, including the restricted-role retained-identity workflows; no case
+was skipped. The SQLite baseline passed 235 cases with two PostgreSQL-only skips,
+and all 14 added boundary/provenance cases passed separately. All 121 release cases,
+34 packaging/transport cases and 13 frontend unit cases passed, alongside Ruff,
+TypeScript/build, exact built-package verification and publication hygiene. Both
+locked dependency audits reported no known vulnerabilities.
+
+The pinned Chromium download returned invalid archives. A separate attempt using
+the installed Chromium failed before all 34 browser cases could create a browser,
+because this execution environment denies the required Unix socket. No browser
+journey or Docker-image security gate is reported as passed from those attempts;
+the complete pinned CI and hosted acceptance gates remain mandatory. The temporary
+PostgreSQL used only loopback TCP and was stopped and removed after verification.
+
 The owner release-plan verifier rejects a secret finding in any scanned API,
 database or probe image. Its synthetic regression also retains the existing
 image-identity, scan-freshness and high/critical vulnerability checks; a passing

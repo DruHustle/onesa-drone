@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 
 const source = readFileSync(
-  new URL("../../tests/fixtures/controller-preview.plan", import.meta.url),
+  new URL("../../../../tests/fixtures/controller-preview.plan", import.meta.url),
 );
 
 async function login(
