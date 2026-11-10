@@ -6,9 +6,10 @@ export type Aircraft = {
   manufacturer: string;
   category: string;
   status: string;
-  battery: number;
-  capacity: number;
-  endurance: number;
+  battery: number | null;
+  battery_quality?: "unavailable";
+  capacity: number | null;
+  endurance: number | null;
   firmware: string;
   connectivity: string;
   active_mission_id: string | null;
@@ -24,7 +25,9 @@ export type Sample = {
   ground_speed_mps: number;
   heading: number;
   battery_percent: number;
+  battery_quality?: "unavailable";
   remaining_endurance_min: number;
+  endurance_quality?: "unavailable";
   flight_mode: string;
   motor_health: string;
   connectivity: string;
