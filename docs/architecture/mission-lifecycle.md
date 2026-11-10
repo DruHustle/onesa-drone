@@ -31,6 +31,26 @@ Prelaunch cancellation terminates and releases the reservation. Reschedule/repla
 invalidates prior authorization. Cancellation during a flight requests virtual return;
 it does not teleport an aircraft or claim an immediate delivery.
 
+The independent supervisor rejects nonfinite or untyped numeric launch data before
+performing route, payload or energy comparisons. An unavailable endurance or invalid
+battery observation holds the simulation in `paused`, including during return and
+landing. Recovery requires a valid replacement observation and explicit operator
+action; repairing the observation alone never resumes simulation. A held return or
+descent retains its completed phase ticks, position and safe path. Recovery and
+cancellation continue that checkpoint instead of replaying an earlier route segment.
+Physical aircraft interfaces remain disabled. These checks do not qualify a hardware
+safety system or turn reference simulation limits into aircraft specifications.
+
+Operations and SSE encode invalid aircraft battery/capacity/endurance observations
+as JSON `null`; an invalid battery also has `battery_quality: "unavailable"`. Planning
+and dispatch refuse those aircraft until valid observations are available. Held
+telemetry retains its last valid numeric sample for historical provenance, adds the
+unavailable battery quality marker, and never presents that retained value as a fresh
+battery observation. The console shows "Unavailable" and gaps in battery history.
+An unavailable endurance estimate has `endurance_quality: "unavailable"` and the
+console identifies that estimate as unavailable. Launch revalidates battery,
+capacity and endurance after authorization, as well as the planned route inputs.
+
 All mutations authenticate a current user and server role, enforce the user's tenant,
 lock the tenant record and check object revision. `Idempotency-Key` commands persist
 actor, request digest and response in the same transaction as state/event/audit changes.

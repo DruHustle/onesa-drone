@@ -3,6 +3,7 @@
 from heapq import heappush, heappop
 from math import cos, sin, pi, hypot, ceil
 from autonomy.navigation.geometry import xy, geo, distance, segment_clear
+from autonomy.observations import positive_number, valid_battery
 
 DEFAULT_ZONES = [{"x": 120, "y": 100, "radius": 55, "label": "Illustrative restricted campus area"}]
 DEFAULT_CONSTRAINTS = {
@@ -56,6 +57,10 @@ def plan_route(
 ):
     c = {**DEFAULT_CONSTRAINTS, **(constraints or {})}
     zones = DEFAULT_ZONES if zones is None else zones
+    if not valid_battery(aircraft.get("battery")) or any(
+        not positive_number(aircraft.get(key)) for key in ("capacity", "endurance")
+    ):
+        raise ValueError("Aircraft battery, capacity or endurance observation is unavailable")
     end = xy(destination, home)
     if hypot(*end) < 20:
         raise ValueError("Destination must be at least 20 m from home")

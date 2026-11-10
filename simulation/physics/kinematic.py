@@ -28,7 +28,7 @@ def sample(mission, aircraft, previous):
     phase = mission.phase_tick
     pos, heading = path_position(p["waypoints"], min(1, phase / n), home)
     if state == "returning":
-        start = previous.get("return_start") or previous.get("position") or p["waypoints"][-1]
+        start = previous.get("return_start") or previous.get("position") or home
         # Reverse the flown safe route rather than cutting through a virtual restriction.
         prior = previous.get("return_path")
         if not prior:
