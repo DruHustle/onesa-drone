@@ -1,7 +1,9 @@
 import { test, expect, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-import mobileListings from "../src/mobile-downloads.json";
-import { storeListing } from "../src/mobile-store-listing";
+import { readFileSync } from "node:fs";
+import { storeListing } from "../src/mobile-store-listing.ts";
+
+const mobileListings = JSON.parse(readFileSync(new URL("../src/mobile-downloads.json", import.meta.url), "utf8"));
 
 // UI acceptance uses synthetic local identity responses. Protocol and tenant
 // authorization are covered separately against the real Python application.
