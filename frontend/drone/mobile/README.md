@@ -7,7 +7,7 @@ iOS and Android React Native/Expo SDK 58 prototype. Production aircraft control 
 - Manual latitude/longitude waypoints with validation, distance review, interactive relative map, route editing and saved mission drafts.
 - Security rounds, farm inspections, conservancy observation, medical-delivery and e-commerce-delivery planning templates.
 - Local-only route simulation with positions explicitly identified as synthetic. Hardware position, battery and camera state remain unavailable without a verified source.
-- Private per-draft platform-encrypted storage through Expo SecureStore, with tests for corrupted data and index failures.
+- Up to 12 device-local drafts in Expo SecureStore. At capacity, the planner preserves each saved route and prompts the operator to delete one before adding another. Concurrent saves and interrupted storage operations have regression coverage.
 - Camera panel explaining the local CHUBORY FLY Wi-Fi feed and offering an external handoff to the official companion app.
 - Safety checklist and no remote flight, mission launch, take-off, payload release, human tracking, automated surveillance or live video endpoints.
 

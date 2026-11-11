@@ -7,6 +7,7 @@ from .models import Aircraft, Mission, MissionEvent, Audit, Tenant, Receipt, Tel
 from .security import digest
 from autonomy.mission_planning.planner import plan_route
 from autonomy.safety_supervisor.supervisor import validate_launch, supervision
+from autonomy.observations import positive_number, valid_battery
 from autonomy.decision_engine.states import check_transition, ACTIVE, TERMINAL
 from simulation.physics.kinematic import STEP_SECONDS, sample
 
@@ -26,7 +27,7 @@ def policy(db, tenant):
 
 
 def aircraft_out(a):
-    return {
+    result = {
         k: getattr(a, k)
         for k in (
             "id",
@@ -44,6 +45,14 @@ def aircraft_out(a):
             "revision",
         )
     } | {"maintenance": json.loads(a.maintenance), "mode": "simulation", "specifications": "illustrative"}
+    # Persisted observations can be corrupted independently of request validation.
+    # Keep operations and SSE readable without inventing a numeric replacement.
+    if not valid_battery(a.battery):
+        result.update(battery=None, battery_quality="unavailable")
+    for key in ("capacity", "endurance"):
+        if not positive_number(result[key]):
+            result[key] = None
+    return result
 
 
 def mission_out(m):
@@ -118,6 +127,18 @@ def transition(db, m, target, actor, correlation, detail):
         )
     )
     audit(db, m.tenant_id, actor, "mission." + target, {"mission_id": m.id, "reason": detail}, correlation)
+
+
+def return_home(db, m, actor, correlation, detail):
+    held = json.loads(m.last_telemetry).get("held_phase", {}) if m.state == "paused" else {}
+    target = held.get("state") if held.get("state") in {"returning", "landing"} else "returning"
+    phase_tick = held.get("completed_ticks", 0) if held.get("state") == target else 0
+    if type(phase_tick) is not int or phase_tick < 0:
+        raise ValueError("Held simulation checkpoint is invalid; recovery refused")
+    transition(db, m, target, actor, correlation, detail)
+    # A held return/descent continues at its persisted checkpoint. Restarting its
+    # phase would replay the route backwards or send a landed position away again.
+    m.phase_tick = phase_tick
 
 
 def idempotent(db, tenant, actor, key, body, fn):
@@ -264,9 +285,7 @@ def command(db, tenant, actor, identifier, c, correlation):
             if m.state in ACTIVE or m.state == "paused":
                 m.outcome = "cancelled"
                 if m.state not in {"returning", "landing"}:
-                    transition(
-                        db, m, "returning", actor, correlation, "Operator cancellation; virtual return"
-                    )
+                    return_home(db, m, actor, correlation, "Operator cancellation; virtual return")
                 else:
                     m.revision += 1
                     audit(db, tenant, actor, "mission.cancel_requested", {"mission_id": m.id}, correlation)
@@ -276,8 +295,10 @@ def command(db, tenant, actor, identifier, c, correlation):
         elif c.action == "recover":
             if m.state != "paused":
                 raise ValueError("Recovery requires a held simulation")
+            if not valid_battery(a.battery) or not positive_number(a.endurance):
+                raise ValueError("Recovery requires valid battery and endurance observations")
             m.outcome = "aborted"
-            transition(db, m, "returning", actor, correlation, "Operator recovery to virtual home")
+            return_home(db, m, actor, correlation, "Operator recovery to virtual home")
         elif c.action in {"reschedule", "replan"}:
             if m.state not in {"planned", "validated", "authorized"}:
                 raise ValueError("Reschedule/replan requires an unlaunched plan")
@@ -319,9 +340,10 @@ def advance(db, m, limit=600):
     previous = json.loads(m.last_telemetry)
     if m.scenario == "low_battery" and m.tick == 10:
         a.battery = 19
-    decision = supervision(m.scenario, m.tick, a.battery)
+    decision = supervision(m.scenario, m.tick, a.battery, a.endurance)
     correlation = "sim-" + m.id + "-" + str(m.tick)
-    if decision and m.state not in {"returning", "landing"}:
+    if decision and (m.state not in {"returning", "landing"} or decision[0] == "paused"):
+        held_phase = {"state": m.state, "completed_ticks": m.phase_tick - 1}
         m.outcome = "aborted"
         transition(db, m, decision[0], "simulation-supervisor", correlation, decision[1])
         db.add(
@@ -337,7 +359,10 @@ def advance(db, m, limit=600):
                 m,
                 {
                     **previous,
+                    **({"battery_quality": "unavailable"} if not valid_battery(a.battery) else {}),
+                    **({"endurance_quality": "unavailable"} if not positive_number(a.endurance) else {}),
                     "seq": m.tick,
+                    "held_phase": held_phase,
                     "simulation_seconds": m.tick * STEP_SECONDS,
                     "ground_speed_mps": 0,
                     "flight_mode": "paused",
