@@ -4,8 +4,8 @@ on:
     branches: [qa/android-bench-smoke-20261111]
 # Retarget these two fixed values together after a successful bench build.
 env:
-  BENCH_BUILD_RUN: '43023755896'
-  BENCH_SOURCE_SHA: '7215b97a5e05190466b26aec8d651ccdbe381999'
+  BENCH_BUILD_RUN: '43026960359'
+  BENCH_SOURCE_SHA: '29457e7aa76671175f210030a7069adaad5d9e74'
 permissions:
   actions: read
   contents: read

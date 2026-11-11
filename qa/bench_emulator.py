@@ -39,6 +39,9 @@ def verify():
             "Incorrect bench qualification")
     require(proof["identity"]["application_id"] == PACKAGE and proof["identity"]["architecture"] == "arm64-v8a",
             "Unexpected app identity")
+    require(proof["identity"]["native_library_packaging"] == "compressed-for-install-time-extraction" and
+            proof["identity"]["native_library_extraction"] in ("explicit", "platform-default"),
+            "Expected bench package with native library extraction")
     require(proof["output"] == {"name": APK.name, "sha256": digest, "size_bytes": APK.stat().st_size},
             "APK size or digest differs from the build proof")
     print("Verified source", SOURCE, "and APK SHA-256", digest)
