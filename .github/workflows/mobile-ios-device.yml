@@ -5,7 +5,8 @@ on:
     paths:
       - ".github/workflows/mobile-ios-device.yml"
       - "scripts/check_ios_device_archive.py"
-      - "frontend/drone/mobile/IOS_RELEASE.md"
+      - "scripts/mobile_native_compile.py"
+      - "frontend/drone/mobile/**"
   workflow_dispatch:
 permissions:
   contents: read
