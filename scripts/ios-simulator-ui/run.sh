@@ -67,7 +67,7 @@ if curl --noproxy '*' --silent --max-time 2 http://127.0.0.1:8081/status >/dev/n
   echo "Port 8081 already has a server. Stop it before running this checkout's Metro." >&2
   exit 1
 fi
-CI=1 EXPO_NO_TELEMETRY=1 node node_modules/expo/bin/cli start --offline --localhost --port 8081 > "$work/metro.log" 2>&1 &
+CI=1 EXPO_NO_TELEMETRY=1 EXPO_OFFLINE=1 node node_modules/expo/bin/cli start --localhost --port 8081 > "$work/metro.log" 2>&1 &
 metro=$!
 ready=false
 for _ in {1..90}; do

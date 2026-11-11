@@ -78,10 +78,20 @@ def launch():
     require("Status: ok" in result, "Android did not launch the release activity")
 
 
-def verify_offline():
-    require(shell("settings", "get", "global", "airplane_mode_on") == "1"
-            and re.search(r"Active default network:\s*(?:none|null)\b", shell("dumpsys", "connectivity"), re.I),
-            "Emulator must be offline for this test")
+def verify_offline(timeout=30):
+    # Radio disable commands return before ConnectivityService finishes tearing
+    # down its default network. Wait for the same strict readback, never weaken
+    # the offline requirement or accept a missing/unknown network field.
+    deadline = time.monotonic() + timeout
+    while True:
+        airplane = shell("settings", "get", "global", "airplane_mode_on")
+        connectivity = shell("dumpsys", "connectivity")
+        if airplane == "1" and re.search(
+            r"^\s*Active default network:\s*(?:none|null)\s*$", connectivity, re.I | re.M
+        ):
+            return
+        require(time.monotonic() < deadline, "Emulator must be offline for this test")
+        time.sleep(0.5)
 
 
 def screenshot(directory, name):
