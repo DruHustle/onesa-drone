@@ -64,6 +64,8 @@ jobs:
           .venv311/bin/python -m pip_audit -r backend/requirements.lock --no-deps --disable-pip
       - name: 'Release requirement: Verify built frontend package'
         run: node scripts/check_frontend_release_package.mjs
+      - name: Check the Ubuntu archive mirror for Chromium prerequisites
+        run: bash .github/scripts/browser-apt-mirror.sh
       - name: Browser acceptance
         run: |
           cd frontend
