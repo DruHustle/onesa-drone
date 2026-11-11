@@ -1,0 +1,51 @@
+name: Verify iOS device release archive
+on:
+  pull_request:
+    branches: [dev, staging, main]
+    paths:
+      - ".github/workflows/mobile-ios-device.yml"
+      - "scripts/check_ios_device_archive.py"
+      - "scripts/mobile_native_compile.py"
+      - "frontend/drone/mobile/**"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  unsigned-device-archive:
+    if: ${{ github.event.repository.private == false || vars.ONESA_PRIVATE_HOSTED_VALIDATION_ENABLED == 'true' }}
+    runs-on: macos-26
+    timeout-minutes: 50
+    env:
+      CI: '1'
+      EXPO_NO_TELEMETRY: '1'
+      NODE_ENV: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24.22.1'
+          cache: npm
+          cache-dependency-path: frontend/drone/mobile/package-lock.json
+      - name: Prepare the locked simulation-only device source
+        run: |
+          npm --prefix frontend/drone/mobile ci --include=dev --ignore-scripts --no-audit --no-fund
+          npm --prefix frontend/drone/mobile test
+          python3 -m scripts.mobile_native_compile prepare --platform ios --output "$RUNNER_TEMP/device-prepared"
+          (cd frontend/drone/mobile/ios && pod install)
+      - name: Archive the Release app for a physical arm64 iOS device without distribution signing
+        working-directory: frontend/drone/mobile
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          archive="$RUNNER_TEMP/OnesaDrone.xcarchive"
+          trap 'rm -rf -- "$archive" "$RUNNER_TEMP/drone-device-build"' EXIT
+          xcodebuild -workspace ios/OnesaDrone.xcworkspace -scheme OnesaDrone -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -archivePath "$archive" \
+            -derivedDataPath "$RUNNER_TEMP/drone-device-build" ARCHS=arm64 ONLY_ACTIVE_ARCH=NO \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= archive
+          (cd ../../.. && python3 -m scripts.check_ios_device_archive "$archive")
