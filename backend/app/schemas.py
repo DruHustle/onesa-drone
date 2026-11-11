@@ -33,7 +33,11 @@ class AircraftIn(Strict):
     endurance: float = Field(ge=5, le=240)
 
 
-class AircraftCommand(Strict):
+class SimulationCommand(Strict):
+    expires_at: float | None = Field(default=None, ge=0, description="UTC Unix seconds after which this request cannot first execute.")
+
+
+class AircraftCommand(SimulationCommand):
     action: Literal["inspect", "decommission", "restore", "charge", "maintenance"]
     note: str = Field(default="", max_length=500)
     revision: int = Field(ge=1)
@@ -57,7 +61,7 @@ class MissionIn(Strict):
     scheduled_at: float | None = Field(default=None, ge=0)
 
 
-class Command(Strict):
+class Command(SimulationCommand):
     action: Literal["plan", "validate", "authorize", "launch", "cancel", "recover", "reschedule", "replan"]
     revision: int = Field(ge=1)
     aircraft_id: str | None = Field(default=None, max_length=40)

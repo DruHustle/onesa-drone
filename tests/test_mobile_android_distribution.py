@@ -44,3 +44,37 @@ class AndroidDistributionTests(unittest.TestCase):
             self.assertNotEqual(first, create(names, b"modified"))
             with self.assertRaises(ValueError):
                 create(names[:-1], b"")
+
+    def test_play_manifest_matches_app_and_sdk_policy(self):
+        from scripts.mobile_android_distribution import bundle_manifest
+        xml = ('<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="eu.onesa.drone" '
+               'android:versionName="0.1.0" android:versionCode="8"><uses-sdk android:minSdkVersion="24" '
+               'android:targetSdkVersion="36"/><application/></manifest>')
+        config = {"version": "0.1.0", "android": {"versionCode": 8}}
+        self.assertEqual(bundle_manifest(xml, config)["minSdk"], 24)
+        for bad in [xml.replace("eu.onesa.drone", "eu.onesa.drone.bench"), xml.replace('="36"', '="32"'),
+                    xml.replace('="8"', '="9"'), xml.replace("<application/", '<application android:debuggable="true"/')]:
+            with self.assertRaises(ValueError):
+                bundle_manifest(bad, config)
+
+    def test_play_contents_distinguish_signing_metadata_and_app_payload(self):
+        from scripts.mobile_android_distribution import bundle_contents
+        entries = {"BundleConfig.pb", "base/manifest/AndroidManifest.xml", "base/dex/classes.dex",
+                   "base/assets/index.android.bundle", "base/lib/arm64-v8a/libreactnative.so"}
+        with tempfile.TemporaryDirectory() as folder:
+            bundle = Path(folder) / "fixture.aab"
+            with zipfile.ZipFile(bundle, "w") as archive:
+                for name in entries:
+                    archive.writestr(name, name.encode())
+            initial = bundle_contents(bundle, signed=False)
+            with self.assertRaises(ValueError):
+                bundle_contents(bundle, signed=True)
+            with zipfile.ZipFile(bundle, "a") as archive:
+                archive.writestr("META-INF/FIXTURE.SF", b"test")
+                archive.writestr("META-INF/FIXTURE.RSA", b"test")
+            self.assertEqual(bundle_contents(bundle, signed=True), initial)
+            with self.assertRaises(ValueError):
+                bundle_contents(bundle, signed=False)
+            with zipfile.ZipFile(bundle, "a") as archive:
+                archive.writestr("base/assets/change", b"test")
+            self.assertNotEqual(bundle_contents(bundle, signed=True), initial)

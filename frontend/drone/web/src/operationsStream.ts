@@ -21,6 +21,7 @@ export function subscribeToOperations(
   let active: EventSource | null = null;
   let timer: ReturnType<typeof setTimeout>;
   let retries = 0;
+  let lastSnapshotAt = -Infinity;
 
   function stop() {
     clearTimeout(timer);
@@ -65,6 +66,10 @@ export function subscribeToOperations(
       } catch {
         return retry("updates unavailable");
       }
+      // A replay from a stale intermediary cannot restore a healthy feed or
+      // extend the silence timer. Preserve the newest snapshot across reconnects.
+      if (snapshot.at <= lastSnapshotAt) return;
+      lastSnapshotAt = snapshot.at;
       receivedFrame = true;
       retries = 0;
       watchForSilence();

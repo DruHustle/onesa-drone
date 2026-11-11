@@ -70,6 +70,34 @@ def test_duplicate_command_and_payload_conflict(stack, aircraft):
         )
 
 
+@pytest.mark.parametrize("target", ["aircraft", "missions"])
+def test_expired_commands_and_lost_acknowledgement_never_reapply(stack, aircraft, target, monkeypatch):
+    from types import SimpleNamespace
+    from backend.app import service
+
+    record = aircraft if target == "aircraft" else delivery(stack)["mission"]
+    action = "inspect" if target == "aircraft" else "plan"
+    now = time.time()
+    clock = SimpleNamespace(time=lambda: now)
+    monkeypatch.setattr(service, "time", clock)
+    path = f"/api/v1/{target}/{record['id']}/commands"
+    headers = {**stack["headers"], "Idempotency-Key": secrets.token_hex(12)}
+    body = {"action": action, "revision": record["revision"], "expires_at": now + 25}
+    clock.time = lambda: now + 26
+    assert stack["client"].post(path, json=body, headers=headers).status_code == 408
+    current = stack["client"].get("/api/v1/operations").json()[target]
+    assert next(item for item in current if item["id"] == record["id"])["revision"] == record["revision"]
+    clock.time = lambda: now
+    assert stack["client"].post(path, json={**body, "expires_at": now + 90}, headers=headers).status_code == 422
+    acknowledged = stack["client"].post(path, json=body, headers=headers)
+    assert acknowledged.status_code == 200 and acknowledged.json()["revision"] == record["revision"] + 1
+    clock.time = lambda: now + 26
+    duplicate = stack["client"].post(path, json=body, headers=headers)
+    assert duplicate.json() == acknowledged.json()
+    current = stack["client"].get("/api/v1/operations").json()[target]
+    assert next(item for item in current if item["id"] == record["id"])["revision"] == acknowledged.json()["revision"]
+
+
 def test_conflicting_aircraft_assignments(stack, aircraft):
     a = delivery(stack)["mission"]
     b = delivery(stack)["mission"]

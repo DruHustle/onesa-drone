@@ -612,3 +612,40 @@ def test_additive_migration_preserves_original_schema_and_requires_explicit_enab
 def test_shared_configuration_rejects_partial_or_unsafe_setup(shared, change):
     with pytest.raises(ValueError):
         replace(shared["cfg"], **change).validate()
+
+
+@pytest.mark.parametrize("admin", [False, True])
+def test_native_system_browser_returns_a_device_bound_session(shared, admin):
+    client, state = shared["client"], shared["state"]
+    if not admin:
+        state["identity"] = replace(
+            state["identity"], roles=(), product_roles={"drone": "operator"},
+            memberships=({"product": "drone", "tenant_id": shared["first"], "role": "operator"},),
+        )
+    start = client.post("/api/v1/auth/mobile/start").json()
+    assert "proof=" not in start["authorization_url"] and "code_challenge_method=S256" in start["authorization_url"]
+    callback = client.get("/api/v1/auth/identity/callback", params={
+        "state": start["state"], "code": "synthetic-authorization-code"
+    }, follow_redirects=False)
+    assert callback.status_code == 303
+    assert callback.headers["location"].startswith("onesadrone://account/callback?")
+    assert "proof" not in callback.headers["location"] and "set-cookie" not in callback.headers
+    payload = {"state": start["state"], "proof": start["proof"], "code": "synthetic-authorization-code"}
+    assert client.post("/api/v1/auth/mobile/exchange", json={**payload, "proof": "x" * 43}).status_code == 401
+    result = client.post("/api/v1/auth/mobile/exchange", json=payload)
+    assert result.status_code == 200
+    assert client.post("/api/v1/auth/mobile/exchange", json=payload).status_code == 401
+    mobile = {"Authorization": "Bearer " + result.json()["session"]}
+    who = client.get("/api/v1/auth/mobile/account", headers=mobile)
+    assert who.status_code == 200
+    profile = who.json()
+    assert profile["global_admin"] is admin and len(profile["storage_scope"]) == 64
+    assert {w["id"] for w in profile["workspaces"]} == ({shared["first"], shared["second"]} if admin else {shared["first"]})
+    assert client.get("/api/v1/auth/me").status_code == 401
+    if not admin:
+        state["identity"] = replace(state["identity"], product_roles={"drone": "viewer"})
+        assert client.get("/api/v1/auth/mobile/account", headers=mobile).json()["workspaces"][0]["role"] == "viewer"
+    state["active"] = False
+    assert client.get("/api/v1/auth/mobile/account", headers=mobile).status_code == 401
+    assert client.post("/api/v1/auth/mobile/logout", headers=mobile).json()["local_signed_out"]
+    assert state["revocations"][0]["all_sessions"]

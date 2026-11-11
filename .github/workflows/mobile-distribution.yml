@@ -5,7 +5,8 @@ on:
     paths:
       - "scripts/mobile_android_distribution.py"
       - "tests/test_mobile_android_distribution.py"
-      - "frontend/drone/mobile/DISTRIBUTION.md"
+      - "frontend/drone/mobile/**"
+      - "scripts/mobile_native_compile.py"
       - ".github/workflows/mobile-distribution.yml"
   workflow_dispatch:
 permissions:
@@ -48,7 +49,10 @@ jobs:
           out="$RUNNER_TEMP/drone-install-fixture"
           trap 'rm -rf -- "$out"' EXIT
           npm --prefix frontend/drone/mobile test
-          python -m scripts.mobile_android_distribution build --directory "$out"
+          bundletool="$RUNNER_TEMP/bundletool-all-1.18.3.jar"
+          curl --fail --location --silent --show-error --retry 3 -o "$bundletool" \
+            'https://github.com/google/bundletool/releases/download/1.18.3/bundletool-all-1.18.3.jar'
+          python -m scripts.mobile_android_distribution build --directory "$out" --bundletool "$bundletool"
           keytool -genkeypair -keystore "$out/fixture.p12" -storetype PKCS12 \
             -storepass:env FIXTURE_PASSWORD -alias fixture -keyalg RSA -keysize 2048 \
             -validity 2 -dname 'CN=Disposable CI Fixture'
@@ -62,3 +66,9 @@ jobs:
           python -m scripts.mobile_android_distribution verify --directory "$out" --apk "$out/fixture.apk" \
             --certificate-sha256 "$cert" --url "https://drone.onesa.eu/downloads/onesa-drone-android-v$version.apk" > "$out/receipt.json"
           test -s "$out/receipt.json"
+          keytool -exportcert -rfc -keystore "$out/fixture.p12" -storepass:env FIXTURE_PASSWORD \
+            -alias fixture -file "$out/fixture.pem"
+          jarsigner -keystore "$out/fixture.p12" -storepass:env FIXTURE_PASSWORD \
+            -signedjar "$out/fixture.aab" "$out/OnesaDrone-unsigned.aab" fixture
+          python -m scripts.mobile_android_distribution verify-play --directory "$out" \
+            --aab "$out/fixture.aab" --upload-certificate "$out/fixture.pem"

@@ -20,6 +20,7 @@ export type Sample = {
   seq: number;
   mode: string;
   simulation_seconds: number;
+  recorded_at?: number;
   position: Point;
   altitude_m: number;
   ground_speed_mps: number;

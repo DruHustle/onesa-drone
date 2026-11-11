@@ -15,7 +15,7 @@ establish that shared sign-in is active on staging or production.
 
 ## Sign-in experience
 
-With shared identity enabled, the login screen offers **Continue with Onesa**.
+With shared identity enabled, the login screen offers **Sign in with Onesa**.
 Registration, password recovery and MFA take place on the central account site.
 An existing central browser session can return the person directly to Drone.
 No credentials or bearer tokens pass through frontend JavaScript or local storage.
@@ -177,7 +177,7 @@ simulation delivery, checks foreign-tenant denial and viewer command denial, and
 verifies monitoring, history and private tracking. The existing identity migration
 adds only its two session tables and their restricted runtime grants.
 
-Frontend qualification uses **Continue with Onesa** and retains the existing live
+Frontend qualification uses **Sign in with Onesa** and retains the existing live
 telemetry, complete delivery, replay, tracking, WebGL, responsive and accessibility
 journeys. Protected previews use isolated no-redirect handshakes and host-only
 automation cookies; credentials are never global browser headers. Source tests

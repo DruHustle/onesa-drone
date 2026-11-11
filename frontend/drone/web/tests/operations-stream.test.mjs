@@ -117,3 +117,18 @@ test("cleanup invalidates an in-flight session check", async (t) => {
   t.mock.timers.tick(60_000);
   assert.equal(streams.length, 1);
 });
+
+test("repeating or older snapshots cannot keep stale telemetry healthy after reconnect", (t) => {
+  emit(streams[0], "telemetry", { ...frame, at: 3 });
+  t.mock.timers.tick(11_000);
+  emit(streams[0], "telemetry", { ...frame, at: 3 });
+  t.mock.timers.tick(1000);
+  assert.equal(statuses.at(-1), "updates delayed");
+  t.mock.timers.tick(1000);
+  emit(streams[1], "telemetry", { ...frame, at: 2 });
+  assert.equal(snapshots.length, 1);
+  assert.equal(statuses.at(-1), "updates delayed");
+  emit(streams[1], "telemetry", { ...frame, at: 4 });
+  assert.equal(statuses.at(-1), "receiving");
+  assert.equal(snapshots.at(-1).at, 4);
+});

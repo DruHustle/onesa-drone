@@ -15,6 +15,19 @@
             "title": "Action",
             "type": "string"
           },
+          "expires_at": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "UTC Unix seconds after which this request cannot first execute.",
+            "title": "Expires At"
+          },
           "note": {
             "default": "",
             "maxLength": 500,
@@ -133,6 +146,19 @@
               }
             ],
             "title": "Aircraft Id"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "UTC Unix seconds after which this request cannot first execute.",
+            "title": "Expires At"
           },
           "revision": {
             "minimum": 1.0,
@@ -337,6 +363,34 @@
           "destination"
         ],
         "title": "MissionIn",
+        "type": "object"
+      },
+      "MobileExchange": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Code",
+            "type": "string"
+          },
+          "proof": {
+            "pattern": "^[a-zA-Z0-9_-]{43}$",
+            "title": "Proof",
+            "type": "string"
+          },
+          "state": {
+            "pattern": "^mobile_[a-zA-Z0-9_-]{43}$",
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "proof",
+          "code"
+        ],
+        "title": "MobileExchange",
         "type": "object"
       },
       "Point": {
@@ -915,6 +969,134 @@
           }
         },
         "summary": "Me"
+      }
+    },
+    "/api/v1/auth/mobile/account": {
+      "get": {
+        "operationId": "mobile_account_api_v1_auth_mobile_account_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Authorization",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mobile Account"
+      }
+    },
+    "/api/v1/auth/mobile/exchange": {
+      "post": {
+        "operationId": "mobile_exchange_api_v1_auth_mobile_exchange_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobileExchange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mobile Exchange"
+      }
+    },
+    "/api/v1/auth/mobile/logout": {
+      "post": {
+        "operationId": "mobile_logout_api_v1_auth_mobile_logout_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Authorization",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mobile Logout"
+      }
+    },
+    "/api/v1/auth/mobile/start": {
+      "post": {
+        "operationId": "mobile_start_api_v1_auth_mobile_start_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Mobile Start"
       }
     },
     "/api/v1/auth/workspace": {

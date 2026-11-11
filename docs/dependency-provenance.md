@@ -9,6 +9,7 @@ no package lifecycle script runs during frontend install. No external 3D asset i
 | React / React DOM | npm react, react-dom; facebook/react | MIT |
 | Three.js | npm three; mrdoob/three.js | MIT |
 | Vite / TypeScript | npm vite, typescript; vitejs/vite, microsoft/TypeScript | MIT / Apache-2.0 |
+| Expo WebBrowser 58.0.8 | npm expo-web-browser, expo/expo packages/expo-web-browser. Uses OS authentication sessions for Portal sign-in. | MIT |
 | Playwright / axe | npm @playwright/test, @axe-core/playwright; microsoft/playwright, dequelabs/axe-core | Apache-2.0 / MPL-2.0 (axe core); preserve package-specific notices |
 | FastAPI | PyPI fastapi; fastapi/fastapi | MIT |
 | Uvicorn / HTTPX | PyPI uvicorn, httpx; encode maintainers | BSD-3-Clause |

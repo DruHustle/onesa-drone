@@ -14,6 +14,8 @@ import { saveDraft, loadDrafts, deleteDraft } from "./src/mission-store.mjs";
 
 import { Body, Button, Input, Panel, styles } from "./src/field-ui.jsx";
 import BenchPanel from "./src/BenchPanel.jsx";
+import AccountHome from "./src/AccountHome.jsx";
+import {privateStore} from "./src/mobile-account.mjs";
 import ObservationLog from "./src/ObservationLog.jsx";
 
 const TABS = ["Plan", "Monitor", "Video", "Missions", "Aircraft"];
@@ -52,8 +54,9 @@ function RouteSketch({ points, marker, colors }) {
   </View>;
 }
 
-function Screen() {
-  const colors=palette(useColorScheme()==="dark");
+function Screen({account, colors, openAccount}) {
+  const scope = account?.storage_scope;
+  const store = useMemo(() => scope ? privateStore(SecureStore, scope) : SecureStore, [scope]);
   const [tab,setTab]=useState("Plan");
   const [purpose,setPurpose]=useState(PURPOSES[0].id);
   const [name,setName]=useState("Perimeter observation");
@@ -67,10 +70,10 @@ function Screen() {
   const [checks,setChecks]=useState([]);
   useEffect(()=>{
     let mounted=true;
-    loadDrafts(SecureStore).then(rows=>{if(mounted)setDrafts(rows);})
+    loadDrafts(store).then(rows=>{if(mounted)setDrafts(rows);})
       .catch(()=>{if(mounted)setNotice("Encrypted storage unavailable. Drafts are not saved.");});
     return ()=>{mounted=false;};
-  },[]);
+  },[store]);
   useEffect(()=>{
     if(!simulating)return;
     const timer=setInterval(()=>setProgress(p=>Math.min(1,p+0.018)),700);
@@ -99,8 +102,8 @@ function Screen() {
         title:name,purpose,points,id:"draft_"+Date.now().toString(36)+"_"+Math.floor(Math.random()*1e7).toString(36),
         now:Date.now(),
       });
-      await saveDraft(SecureStore,draft);
-      setDrafts(await loadDrafts(SecureStore));
+      await saveDraft(store,draft);
+      setDrafts(await loadDrafts(store));
       setNotice("Encrypted mission draft saved on this device. Nothing was dispatched.");
       setTab("Missions");
     }catch(error){setNotice(error.message||"Draft could not be saved");}
@@ -110,8 +113,8 @@ function Screen() {
     if(busy)return;
     setBusy(true);
     try{
-      await deleteDraft(SecureStore,id);
-      setDrafts(await loadDrafts(SecureStore));
+      await deleteDraft(store,id);
+      setDrafts(await loadDrafts(store));
       setNotice("Device-local draft deleted.");
     }catch{setNotice("Could not delete the encrypted draft.");}
     finally{setBusy(false);}
@@ -145,6 +148,7 @@ function Screen() {
     <View style={[styles.header,{borderBottomColor:colors.border,borderBottomWidth:1}]}>
       <Text style={[styles.eyebrow,{color:colors.brand}]}>ONESA / FIELD OPERATIONS</Text>
       <Text style={[styles.brand,{color:colors.text}]}>Drone Mission Control</Text>
+      <Button secondary colors={colors} onPress={openAccount}>{account ? account.email : "Onesa account"}</Button>
       <Body colors={colors} muted small>CHUBORY A77 prototype  ·  Offline planner  ·  No live aircraft connection</Body>
     </View>
     <ScrollView style={styles.scroll} contentContainerStyle={styles.content}
@@ -231,7 +235,7 @@ function Screen() {
           <Body colors={colors} muted small>Demo marker is calculated locally. It is never transmitted to, or read from, the aircraft.</Body>
         </Panel>
       </>}
-      <ObservationLog active={tab==="Monitor"} colors={colors}/>
+      <ObservationLog store={store} active={tab==="Monitor"} colors={colors}/>
 
       {tab==="Video" && <>
         <Panel colors={colors}>
@@ -296,7 +300,7 @@ function Screen() {
           <Body colors={colors} muted small>{checks.length} / {planningChecks.length} reviewed · Physical dispatch remains locked.</Body>
         </Panel>
       </>}
-      <BenchPanel visible={tab==="Aircraft"} colors={colors}/>
+      <BenchPanel store={store} visible={tab==="Aircraft"} colors={colors}/>
     </ScrollView>
     <View style={[styles.tabRail,{borderColor:colors.border,backgroundColor:colors.surface}]}>
       {TABS.map(next=><Pressable key={next} accessibilityRole="tab"
@@ -308,5 +312,9 @@ function Screen() {
   </SafeAreaView>;
 }
 export default function App() {
-  return <SafeAreaProvider><Screen/></SafeAreaProvider>;
+  const colors = palette(useColorScheme() === "dark");
+  return <SafeAreaProvider><AccountHome colors={colors}>
+    {(account, openAccount) => <Screen key={account?.storage_scope || "device"} colors={colors}
+      account={account} openAccount={openAccount}/>}
+  </AccountHome></SafeAreaProvider>;
 }
