@@ -7,6 +7,15 @@ test("platform download links follow the verified website configuration", async 
   await page.goto("/");
   const section = page.getByRole("region", { name: "Onesa Drone mobile downloads" });
   await expect(section).toBeVisible();
+  const apple = section.locator('svg[data-platform="ios"]');
+  const android = section.locator('svg[data-platform="android"]');
+  await expect(apple).toBeVisible();
+  await expect(android).toBeVisible();
+  const applePath = await apple.locator("path").getAttribute("d");
+  const androidPath = await android.locator("path").getAttribute("d");
+  expect(applePath).toBeTruthy();
+  expect(androidPath).toBeTruthy();
+  expect(applePath).not.toBe(androidPath);
   for (const platform of ["ios", "android"] as const) {
     const label = platform === "ios" ? "iOS" : "Android";
     const link = section.getByRole("link", { name: "Download Onesa Drone for " + label });
