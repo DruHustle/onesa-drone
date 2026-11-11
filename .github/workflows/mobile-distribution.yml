@@ -1,0 +1,64 @@
+name: Verify Android distribution procedure
+on:
+  pull_request:
+    branches: [dev, staging, main]
+    paths:
+      - "scripts/mobile_android_distribution.py"
+      - "tests/test_mobile_android_distribution.py"
+      - "frontend/drone/mobile/DISTRIBUTION.md"
+      - ".github/workflows/mobile-distribution.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  release-procedure:
+    if: ${{ github.event.repository.private == false || vars.ONESA_PRIVATE_HOSTED_VALIDATION_ENABLED == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      EXPO_NO_TELEMETRY: '1'
+      CI: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24.22.1'
+          cache: npm
+          cache-dependency-path: frontend/drone/mobile/package-lock.json
+      - name: Prepare reviewed toolchain
+        run: |
+          test -d "$JAVA_HOME_17_X64"
+          echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
+          echo "$JAVA_HOME_17_X64/bin" >> "$GITHUB_PATH"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-37.0' 'build-tools;37.0.0' 'ndk;27.1.12297006'
+          test -f "$ANDROID_HOME/platforms/android-37.0/android.jar"
+          if [ ! -e "$ANDROID_HOME/platforms/android-37" ]; then ln -s android-37.0 "$ANDROID_HOME/platforms/android-37"; fi
+          npm --prefix frontend/drone/mobile ci --ignore-scripts --no-audit --no-fund
+      - name: Build and sign with a discarded test identity, then verify
+        env:
+          FIXTURE_PASSWORD: local-distribution-procedure-only
+        run: |
+          set -euo pipefail
+          umask 077
+          out="$RUNNER_TEMP/drone-install-fixture"
+          trap 'rm -rf -- "$out"' EXIT
+          npm --prefix frontend/drone/mobile test
+          python -m scripts.mobile_android_distribution build --directory "$out"
+          keytool -genkeypair -keystore "$out/fixture.p12" -storetype PKCS12 \
+            -storepass:env FIXTURE_PASSWORD -alias fixture -keyalg RSA -keysize 2048 \
+            -validity 2 -dname 'CN=Disposable CI Fixture'
+          cert=$(keytool -exportcert -keystore "$out/fixture.p12" -storepass:env FIXTURE_PASSWORD -alias fixture | sha256sum | cut -d' ' -f1)
+          "$ANDROID_HOME/build-tools/37.0.0/apksigner" sign --ks "$out/fixture.p12" --ks-key-alias fixture \
+            --ks-pass env:FIXTURE_PASSWORD --v1-signing-enabled false --v2-signing-enabled true --v3-signing-enabled true \
+            --out "$out/fixture.apk" "$out/aligned-unsigned.apk"
+          "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --verbose --print-certs "$out/fixture.apk" |
+            grep -E '^Verified using|^Number of signers| certificate (DN|SHA-256 digest)'
+          version=$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["versionName"])' "$out/unsigned-receipt.json")
+          python -m scripts.mobile_android_distribution verify --directory "$out" --apk "$out/fixture.apk" \
+            --certificate-sha256 "$cert" --url "https://drone.onesa.eu/downloads/onesa-drone-android-v$version.apk" > "$out/receipt.json"
+          test -s "$out/receipt.json"
