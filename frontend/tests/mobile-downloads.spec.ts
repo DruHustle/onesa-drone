@@ -1,0 +1,55 @@
+import { readFileSync } from "node:fs";
+import { expect, test } from "@playwright/test";
+import { storeListing } from "../src/mobile-store-listing.ts";
+
+test("platform download links follow the verified website configuration", async ({ page }) => {
+  const configured = JSON.parse(readFileSync(new URL("../src/mobile-downloads.json", import.meta.url), "utf8"));
+  await page.goto("/");
+  const section = page.getByRole("region", { name: "Onesa Drone mobile downloads" });
+  await expect(section).toBeVisible();
+  const apple = section.locator('svg[data-platform="ios"]');
+  const android = section.locator('svg[data-platform="android"]');
+  await expect(apple).toBeVisible();
+  await expect(android).toBeVisible();
+  const applePath = await apple.locator("path").getAttribute("d");
+  const androidPath = await android.locator("path").getAttribute("d");
+  expect(applePath).toBeTruthy();
+  expect(androidPath).toBeTruthy();
+  expect(applePath).not.toBe(androidPath);
+  for (const platform of ["ios", "android"] as const) {
+    const label = platform === "ios" ? "iOS" : "Android";
+    const link = section.getByRole("link", { name: "Download Onesa Drone for " + label });
+    const href = storeListing(platform, configured[platform]);
+    if (href) {
+      await expect(link).toHaveAttribute("href", href);
+    } else {
+      await expect(section.getByText(label + " · Unavailable")).toBeVisible();
+      await expect(link).toHaveCount(0);
+    }
+  }
+});
+
+test("official listings are allowed independently for each platform", () => {
+  const android = "https://play.google.com/store/apps/details?id=eu.onesa.drone";
+  const ios = "https://apps.apple.com/gb/app/fixture/id1234567890";
+  expect(storeListing("ios", ios)).toBe(ios);
+  expect(storeListing("android", android)).toBe(android);
+  expect(storeListing("ios", android)).toBeNull();
+  expect(storeListing("android", ios)).toBeNull();
+  expect(storeListing("ios", null)).toBeNull();
+  expect(storeListing("android", null)).toBeNull();
+  expect(storeListing("ios", ios.replace("apps.apple.com", "example.test"))).toBeNull();
+  expect(storeListing("android", android.replace("eu.onesa.drone", "another.app"))).toBeNull();
+});
+
+test("direct APK links require both pins and public iOS invites use the official beta host", () => {
+  const url = "https://github.com/DruHustle/onesa-drone/releases/download/mobile-v0.1.0/onesa-drone-android-v0.1.0.apk";
+  const verified = { url, sha256: "a".repeat(64), certificateSha256: "b".repeat(64), sourceCommit: "c".repeat(40) };
+  expect(storeListing("android", verified)).toBe(url);
+  expect(storeListing("android", { ...verified, certificateSha256: "" })).toBeNull();
+  expect(storeListing("android", { ...verified, url: url.replace("DruHustle", "untrusted") })).toBeNull();
+  expect(storeListing("android", url)).toBeNull();
+  const beta = "https://testflight.apple.com/join/Ab12Cd34";
+  expect(storeListing("ios", beta)).toBe(beta);
+  expect(storeListing("ios", beta.replace("testflight.apple.com", "example.test"))).toBeNull();
+});

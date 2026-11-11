@@ -22,6 +22,7 @@ import type {
 } from "./types";
 import "./onesa-foundation.css";
 import "./style.css";
+import MobileDownloads from "./MobileDownloads";
 const DroneScene = lazy(() => import("./DroneScene"));
 const groups = [
   ["OVERVIEW", "Dashboard"],
@@ -413,6 +414,7 @@ function App() {
               {notice}
             </p>
           )}
+          <MobileDownloads />
           <p className="fine">
             Aircraft performance and environments are illustrative. This
             software does not authorize physical flight.
@@ -1844,6 +1846,7 @@ function App() {
                 preferences.
               </Empty>
             ))}
+          <MobileDownloads />
           <footer className="console-footer">
             <span>ONESA DRONE · DEVELOPMENT RELEASE 0.1</span>
             <span>SIMULATED DATA · NO FLIGHT CERTIFICATION</span>
