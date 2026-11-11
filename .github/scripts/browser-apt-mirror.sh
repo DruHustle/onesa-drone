@@ -3,13 +3,18 @@ set -euo pipefail
 
 # GitHub's Ubuntu image uses either a deb822 file or the legacy sources list.
 sources=()
-for file in /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list; do
+for file in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
   [[ ! -f "$file" ]] || sources+=("$file")
 done
 (( ${#sources[@]} )) || exit 0
+# Modern hosted images direct APT to this local mirror list from a source stanza.
+mirror_list=/etc/apt/apt-mirrors.txt
+if [[ -f "$mirror_list" ]] && grep -Fq "mirror+file:$mirror_list" "${sources[@]}"; then
+  sources+=("$mirror_list")
+fi
 
 failed_hosts=()
-for host in azure.archive.ubuntu.com archive.ubuntu.com security.ubuntu.com; do
+for host in azure.archive.ubuntu.com archive.ubuntu.com security.ubuntu.com us-east-2.ec2.archive.ubuntu.com; do
   if grep -Fq "://$host/ubuntu" "${sources[@]}" && ! getent ahosts "$host" >/dev/null; then
     failed_hosts+=("$host")
   fi
@@ -30,5 +35,9 @@ done
 for host in "${failed_hosts[@]}"; do
   # Only replace the archive URI; keep the image's components, suites and Signed-By settings.
   escaped=${host//./\\.}
-  sudo sed -Ei "s#https?://$escaped/ubuntu([/[:space:]]|$)#$mirror\\1#g" "${sources[@]}"
+  echo "Using the Ubuntu-signed mirror for $host"
+  for file in "${sources[@]}"; do
+    grep -Fq "://$host/ubuntu" "$file" || continue
+    sudo sed -Ei "s#https?://$escaped/ubuntu([/[:space:]]|$)#$mirror\\1#g" "$file"
+  done
 done
