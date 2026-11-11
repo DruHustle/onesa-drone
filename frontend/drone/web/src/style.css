@@ -1584,3 +1584,31 @@ dialog > .actions {
     font-size: 25px;
   }
 }
+
+.mobile-downloads {
+  margin: 24px 0 0;
+  padding: 16px 0;
+  border-top: 1px solid var(--onesa-divider);
+  font-size: 13px;
+}
+.mobile-downloads ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  padding: 0;
+  margin: 4px 0 0;
+  list-style: none;
+}
+.mobile-downloads li > * {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+}
+.mobile-downloads li > span {
+  color: var(--onesa-muted);
+}
+.mobile-downloads a {
+  color: var(--onesa-accent);
+  text-decoration: underline;
+}
