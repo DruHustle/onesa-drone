@@ -189,8 +189,8 @@ jobs:
             ${{ runner.temp }}/drone-native-android/compile-proof.json
             ${{ runner.temp }}/drone-native-android/OnesaDrone-arm64-debug.apk
           if-no-files-found: error
-          retention-days: 7
-          compression-level: 0
+          retention-days: ${{ github.event_name == 'pull_request' && 1 || 7 }}
+          compression-level: 6
   mobile-ios:
     needs: mobile
     runs-on: macos-26
@@ -253,5 +253,5 @@ jobs:
             ${{ runner.temp }}/drone-native-ios/Podfile.lock
             ${{ runner.temp }}/drone-native-ios/swiftpm-*-Package.resolved
           if-no-files-found: error
-          retention-days: 7
+          retention-days: ${{ github.event_name == 'pull_request' && 1 || 7 }}
           compression-level: 0
