@@ -1,0 +1,53 @@
+name: Portal and Drone sign-in acceptance
+on:
+  pull_request:
+    branches: [dev, staging, main]
+    paths:
+      - ".github/workflows/portal-acceptance.yml"
+      - "scripts/acceptance/**"
+      - "backend/**"
+      - "frontend/drone/**"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: portal-drone-acceptance-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  browser:
+    if: ${{ github.event.repository.private == false || vars.ONESA_PRIVATE_HOSTED_VALIDATION_ENABLED == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: drone
+          persist-credentials: false
+      - name: Check out the Portal issuer qualified with this consumer
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: DruHustle/onesa-company-portal
+          ref: 332248c2e59ccb213ce608e19b2c420d7164e345
+          path: portal
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24.22.1'
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Build the two independent applications
+        run: |
+          python -m venv drone/.venv311
+          drone/.venv311/bin/python -m pip install -r drone/backend/requirements.lock
+          npm --prefix drone/frontend ci --ignore-scripts --no-audit --no-fund
+          npm --prefix drone/frontend run build
+          npm --prefix portal/onesa-company-portal-backend ci --ignore-scripts --no-audit --no-fund
+          npm --prefix portal/onesa-company-portal-backend run build
+          npm --prefix portal/onesa-company-portal-frontend ci --ignore-scripts --no-audit --no-fund
+          (cd drone/frontend && npx --no-install playwright install chromium)
+      - name: Verify browser sessions, permissions, deletion intake and native session exchange
+        working-directory: drone
+        run: |
+          test -x "$(pg_config --bindir)/initdb"
+          .venv311/bin/python scripts/acceptance/run_local.py --portal ../portal --pg-bin "$(pg_config --bindir)"

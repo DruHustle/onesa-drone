@@ -1,21 +1,15 @@
 import XCTest
 
 final class PlannerTests: XCTestCase {
-    private let app = XCUIApplication()
+    @MainActor private lazy var app = XCUIApplication()
 
-    override func setUpWithError() throws {
-        continueAfterFailure = false
-        app.launch()
-        XCTAssertTrue(app.staticTexts["Drone Mission Control"].waitForExistence(timeout: 100))
-    }
-
-    private func openTab(_ name: String) {
+    @MainActor private func openTab(_ name: String) {
         let tab = app.descendants(matching: .any)["planner-tab-" + name]
         XCTAssertTrue(tab.waitForExistence(timeout: 10))
         tab.tap()
     }
 
-    private func reveal(_ element: XCUIElement) {
+    @MainActor private func reveal(_ element: XCUIElement) {
         let scroll = app.scrollViews.firstMatch
         XCTAssertTrue(scroll.waitForExistence(timeout: 10))
         if element.exists && element.isHittable { return }
@@ -30,7 +24,10 @@ final class PlannerTests: XCTestCase {
         XCTFail("Expected planner control never appeared on screen: \(element)")
     }
 
-    func testOfflineDraftSurvivesRelaunchAndHardwareStaysLocked() throws {
+    @MainActor func testOfflineDraftSurvivesRelaunchAndHardwareStaysLocked() throws {
+        continueAfterFailure = false
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Drone Mission Control"].waitForExistence(timeout: 100))
         XCTAssertTrue(app.staticTexts["Mission planner"].exists)
         XCTAssertTrue(app.staticTexts["SIMULATION ONLY · Physical launch and remote commands disabled"].exists)
         openTab("Missions")

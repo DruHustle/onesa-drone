@@ -353,7 +353,10 @@ with contextlib.ExitStack() as resources:
         }
         if args.chromium:
             browser_env["CHROMIUM_PATH"] = str(args.chromium.resolve())
-        browser_check = subprocess.run(["node", scripts / "journey.cjs"], env=browser_env, cwd=temp)
+        browser_command = ["node"]
+        if args.chromium:
+            browser_command.append("--max-old-space-size=150")
+        browser_check = subprocess.run([*browser_command, scripts / "journey.cjs"], env=browser_env, cwd=temp)
         if browser_check.returncode:
             sys.exit(1)
     protocol = subprocess.run([sys.executable, scripts / "protocol.py"], env=test_env, cwd=temp)

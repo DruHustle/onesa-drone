@@ -28,8 +28,8 @@ def shell(*args, **kwargs):
     return adb("shell", *args, **kwargs)
 
 
-def find(label, *, scroll=False):
-    deadline = time.monotonic() + 45
+def find(label, *, scroll=False, timeout=45):
+    deadline = time.monotonic() + timeout
     previous = None
     down = True
     while time.monotonic() < deadline:
@@ -114,6 +114,7 @@ def exercise(apk):
                 verify_offline()
                 launch()
                 find("Mission planner")
+                print("PASS: offline cold launch")
                 tap("Load example", scroll=True)
                 tap("Save encrypted draft", scroll=True)
                 find("Example security perimeter", scroll=True)
@@ -123,9 +124,17 @@ def exercise(apk):
                 tap("Missions")
                 find("Example security perimeter", scroll=True)
                 tap("Open route", scroll=True)
+                print("PASS: saved encrypted route reopened after force-stop")
                 tap("Preview simulation", scroll=True)
-                find("Not available", scroll=True)
-                tap("Pause replay", scroll=True)
+                find("Not available", scroll=True, timeout=110)
+                # Android's UIAutomator waits for accessibility events to settle
+                # before dumping a view. The moving marker can keep it busy
+                # until the replay has already reached its stable end state.
+                find("100%", scroll=True, timeout=110)
+                find("Play replay", scroll=True)
+                tap("Reset", scroll=True)
+                find("0%", scroll=True)
+                print("PASS: simulated route reached 100%, reset to zero and showed no actual GPS")
                 tap("Video")
                 find("No live feed", scroll=True)
                 verify_offline()

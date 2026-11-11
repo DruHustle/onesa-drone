@@ -1,9 +1,27 @@
-const { chromium, expect } = require(process.env.PW_ROOT);
+const { chromium, expect, request } = require(process.env.PW_ROOT);
 const assert = require("node:assert/strict");
 const f = JSON.parse(process.env.LOCAL_FIXTURE);
+const verifyMemberStatus = require("./member-status.cjs");
 const fixtureNames = ["member", "admin"];
 let step = "browser startup";
 const receipt = (name) => console.log("PASS " + name);
+function credentialRequest(request) {
+  const url = new URL(request.url());
+  return (
+    url.origin === f.portal &&
+    request.method() === "POST" &&
+    /^\/api\/v1\/account\/interaction\/[A-Za-z0-9_-]+\/login$/.test(
+      url.pathname,
+    )
+  );
+}
+async function submitPortalLogin(page) {
+  const response = page.waitForResponse((result) =>
+    credentialRequest(result.request()),
+  );
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  return response;
+}
 (async () => {
   console.log("Browser runtime starting");
   for (const role of fixtureNames) {
@@ -27,12 +45,19 @@ const receipt = (name) => console.log("PASS " + name);
       });
       const page = await context.newPage();
       page.setDefaultTimeout(30000);
+      let credentialPosts = 0;
+      page.on("request", (request) => {
+        if (credentialRequest(request)) credentialPosts++;
+      });
       for (const state of ["signed out", "active Portal"]) {
-        step = role + " / " + state;
+        const label = role + " / " + state;
+        const postsBefore = credentialPosts;
+        step = label + " / open Drone";
         await page.goto(f.drone);
         await page
           .getByRole("button", { name: /^(Continue|Sign in) with Onesa$/ })
           .click();
+        step = label + " / enter Portal";
         if (state === "signed out")
           await page.waitForURL(
             (url) =>
@@ -48,23 +73,18 @@ const receipt = (name) => console.log("PASS " + name);
           const factor = page.getByLabel("Authenticator or recovery code", {
             exact: true,
           });
+          step = label + " / password submission";
           if (role === "admin" && (await factor.isVisible()))
             await factor.fill(f.codes.shift());
-          await page
-            .getByRole("button", { name: "Continue", exact: true })
-            .click();
-          if (role === "admin" && new URL(page.url()).origin === f.portal) {
-            await Promise.race([
-              page.waitForURL((url) => url.origin === f.drone),
-              factor.waitFor({ state: "visible" }),
-            ]);
-            if (await factor.isVisible()) {
-              await factor.fill(f.codes.shift());
-              await page
-                .getByRole("button", { name: "Continue", exact: true })
-                .click();
-            }
+          let response = await submitPortalLogin(page);
+          if (!response.ok() && role === "admin") {
+            const problem = (await response.json()).error?.code;
+            assert.equal(problem === "MFA_REQUIRED", true);
+            step = label + " / verified MFA challenge";
+            await factor.fill(f.codes.shift());
+            response = await submitPortalLogin(page);
           }
+          assert.equal(response.status(), 200);
         } else {
           await Promise.race([
             page.getByRole("button", { name: /^Continue as/ }).waitFor(),
@@ -84,20 +104,19 @@ const receipt = (name) => console.log("PASS " + name);
                 name: new RegExp("^Continue as " + role),
               }),
             ).toBeVisible();
-            await expect(
-              page.getByLabel("Password", { exact: true }),
-            ).toHaveCount(0);
             await page
               .getByRole("button", { name: new RegExp("^Continue as " + role) })
               .click();
           }
         }
+        step = label + " / complete Drone callback";
         await page.waitForURL(
           (url) =>
             url.origin === f.drone && url.pathname === "/" && !url.search,
           { timeout: 45000 },
         );
         if (role === "admin") {
+          step = label + " / select approved workspace";
           await page
             .getByLabel("Workspace", { exact: true })
             .selectOption(f.tenant);
@@ -105,6 +124,7 @@ const receipt = (name) => console.log("PASS " + name);
             .getByRole("button", { name: "Open workspace", exact: true })
             .click();
         }
+        step = label + " / load workspace and read identity";
         await expect(
           page.getByRole("heading", { name: "Mission overview", exact: true }),
         ).toBeVisible({ timeout: 45000 });
@@ -120,7 +140,9 @@ const receipt = (name) => console.log("PASS " + name);
         assert.equal(me.identity_subject, account.id);
         assert.equal(me.tenant_id, f.tenant);
         assert.equal(me.role, role === "admin" ? "admin" : "operator");
-        receipt(step + " → Drone workspace and stable subject");
+        if (state === "active Portal")
+          assert.equal(credentialPosts, postsBefore);
+        receipt(label + " → Drone workspace and stable subject");
         if (state === "signed out") {
           // Start a fresh Drone session while keeping the Portal session in this browser.
           await context.clearCookies({ name: "drone_session" });
@@ -147,6 +169,19 @@ const receipt = (name) => console.log("PASS " + name);
           const saved = await context.request.get(f.drone + "/api/v1/settings");
           assert.equal((await saved.json()).currency, "GBP");
           receipt(step + " verified by API readback");
+          await verifyMemberStatus({
+            page,
+            request,
+            expect,
+            assert,
+            fixture: f,
+            progress: (action) => {
+              step = action;
+            },
+          });
+          receipt(
+            "Portal admin disable/restore: live member denied, old grant stays invalid, fresh operator keeps the same workspace and is denied the other organization",
+          );
         } else {
           step = "operator delivery / authorization";
           await page.getByRole("button", { name: "+ New delivery" }).click();
