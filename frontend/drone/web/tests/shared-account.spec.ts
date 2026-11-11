@@ -138,6 +138,15 @@ test("public sign-in shows separate mobile release availability without sending 
   await page.goto("/");
   const downloads = page.getByRole("region", { name: "Onesa Drone mobile downloads" });
   await expect(downloads).toBeVisible();
+  const apple = downloads.locator('svg[data-platform="ios"]');
+  const android = downloads.locator('svg[data-platform="android"]');
+  await expect(apple).toBeVisible();
+  await expect(android).toBeVisible();
+  const applePath = await apple.locator("path").getAttribute("d");
+  const androidPath = await android.locator("path").getAttribute("d");
+  expect(applePath).toBeTruthy();
+  expect(androidPath).toBeTruthy();
+  expect(applePath).not.toBe(androidPath);
   for (const platform of ["ios", "android"] as const) {
     const label = platform === "ios" ? "iOS" : "Android";
     const href = storeListing(platform, mobileListings[platform]);
