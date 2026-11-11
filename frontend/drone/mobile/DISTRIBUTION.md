@@ -34,6 +34,8 @@ Install the signed candidate on a supported arm64 device. Test a cold start offl
 
 ## iOS release and public beta
 
+See [iOS device archive and public distribution](IOS_RELEASE.md) for the exact Release archive, signed export, TestFlight and App Store steps.
+
 Use the existing Apple Developer team and its `eu.onesa.drone` identifier, distribution certificate and provisioning profile. From the clean checked-out mobile source and installed dependencies, run `python3 -m scripts.mobile_native_compile prepare --platform ios --output "$DRONE_IOS_BUILD_DIR"` from the repository root. Install Pods for the generated native project and open `frontend/drone/mobile/ios/OnesaDrone.xcworkspace` in Xcode. With that team, select a generic physical iOS destination, create a Release archive, validate it and upload it to the matching App Store Connect app. Complete the owner’s device checks. For a beta, assign the approved external-testing build to its TestFlight group and check its public invitation on a separate device. For a store release, check the published entry. Enter the actual Apple Store or public TestFlight URL under `ios` only after those observations.
 
 The official tool references cover Android signing and alignment, plus Apple’s external tester process.
