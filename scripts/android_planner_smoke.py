@@ -28,7 +28,7 @@ def shell(*args, **kwargs):
     return adb("shell", *args, **kwargs)
 
 
-def find(label, *, scroll=False, timeout=45):
+def find(label, *, scroll=False, timeout=45, contains=False, widget=None, resource=None):
     deadline = time.monotonic() + timeout
     previous = None
     down = True
@@ -41,24 +41,36 @@ def find(label, *, scroll=False, timeout=45):
         nodes = [node for node in ET.fromstring(xml).iter("node") if node.get("package") == APP_ID]
         for node in nodes:
             labels = (node.get("text", ""), node.get("content-desc", ""))
-            if label not in labels:
+            identifier = node.get("resource-id", "").rsplit("/", 1)[-1]
+            if (resource and identifier != resource) or (widget and node.get("class") != widget) or not any(
+                (label in value if contains else label == value) for value in labels
+            ):
                 continue
             bounds = [int(value) for value in re.findall(r"-?\d+", node.get("bounds", ""))]
             if len(bounds) == 4 and bounds[2] > bounds[0] and bounds[3] > bounds[1]:
                 return (bounds[0] + bounds[2]) // 2, (bounds[1] + bounds[3]) // 2
         if scroll and nodes:
-            if previous == xml:
+            viewport = [(n.get("resource-id"), n.get("bounds"), n.get("text"), n.get("content-desc")) for n in nodes]
+            if previous == viewport:
                 down = not down
-            previous = xml
+            previous = viewport
             top, bottom = ("1850", "750") if down else ("750", "1850")
             shell("input", "swipe", "600", top, "600", bottom, "420")
         time.sleep(0.4)
     raise RuntimeError(f"Missing planner UI {label!r}")
 
 
-def tap(label, *, scroll=False):
-    x, y = find(label, scroll=scroll)
+def tap(label, **options):
+    x, y = find(label, **options)
     shell("input", "tap", str(x), str(y))
+
+
+def receipt(message):
+    print("PASS: " + message, flush=True)
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        print("::notice title=Offline Android emulator::" + message, flush=True)
+        with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a") as stream:
+            stream.write("- Passed — " + message + "\n")
 
 
 def launch():
@@ -72,7 +84,40 @@ def verify_offline():
             "Emulator must be offline for this test")
 
 
-def exercise(apk):
+def screenshot(directory, name):
+    if directory is None:
+        return
+    binary = Path(os.environ["ANDROID_HOME"]) / "platform-tools/adb"
+    image = subprocess.check_output([str(binary), "-s", SERIAL, "exec-out", "screencap", "-p"])
+    require(image.startswith(b"\x89PNG\r\n\x1a\n"), "Invalid emulator screenshot")
+    (directory / name).write_bytes(image)
+
+
+def planning_and_share():
+    tap("Aircraft")
+    tap("A qualified remote pilot and visual line of sight are available", scroll=True, contains=True)
+    find("1 / 4 reviewed · Physical dispatch remains locked.", scroll=True)
+    find("Waypoint dispatch", scroll=True)
+    find("Disabled", scroll=True)
+    tap("Aircraft asset label", scroll=True, widget="android.widget.EditText")
+    shell("input", "text", "Synthetic-A77-bench")
+    shell("input", "keyevent", "KEYCODE_BACK")
+    tap("Start bench record", scroll=True)
+    find("Synthetic-A77-bench", scroll=True)
+    tap("Share bench record", scroll=True, timeout=80)
+    end = time.monotonic() + 15
+    while not re.search(r"(?:topResumedActivity|mResumedActivity)[^\n]*(?:ChooserActivity|IntentResolver)",
+                        shell("dumpsys", "activity", "activities"), re.I):
+        require(time.monotonic() < end, "Expected the native Android sharesheet")
+        time.sleep(0.4)
+    shell("input", "keyevent", "KEYCODE_BACK")
+    find("Share bench record", scroll=True)
+    receipt("Human review count, hardware lockout, synthetic saved bench record and cancel native share")
+
+
+def exercise(apk, screenshots=None):
+    if screenshots:
+        screenshots.mkdir(mode=0o700, parents=True, exist_ok=False)
     sdk = Path(os.environ["ANDROID_HOME"])
     emulator = sdk / "emulator/emulator"
     devices = subprocess.check_output([str(sdk / "platform-tools/adb"), "devices"], text=True)
@@ -114,7 +159,7 @@ def exercise(apk):
                 verify_offline()
                 launch()
                 find("Mission planner")
-                print("PASS: offline cold launch")
+                receipt("Offline cold launch")
                 tap("Load example", scroll=True)
                 tap("Save encrypted draft", scroll=True)
                 find("Example security perimeter", scroll=True)
@@ -124,20 +169,28 @@ def exercise(apk):
                 tap("Missions")
                 find("Example security perimeter", scroll=True)
                 tap("Open route", scroll=True)
-                print("PASS: saved encrypted route reopened after force-stop")
+                find("Mission planner", scroll=True)
+                screenshot(screenshots, "01-offline-planner.png")
+                receipt("Encrypted route reopened after force-stop")
                 tap("Preview simulation", scroll=True)
                 find("Not available", scroll=True, timeout=110)
+                receipt("Simulator opened with actual A77 location unavailable")
                 # Android's UIAutomator waits for accessibility events to settle
                 # before dumping a view. The moving marker can keep it busy
                 # until the replay has already reached its stable end state.
-                find("100%", scroll=True, timeout=110)
+                find("100%", scroll=True, timeout=110, resource="replay-progress")
+                receipt("Synthetic replay reached 100%")
                 find("Play replay", scroll=True)
+                screenshot(screenshots, "02-completed-synthetic-replay.png")
                 tap("Reset", scroll=True)
-                find("0%", scroll=True)
-                print("PASS: simulated route reached 100%, reset to zero and showed no actual GPS")
+                find("0%", scroll=True, resource="replay-progress")
+                receipt("Completed synthetic replay reset to zero")
                 tap("Video")
                 find("No live feed", scroll=True)
+                screenshot(screenshots, "03-hardware-video-unavailable.png")
                 verify_offline()
+                receipt("No hardware camera feed and emulator still offline")
+                planning_and_share()
             finally:
                 if process.poll() is None:
                     process.terminate()
@@ -157,4 +210,13 @@ def exercise(apk):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("apk", type=Path)
-    exercise(parser.parse_args().apk.resolve(strict=True))
+    parser.add_argument("--screenshots", type=Path, help="New directory for signed-out synthetic planner images")
+    args = parser.parse_args()
+    try:
+        exercise(args.apk.resolve(strict=True), args.screenshots)
+    except (RuntimeError, ValueError, subprocess.SubprocessError) as exc:
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            # Only the fixed expected UI label is safe to retain across runs.
+            detail = str(exc) if isinstance(exc, RuntimeError) and str(exc).startswith("Missing planner UI ") else type(exc).__name__
+            print("::error title=Offline Android emulator::" + detail, flush=True)
+        raise

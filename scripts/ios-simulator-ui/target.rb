@@ -24,9 +24,11 @@ unless project.native_targets.any? { |target| target.name == name }
   end
   source_path = File.join(ios, name)
   FileUtils.mkdir_p(source_path)
-  FileUtils.cp(File.join(__dir__, 'PlannerTests.swift'), source_path)
   group = project.main_group.new_group(name, name)
-  target.add_file_references([group.new_file('PlannerTests.swift')])
+  %w[PlannerTests.swift AccountTests.swift].each do |file|
+    FileUtils.cp(File.join(__dir__, file), source_path)
+    target.add_file_references([group.new_file(file)])
+  end
   attributes = project.root_object.attributes['TargetAttributes'] ||= {}
   attributes[target.uuid] = { 'TestTargetID' => app.uuid }
   project.save

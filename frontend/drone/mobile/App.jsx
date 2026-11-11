@@ -224,7 +224,7 @@ function Screen({account, colors, openAccount}) {
         <Panel colors={colors}>
           <View style={styles.row}>
             <Text style={[styles.h3,styles.grow,{color:colors.text}]}>Synthetic route replay</Text>
-            <Body colors={colors} small muted>{Math.round(progress*100)}%</Body>
+            <Body colors={colors} small muted testID="replay-progress">{Math.round(progress*100)}%</Body>
           </View>
           <RouteSketch points={points} marker={marker} colors={colors}/>
           <Body colors={colors} muted small>{marker?"SIMULATED POSITION: "+marker.lat.toFixed(6)+", "+marker.lon.toFixed(6):"Set at least two waypoints on the Plan tab to start."}</Body>

@@ -15,6 +15,7 @@ from pathlib import Path
 import psycopg
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives.asymmetric import rsa
+from loopback_tls import loopback_certificates
 
 scripts = Path(__file__).resolve().parent
 parser = argparse.ArgumentParser(
@@ -32,7 +33,12 @@ parser.add_argument(
 parser.add_argument(
     "--chromium", type=Path, help="Use this Chromium binary instead of the Playwright Chromium installation"
 )
-parser.add_argument(
+mode = parser.add_mutually_exclusive_group()
+mode.add_argument(
+    "--native-ui", choices=["ios", "android"],
+    help="Exercise installed debug builds against real loopback services and a disposable device trust store",
+)
+mode.add_argument(
     "--protocol-only",
     action="store_true",
     help="Skip Chromium; exercise both products over HTTPS including native callback transport",
@@ -45,7 +51,7 @@ portal_backend = portal / "onesa-company-portal-backend"
 portal_frontend = portal / "onesa-company-portal-frontend"
 if not (portal_backend / "dist/src/app.js").is_file():
     sys.exit("Build the selected Portal backend before running acceptance.")
-if not args.protocol_only and not (drone / "frontend/dist/index.html").is_file():
+if not args.protocol_only and not args.native_ui and not (drone / "frontend/dist/index.html").is_file():
     sys.exit("Build the selected Drone frontend before running browser acceptance.")
 drone_origin = "https://127.0.0.1:54844"
 portal_origin = "https://localhost:54843"
@@ -117,30 +123,7 @@ def report(t):
 
 with contextlib.ExitStack() as resources:
     temp = Path(resources.enter_context(tempfile.TemporaryDirectory(prefix="onesa-drone-acceptance-")))
-    cert = temp / "fixture.crt"
-    key = temp / "fixture.key"
-    execute(
-        [
-            "openssl",
-            "req",
-            "-x509",
-            "-newkey",
-            "rsa:2048",
-            "-nodes",
-            "-keyout",
-            key,
-            "-out",
-            cert,
-            "-days",
-            "1",
-            "-subj",
-            "/CN=localhost",
-            "-addext",
-            "subjectAltName=DNS:localhost,IP:127.0.0.1",
-        ],
-        temp,
-    )
-    key.chmod(0o600)
+    ca, cert, key = loopback_certificates(temp)
     db_password = secrets.token_hex(32)
     password_file = temp / "pg-password"
     password_file.write_text(db_password + "\n")
@@ -242,7 +225,7 @@ with contextlib.ExitStack() as resources:
         "MAIL_PROVIDER": "smtp",
     }
     drone_env = {
-        "DATABASE_URL": f"postgresql+psycopg://fixture:{db_password}@127.0.0.1:56882/drone_test?sslmode=verify-full&sslrootcert={cert}",
+        "DATABASE_URL": f"postgresql+psycopg://fixture:{db_password}@127.0.0.1:56882/drone_test?sslmode=verify-full&sslrootcert={ca}",
         "APP_ORIGIN": drone_origin,
         "COOKIE_SECURE": "true",
         "SIMULATION_WORKER": "true",
@@ -252,7 +235,7 @@ with contextlib.ExitStack() as resources:
         "ONESA_IDENTITY_CLIENT_SECRET": secret,
         "ONESA_IDENTITY_ENCRYPTION_KEY": Fernet.generate_key().decode(),
         "ONESA_IDENTITY_CALLBACK": cfg["clients"][0]["redirectUri"],
-        "SSL_CERT_FILE": str(cert),
+        "SSL_CERT_FILE": str(ca),
         "ONESA_AI_PROVIDER": "disabled",
     }
     execute([sys.executable, "-m", "scripts.migrate"], drone, drone_env)
@@ -344,7 +327,18 @@ with contextlib.ExitStack() as resources:
     report(
         "Running the Portal account component and API proxy, Drone web build, and both independent APIs over loopback TLS."
     )
-    test_env = env | {"LOCAL_FIXTURE": json.dumps(fixture), "FIXTURE_CA": str(cert), "NATIVE": "1"}
+    test_env = env | {"LOCAL_FIXTURE": json.dumps(fixture), "FIXTURE_CA": str(ca), "NATIVE": "1"}
+    if args.native_ui:
+        device = "ios-simulator-ui" if args.native_ui == "ios" else "android-emulator-ui"
+        native_env = os.environ | {
+            "FIXTURE_CA": str(ca),
+            "EXPO_PUBLIC_DRONE_DEV_ORIGIN": drone_origin,
+            "ONESA_FIXTURE_PASSWORD": password,
+            "ONESA_FIXTURE_FACTOR": fixture["codes"][0],
+            "ONESA_FIXTURE_SECOND_FACTOR": fixture["codes"][1],
+        }
+        result = subprocess.run([drone / "scripts" / device / "run.sh", "auth"], cwd=drone, env=native_env)
+        sys.exit(result.returncode)
     if not args.protocol_only:
         browser_fixture = fixture | {"codes": fixture["codes"][4:]}
         browser_env = test_env | {

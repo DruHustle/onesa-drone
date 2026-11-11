@@ -29,3 +29,29 @@ example route, saves it to the iOS Keychain, terminates and relaunches the app,
 then reopens the saved route and reads the aircraft and video status screens.
 Xcode writes the test result to `frontend/drone/mobile/.validation/simulator-ui.xcresult`.
 For a repeat run on the prepared checkout, set `IOS_UI_RESULTS` to a new path.
+
+### Exercise the installed app with the real Portal issuer
+
+Use the iOS preparation commands above and the Portal, Python and PostgreSQL
+setup in [local development](../../../../docs/engineering/local-development.md#local-portal-and-drone-acceptance).
+With Metro stopped, run from the Drone checkout:
+
+```sh
+.venv311/bin/python scripts/acceptance/run_local.py \
+  --portal ../onesa-company-portal --pg-bin "${PG_BIN:-$(pg_config --bindir)}" --native-ui ios
+```
+
+The harness starts both products on HTTPS loopback origins and installs a
+one-day certificate authority on a newly created simulator. The debug app
+uses its existing development-only API setting. The test signs in an operator
+and a Portal administrator in the system authentication sheet, starts separately
+with an active Safari session for each role, checks their workspace or admin
+authority after the OS callback, relaunches to verify Keychain persistence and
+confirms global sign-out. Look for the passing XCTest count in
+`frontend/drone/mobile/.validation/installed-account-summary.json`. The runner
+deletes the simulator, CA and authentication result bundle after the test.
+
+For signed-out listing images, run the separate planner test with
+`IOS_UI_SCREENSHOTS="$PWD/ios-planner-images" scripts/ios-simulator-ui/run.sh test`.
+It captures the actual planner and the video-unavailable screen from a fresh
+simulator with synthetic local data before any identity flow runs.

@@ -24,12 +24,19 @@ final class PlannerTests: XCTestCase {
         XCTFail("Expected planner control never appeared on screen: \(element)")
     }
 
+    @MainActor private func capture(_ name: String) throws {
+        guard ProcessInfo.processInfo.environment["ONESA_PLANNER_IMAGES"] == "1" else { return }
+        let documents = try XCTUnwrap(FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first)
+        try app.screenshot().pngRepresentation.write(to: documents.appendingPathComponent(name), options: .atomic)
+    }
+
     @MainActor func testOfflineDraftSurvivesRelaunchAndHardwareStaysLocked() throws {
         continueAfterFailure = false
         app.launch()
         XCTAssertTrue(app.staticTexts["Drone Mission Control"].waitForExistence(timeout: 100))
         XCTAssertTrue(app.staticTexts["Mission planner"].exists)
         XCTAssertTrue(app.staticTexts["SIMULATION ONLY · Physical launch and remote commands disabled"].exists)
+        try capture("planner.png")
         openTab("Missions")
         XCTAssertTrue(app.staticTexts["No saved routes yet. Create one under Plan."].waitForExistence(timeout: 10))
 
@@ -63,5 +70,6 @@ final class PlannerTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Disabled"].firstMatch.exists)
         openTab("Video")
         reveal(app.staticTexts["No live feed"])
+        try capture("locked-video.png")
     }
 }

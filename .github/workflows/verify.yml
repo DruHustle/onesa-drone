@@ -246,7 +246,18 @@ jobs:
       - name: 'Release requirement: Qualify iOS native output and source proof'
         run: python3 -m scripts.mobile_native_compile qualify --platform ios --output "$RUNNER_TEMP/drone-native-ios"
       - name: Exercise the planner and encrypted draft on a fresh iPhone Simulator
+        env:
+          IOS_UI_SCREENSHOTS: ${{ runner.temp }}/store-screenshots
         run: scripts/ios-simulator-ui/run.sh test
+      - name: Retain the two signed-out simulator listing candidates
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: ios-simulator-planner-screenshots
+          path: |
+            ${{ runner.temp }}/store-screenshots/planner.png
+            ${{ runner.temp }}/store-screenshots/locked-video.png
+          if-no-files-found: error
+          retention-days: 7
       - name: 'Release requirement: Retain iOS native compile evidence'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:

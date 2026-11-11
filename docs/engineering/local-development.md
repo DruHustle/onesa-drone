@@ -45,7 +45,7 @@ temperature-control, dangerous-goods or commercial transport suitability.
 ## Local Portal and Drone acceptance
 
 Use the paired Portal and Drone revisions under review, Python 3.11, Node 24,
-OpenSSL and a local PostgreSQL installation with SSL support. Run as a regular
+and a local PostgreSQL installation with SSL support. Run as a regular
 user. The harness creates a new, password-protected PostgreSQL cluster with
 two disposable databases, generates its own TLS certificate, creates two
 approved synthetic Portal identities and seeds two Drone organizations. The

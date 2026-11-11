@@ -28,8 +28,8 @@ export const styles = StyleSheet.create({
 export function Panel({ children, colors }) {
   return <View style={[styles.card,{backgroundColor:colors.surface,borderColor:colors.border}]}>{children}</View>;
 }
-export function Body({ children, colors, muted=false, small=false, style }) {
-  return <Text style={[small?styles.small:styles.body,{color:muted?colors.muted:colors.text},style]}>{children}</Text>;
+export function Body({ children, colors, muted=false, small=false, style, testID }) {
+  return <Text testID={testID} style={[small?styles.small:styles.body,{color:muted?colors.muted:colors.text},style]}>{children}</Text>;
 }
 export function Button({ children, onPress, colors, secondary=false, disabled=false, style }) {
   return <Pressable accessibilityRole="button" accessibilityState={{disabled}} onPress={onPress}
