@@ -60,6 +60,7 @@ def shell(*args, **kwargs):
 def boot():
     deadline = time.monotonic() + 300
     while time.monotonic() < deadline:
+        os.kill(int(os.environ["QA_EMULATOR_PID"]), 0)
         if shell("getprop", "sys.boot_completed", check=False) == "1":
             break
         time.sleep(2)

@@ -26,7 +26,20 @@ jobs:
           tools="$ANDROID_HOME/cmdline-tools/latest/bin"
           "$tools/sdkmanager" "platform-tools" "emulator" "system-images;android-30;google_apis;x86_64"
           "$ANDROID_HOME/emulator/emulator" -accel-check
-          echo no | "$tools/avdmanager" create avd --name OnesaBenchQA --package "system-images;android-30;google_apis;x86_64" --device pixel
+          export ANDROID_USER_HOME="$RUNNER_TEMP/bench-android"
+          export ANDROID_EMULATOR_HOME="$ANDROID_USER_HOME"
+          export ANDROID_AVD_HOME="$ANDROID_USER_HOME/avd"
+          mkdir -p "$ANDROID_AVD_HOME"
+          echo "ANDROID_USER_HOME=$ANDROID_USER_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_EMULATOR_HOME=$ANDROID_EMULATOR_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_AVD_HOME=$ANDROID_AVD_HOME" >> "$GITHUB_ENV"
+          avd_path="$ANDROID_AVD_HOME/OnesaBenchQA.avd"
+          echo no | "$tools/avdmanager" create avd --name OnesaBenchQA --path "$avd_path" --package "system-images;android-30;google_apis;x86_64" --device pixel
+          test -s "$avd_path/config.ini"
+          if ! test -s "$ANDROID_AVD_HOME/OnesaBenchQA.ini"; then
+            printf '%s\n' 'avd.ini.encoding=UTF-8' "path=$avd_path" 'target=android-30' > "$ANDROID_AVD_HOME/OnesaBenchQA.ini"
+          fi
+          "$ANDROID_HOME/emulator/emulator" -list-avds | grep -Fx OnesaBenchQA
       - name: Read exact successful build and verify its source and APK digest
         env:
           GH_TOKEN: ${{ github.token }}
@@ -45,6 +58,7 @@ jobs:
           export PATH="$ANDROID_HOME/platform-tools:$PATH"
           "$ANDROID_HOME/emulator/emulator" -avd OnesaBenchQA -port 5554 -accel on -gpu swiftshader_indirect -no-window -no-audio -no-snapshot -wipe-data -no-boot-anim -camera-front none -camera-back none -cores 2 -memory 3072 > "$RUNNER_TEMP/qa-emulator.log" 2>&1 &
           avd_pid=$!
+          export QA_EMULATOR_PID="$avd_pid"
           trap 'kill "$avd_pid" 2>/dev/null || true' EXIT
           if ! timeout 12m python3 -u qa/bench_emulator.py exercise; then
             timeout 90s python3 -u qa/bench_emulator.py diagnostics || true
