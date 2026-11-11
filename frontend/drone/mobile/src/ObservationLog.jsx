@@ -107,4 +107,3 @@ export default function ObservationLog({active, colors}) {
     <Button colors={colors} secondary disabled={busy} onPress={refresh}>Refresh saved notes</Button>
   </Panel>;
 }
-

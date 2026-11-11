@@ -1,4 +1,4 @@
-"""Prepare and qualify simulation-only native compilation; never sign or launch an app."""
+"""Prepare and qualify native verification builds and offline Android bench packages."""
 
 import argparse
 import hashlib
@@ -32,6 +32,12 @@ FILE_LIMIT = 256 * 1024 * 1024
 BUNDLE_LIMIT = 512 * 1024 * 1024
 APP_ID = "eu.onesa.drone"
 APP_NAME = "OnesaDrone"
+BENCH_APP_ID = APP_ID + ".bench"
+BENCH_LABEL = "Onesa Drone Bench"
+# SHA-256 of the DER certificate in the locked Expo template's android/app/debug.keystore.
+BENCH_CERT_SHA256 = "fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c"
+HERMES_VERSION = 99  # Bytecode emitted by the locked hermes-compiler package.
+HERMES_MAGIC = bytes.fromhex("c61fbc03c103191f")
 
 
 def require(value, message):
@@ -108,7 +114,21 @@ def pin_gradle_wrapper(wrapper):
     wrapper.write_text(text.rstrip() + "\ndistributionSha256Sum=" + GRADLE_SHA256 + "\n")
 
 
-def prepare(platform, output, root=ROOT):
+def configure_bench(native):
+    # Only change generated native inputs. Keep the Java namespace, entry activity,
+    # locked Expo bundler and the template's test-signing configuration intact.
+    for path, old, new in [
+        (native / "app/build.gradle", f"applicationId '{APP_ID}'", f"applicationId '{BENCH_APP_ID}'"),
+        (native / "app/src/main/res/values/strings.xml", '<string name="app_name">Onesa Drone</string>',
+         f'<string name="app_name">{BENCH_LABEL}</string>'),
+    ]:
+        data = regular_bytes(path, 128 * 1024).decode()
+        require(data.count(old) == 1, "Generated Android application configuration differs")
+        path.write_text(data.replace(old, new))
+
+
+def prepare(platform, output, root=ROOT, *, bench=False):
+    require(not bench or platform == "android", "Bench builds require Android")
     mobile = root / MOBILE_PATH
     inputs = locked_inputs(mobile)
     source = source_binding(root)
@@ -127,17 +147,51 @@ def prepare(platform, output, root=ROOT):
     require(locked_inputs(mobile) == inputs, "Native generation changed locked application inputs")
     if platform == "android":
         pin_gradle_wrapper(native / "gradle/wrapper/gradle-wrapper.properties")
+        if bench:
+            configure_bench(native)
     else:
         require((native / (APP_NAME + ".xcodeproj/project.pbxproj")).is_file(),
                 "Generated iOS target differs")
     prepared = {"platform": platform, "source": source, "inputs": inputs}
+    if bench:
+        prepared["variant"] = "bench"
     (output / "prepared.json").write_bytes(canonical(prepared) + b"\n")
 
 
-def android_identity(apk, badging):
-    require(re.search(r"^package: name='eu\.onesa\.drone' ", badging, re.M)
-            and re.search(r"^application-debuggable\s*$", badging, re.M),
-            "Expected the Drone debug application identity")
+def embedded_hermes(archive):
+    path = "assets/index.android.bundle"
+    require(path in archive.namelist(), "Offline Hermes bundle missing")
+    info = archive.getinfo(path)
+    require(128 < info.file_size <= 64 * 1024 * 1024, "Offline Hermes bundle size differs")
+    data = archive.read(info)
+    require(data[:8] == HERMES_MAGIC and struct.unpack_from("<I", data, 8)[0] == HERMES_VERSION
+            and struct.unpack_from("<I", data, 32)[0] == len(data)
+            and hashlib.sha1(data[:-20]).digest() == data[-20:], "Offline Hermes bytecode differs")
+    return {"name": path, "bytecode_version": HERMES_VERSION, "size_bytes": len(data),
+            "sha256": hashlib.sha256(data).hexdigest()}
+
+
+def bench_signer(verification):
+    digests = re.findall(r"^Signer #[0-9]+ certificate SHA-256 digest: ([0-9a-fA-F]+)$", verification, re.M)
+    require([digest.lower() for digest in digests] == [BENCH_CERT_SHA256]
+            and re.search(r"^Number of signers: 1$", verification, re.M)
+            and re.search(r"^Verified using v[23] scheme [^\n]+: true$", verification, re.M),
+            "Expected the reviewed Expo test signing certificate and modern APK signature")
+    return {"code_signature": "expo-template-test-key", "signer_certificate_sha256": BENCH_CERT_SHA256,
+            "distribution_signed": False}
+
+
+def android_identity(apk, badging, *, bench=False):
+    app_id = BENCH_APP_ID if bench else APP_ID
+    debuggable = bool(re.search(r"^application-debuggable\s*$", badging, re.M))
+    require(re.search(r"^package: name='" + re.escape(app_id) + r"' ", badging, re.M)
+            and debuggable == (not bench), "Expected the Drone Android application identity")
+    identity = {"application_id": app_id, "architecture": "arm64-v8a",
+                "configuration": "release" if bench else "debug"}
+    if bench:
+        require(f"application-label:'{BENCH_LABEL}'" in badging.splitlines()
+                and re.search(r"^launchable-activity: name='eu\.onesa\.drone\.MainActivity' ", badging, re.M),
+                "Expected the bench label and launch activity")
     with zipfile.ZipFile(apk) as archive:
         entries = archive.infolist()
         names = [item.filename for item in entries]
@@ -162,7 +216,9 @@ def android_identity(apk, badging):
         require(not any(name.startswith("lib/") and not name.endswith("/")
                         and not name.startswith("lib/arm64-v8a/") for name in names),
                 "Unexpected Android native architecture")
-    return {"application_id": APP_ID, "architecture": "arm64-v8a", "configuration": "debug"}
+        if bench:
+            identity["embedded_bundle"] = embedded_hermes(archive)
+    return identity
 
 
 def adhoc_signature(data):
@@ -315,9 +371,12 @@ def source_unchanged(root, source, platform):
             "Untracked application source appeared during native compilation")
 
 
-def qualify(platform, output, root=ROOT):
+def qualify(platform, output, root=ROOT, *, bench=False):
+    require(not bench or platform == "android", "Bench builds require Android")
     mobile = root / MOBILE_PATH
     prepared = json.loads(regular_bytes(output / "prepared.json", 64 * 1024))
+    variant = prepared.pop("variant", "default")
+    require(variant == ("bench" if bench else "default"), "Native build variant differs")
     require(set(prepared) == {"platform", "source", "inputs"} and prepared["platform"] == platform,
             "Native preparation identity differs")
     require(prepared["inputs"] == locked_inputs(mobile), "Locked inputs changed during native compilation")
@@ -325,16 +384,21 @@ def qualify(platform, output, root=ROOT):
     require(command("node", "--version") == "v24.22.1", "Reviewed Node toolchain required")
     toolchain = {"node": "24.22.1"}
     if platform == "android":
-        apk = mobile / "android/app/build/outputs/apk/debug/app-debug.apk"
+        configuration = "release" if bench else "debug"
+        apk = mobile / f"android/app/build/outputs/apk/{configuration}/app-{configuration}.apk"
         before = file_record(apk)
         sdk = Path(os.environ["ANDROID_HOME"])
         badging = command(str(sdk / "build-tools/37.0.0/aapt"), "dump", "badging", str(apk))
-        identity = android_identity(apk, badging)
+        identity = android_identity(apk, badging, bench=bench)
+        if bench:
+            verification = command(str(sdk / "build-tools/37.0.0/apksigner"), "verify",
+                                   "--verbose", "--print-certs", str(apk))
+            identity.update(bench_signer(verification))
         java = subprocess.run(["java", "-version"], check=True, capture_output=True, text=True, timeout=30)
         require(re.search(r'version "17\.', java.stderr + java.stdout), "Reviewed JDK 17 required")
         toolchain.update(jdk=17, gradle=GRADLE_VERSION, gradle_distribution_sha256=GRADLE_SHA256,
                          android=ANDROID_VERSIONS)
-        artifact = output / "OnesaDrone-arm64-debug.apk"
+        artifact = output / ("OnesaDrone-arm64-bench.apk" if bench else "OnesaDrone-arm64-debug.apk")
         with artifact.open("xb") as destination, apk.open("rb") as source:
             shutil.copyfileobj(source, destination)
         require(file_record(artifact) == before, "Android output changed while retaining it")
@@ -381,6 +445,9 @@ def qualify(platform, output, root=ROOT):
         "inputs": prepared["inputs"], "toolchain": toolchain,
         "output": {"name": artifact.name, **file_record(artifact)},
     }
+    if bench:
+        proof.update(target="android-arm64-bench", qualification="offline-bench-package",
+                     device_launch_verified=False)
     with (output / "compile-proof.json").open("xb") as destination:
         destination.write(canonical(proof) + b"\n")
 
@@ -389,10 +456,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("prepare", "qualify"))
     parser.add_argument("--platform", choices=("android", "ios"), required=True)
+    parser.add_argument("--bench", action="store_true", help="Qualify a test-signed offline Android bench build")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     try:
-        (prepare if args.action == "prepare" else qualify)(args.platform, args.output)
+        (prepare if args.action == "prepare" else qualify)(args.platform, args.output, bench=args.bench)
     except (ValueError, OSError, KeyError, subprocess.SubprocessError, zipfile.BadZipFile) as error:
         raise SystemExit("Native compile qualification refused: " + str(error)) from None
 

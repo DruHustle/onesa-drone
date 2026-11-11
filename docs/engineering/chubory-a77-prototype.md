@@ -7,6 +7,8 @@
 - **Not verified:** an open vendor SDK or protocol, authenticated GNSS/GPS coordinates, external video/RTSP/WebRTC stream, reliable cellular/cloud telemetry, autonomous waypoint upload, return-to-home semantics, transport/payload certification or a documented companion-phone integration.
 - "Trajectory flight" in the manufacturer's app must **not** be conflated with GPS waypoint navigation to remote geographical locations.
 
+The [manufacturer’s model-specific guide](https://chubory.com/pages/a77-beginner-guide) links the companion apps and operating manual.
+
 Sources: https://apps.apple.com/app/id6467178101 ; https://play.google.com/store/apps/details?id=com.h8.chubory ; https://www.chubory.com/products/durable-brushless-motor-drone-with-84-mins-super-long-flight-time-drone-with-camera-for-beginners-chubory-a77-wifi-fpv-quadcopter-with-2k-hd-camera-follow-me-auto-hover-3-batteries-carrying-case
 
 ## Delivered software boundary

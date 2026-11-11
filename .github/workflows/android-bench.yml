@@ -1,0 +1,76 @@
+name: Android bench APK
+on:
+  push:
+    branches: ['bench/android/**']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: android-bench-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    if: ${{ github.event.repository.private == false || vars.ONESA_PRIVATE_HOSTED_VALIDATION_ENABLED == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    env:
+      CI: '1'
+      EXPO_NO_TELEMETRY: '1'
+    steps:
+      - name: Verify hosted execution, visibility and included-allowance policy
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_PRIVATE: ${{ github.event.repository.private }}
+          PRIVATE_VALIDATION_ENABLED: ${{ vars.ONESA_PRIVATE_HOSTED_VALIDATION_ENABLED }}
+        run: |
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          actual=$(gh api "repos/$GITHUB_REPOSITORY" --jq ".private")
+          test "$actual" = "$EXPECTED_PRIVATE" || { echo "Repository visibility changed"; exit 1; }
+          if [ "$actual" = true ] && [ "$PRIVATE_VALIDATION_ENABLED" != true ]; then
+            echo "Private hosted verification requires explicit included-allowance opt-in"
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24.22.1'
+          package-manager-cache: false
+      - name: Install locked mobile dependencies
+        working-directory: frontend/drone/mobile
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Generate Android sources from the locked local Expo template
+        run: python3 -m scripts.mobile_native_compile prepare --platform android --bench --output "$RUNNER_TEMP/drone-native-android-bench"
+      - name: Select the reviewed JDK and Android SDK versions
+        run: |
+          test -d "$JAVA_HOME_17_X64"
+          echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
+          echo "$JAVA_HOME_17_X64/bin" >> "$GITHUB_PATH"
+          test -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-37.0' 'build-tools;37.0.0' 'ndk;27.1.12297006'
+          # The published API 37.0 platform needs RN's integer compileSdk alias.
+          test -f "$ANDROID_HOME/platforms/android-37.0/android.jar"
+          if [ ! -e "$ANDROID_HOME/platforms/android-37" ]; then
+            ln -s android-37.0 "$ANDROID_HOME/platforms/android-37"
+          fi
+      - name: Build offline arm64 bench APK
+        working-directory: frontend/drone/mobile
+        env:
+          NODE_ENV: production
+        run: ./android/gradlew -p android :app:assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon --console=plain
+      - name: Qualify bench APK and source proof
+        run: python3 -m scripts.mobile_native_compile qualify --platform android --bench --output "$RUNNER_TEMP/drone-native-android-bench"
+      - name: Retain bench APK and proof for one day
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: onesa-drone-android-bench
+          path: |
+            ${{ runner.temp }}/drone-native-android-bench/OnesaDrone-arm64-bench.apk
+            ${{ runner.temp }}/drone-native-android-bench/compile-proof.json
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0

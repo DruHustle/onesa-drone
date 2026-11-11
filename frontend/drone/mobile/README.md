@@ -27,6 +27,8 @@ npm run android   # Android SDK
 
 `ios/` and `android/` contain the platform build targets; Expo prebuild generates platform-specific Xcode/Gradle source there. The Expo runtime and host OS tools are required for compiled native acceptance. The GitHub-hosted Node tests exercise planning, simulation and secure-store business rules, not physical A77 hardware.
 
+For a handset trial without a development server, use the [offline Android bench APK](android/README.md).
+
 The product verification workflow also compiles Android arm64 debug and iOS arm64
 simulator targets. It generates native sources from the template inside the locked
 Expo package and checks that the app configuration and package lock remain unchanged.
@@ -51,3 +53,13 @@ The CHUBORY A77 uses CHUBORY FLY (iOS App Store ID 6467178101; Android `com.h8.c
 A later supported aircraft adapter must authenticate telemetry, prove source/freshness, restrict video URLs and audit every access; pass supervised flight test and operator/regulatory acceptance before any physical dispatch. Long-range wildlife patrols and medical deliveries require suitable aircraft and aviation approvals and are not supported by this prototype.
 
 No map tiles are sent to third parties: route sketches use local SVG geometry and are not airspace maps. Do not use demo coordinates as actual airspace/terrain clearances.
+
+## Website downloads
+
+The public website and signed-in console read each platform’s store URL from
+`frontend/drone/web/src/mobile-downloads.json`. Both currently show unavailable.
+After the store has approved a public release, verify the listing’s publisher,
+product name and `eu.onesa.drone` application identifier against its release
+record, then set that platform’s URL in the configuration. The other platform
+remains independent. Retain the release record with the change and run
+`npm --prefix frontend run test:unit` and the browser checks before promotion.

@@ -13,6 +13,7 @@ import { createRoot } from "react-dom/client";
 import { api, setCSRF, SessionChangedError } from "./api";
 import { subscribeToOperations, type StreamStatus } from "./operationsStream";
 import FlightPlanPreview from "./FlightPlanPreview";
+import MobileDownloads from "./MobileDownloads";
 import {
   accountError,
   startSharedSignIn,
@@ -554,6 +555,7 @@ function App() {
               )}
             </div>
           )}
+          <MobileDownloads />
           <p className="fine">
             Aircraft performance and environments are illustrative. This
             software does not authorize physical flight.
@@ -2203,6 +2205,7 @@ function App() {
                 preferences.
               </Empty>
             ))}
+          <MobileDownloads />
           <footer className="console-footer">
             <span>ONESA DRONE · DEVELOPMENT RELEASE 0.1</span>
             <span>SIMULATED DATA · NO FLIGHT CERTIFICATION</span>
