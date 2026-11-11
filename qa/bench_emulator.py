@@ -69,9 +69,10 @@ def boot():
         time.sleep(2)
     else:
         raise RuntimeError("Emulator did not finish booting")
-    require(shell("getprop", "ro.kernel.qemu") == "1" and shell("getprop", "ro.build.version.sdk") == "30",
-            "Expected disposable Android 30 emulator")
+    require(shell("getprop", "ro.kernel.qemu") == "1" and shell("getprop", "ro.build.version.sdk") == "35",
+            "Expected disposable Android 35 emulator")
     require(adb("emu", "avd", "name").splitlines()[0] == "OnesaBenchQA", "Incorrect AVD")
+    print("Emulator native bridge:", shell("getprop", "ro.dalvik.vm.native.bridge"))
     abis = shell("getprop", "ro.product.cpu.abilist").split(",")
     require({"x86_64", "arm64-v8a"}.issubset(abis), "Image lacks arm64 translation: " + str(abis))
     shell("cmd", "connectivity", "airplane-mode", "enable")
@@ -173,7 +174,7 @@ def exercise():
     find(ASSET, scroll=True)
     find(result, scroll=True)
     verify_offline()
-    report = {"source": SOURCE, "build_run": RUN, "apk_sha256": digest, "api": 30,
+    report = {"source": SOURCE, "build_run": RUN, "apk_sha256": digest, "api": 35,
               "device": "Android emulator x86_64 with arm64 translation",
               "offline_install": True, "explicit_launch": True,
               "synthetic_worksheet_persisted_after_force_stop": True,

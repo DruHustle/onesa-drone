@@ -18,13 +18,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - name: Install the Google APIs API 30 image and prepare an empty KVM-backed device
+      - name: Install the Google APIs API 35 image and prepare an empty KVM-backed device
         run: |
           test -c /dev/kvm
           sudo chgrp "$(id -gn)" /dev/kvm
           sudo chmod g+rw /dev/kvm
           tools="$ANDROID_HOME/cmdline-tools/latest/bin"
-          "$tools/sdkmanager" "platform-tools" "emulator" "system-images;android-30;google_apis;x86_64"
+          "$tools/sdkmanager" "platform-tools" "emulator" "system-images;android-35;google_apis;x86_64"
           "$ANDROID_HOME/emulator/emulator" -accel-check
           export ANDROID_USER_HOME="$RUNNER_TEMP/bench-android"
           export ANDROID_EMULATOR_HOME="$ANDROID_USER_HOME"
@@ -34,10 +34,10 @@ jobs:
           echo "ANDROID_EMULATOR_HOME=$ANDROID_EMULATOR_HOME" >> "$GITHUB_ENV"
           echo "ANDROID_AVD_HOME=$ANDROID_AVD_HOME" >> "$GITHUB_ENV"
           avd_path="$ANDROID_AVD_HOME/OnesaBenchQA.avd"
-          echo no | "$tools/avdmanager" create avd --name OnesaBenchQA --path "$avd_path" --package "system-images;android-30;google_apis;x86_64" --device pixel
+          echo no | "$tools/avdmanager" create avd --name OnesaBenchQA --path "$avd_path" --package "system-images;android-35;google_apis;x86_64" --device pixel
           test -s "$avd_path/config.ini"
           if ! test -s "$ANDROID_AVD_HOME/OnesaBenchQA.ini"; then
-            printf '%s\n' 'avd.ini.encoding=UTF-8' "path=$avd_path" 'target=android-30' > "$ANDROID_AVD_HOME/OnesaBenchQA.ini"
+            printf '%s\n' 'avd.ini.encoding=UTF-8' "path=$avd_path" 'target=android-35' > "$ANDROID_AVD_HOME/OnesaBenchQA.ini"
           fi
           "$ANDROID_HOME/emulator/emulator" -list-avds | grep -Fx OnesaBenchQA
       - name: Read exact successful build and verify its source and APK digest
