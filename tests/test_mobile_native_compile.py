@@ -644,7 +644,7 @@ class NativeInputTests(unittest.TestCase):
     def test_configuration_or_dependency_drift_is_refused(self):
         for mutate in (
             lambda: self.config["expo"]["extra"].update(hardwareFlightEnabled=True),
-            lambda: self.package["dependencies"].update(expo="~58.0.23"),
+            lambda: self.package["dependencies"].update(expo=f"~{native.EXPO_VERSION}"),
         ):
             with self.subTest(mutate=mutate):
                 package, config = copy.deepcopy(self.package), copy.deepcopy(self.config)
@@ -654,7 +654,7 @@ class NativeInputTests(unittest.TestCase):
                     native.locked_inputs(self.mobile)
                 self.package, self.config = package, config
                 self.write()
-        (self.mobile / "node_modules/expo/package.json").write_text('{"version":"58.0.24"}')
+        (self.mobile / "node_modules/expo/package.json").write_text('{"version":"0.0.0"}')
         with self.assertRaises(ValueError):
             native.locked_inputs(self.mobile)
 
