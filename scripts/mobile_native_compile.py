@@ -190,6 +190,28 @@ def bench_signer(verification):
             "distribution_signed": False}
 
 
+def android_arm64_library(archive, info):
+    require(64 <= info.file_size <= FILE_LIMIT, "Android native library size differs")
+    with archive.open(info) as stream:
+        header = stream.read(64)
+    require(header[:6] == b"\x7fELF\x02\x01" and struct.unpack_from("<H", header, 18)[0] == 183,
+            "Android native payload is not arm64 ELF")
+
+
+def bench_native_library_extraction(manifest):
+    require(re.search(r"^\s*E: application \(line=\d+\)$", manifest, re.M),
+            "Android application manifest missing")
+    settings = [line.strip() for line in manifest.splitlines() if "android:extractNativeLibs" in line]
+    # An omitted attribute has Android's default value of true. An explicit false
+    # directs the runtime to load libraries from the APK, even on translated ABIs.
+    if not settings:
+        return "platform-default"
+    require(len(settings) == 1 and re.fullmatch(
+        r"A: android:extractNativeLibs\(0x010104ea\)=\(type 0x12\)(?:0xffffffff|0x1)", settings[0]),
+        "Bench manifest must permit native-library extraction")
+    return "explicit"
+
+
 def android_identity(apk, badging, *, bench=False):
     app_id = BENCH_APP_ID if bench else APP_ID
     debuggable = bool(re.search(r"^application-debuggable\s*$", badging, re.M))
@@ -217,16 +239,20 @@ def android_identity(apk, badging, *, bench=False):
         with archive.open("classes.dex") as stream:
             require(stream.read(4) == b"dex\n", "Android DEX payload missing")
         native = archive.getinfo("lib/arm64-v8a/libreactnative.so")
-        require(64 <= native.file_size <= FILE_LIMIT, "Android React Native library missing")
-        with archive.open(native) as stream:
-            header = stream.read(64)
-        require(header[:6] == b"\x7fELF\x02\x01" and struct.unpack_from("<H", header, 18)[0] == 183,
-                "Android native payload is not arm64 ELF")
+        android_arm64_library(archive, native)
         require(not any(name.startswith("lib/") and not name.endswith("/")
                         and not name.startswith("lib/arm64-v8a/") for name in names),
                 "Unexpected Android native architecture")
         if bench:
             identity["embedded_bundle"] = embedded_hermes(archive)
+            libraries = [item for item in entries if item.filename.startswith("lib/") and not item.is_dir()]
+            require("lib/arm64-v8a/libhermesvm.so" in names, "Bench Hermes native runtime missing")
+            for library in libraries:
+                require(library.compress_type == zipfile.ZIP_DEFLATED,
+                        "Bench native libraries must be compressed for install-time extraction")
+                if library != native:
+                    android_arm64_library(archive, library)
+            identity["native_library_packaging"] = "compressed-for-install-time-extraction"
     return identity
 
 
@@ -400,6 +426,8 @@ def qualify(platform, output, root=ROOT, *, bench=False):
         badging = command(str(sdk / "build-tools/37.0.0/aapt"), "dump", "badging", str(apk))
         identity = android_identity(apk, badging, bench=bench)
         if bench:
+            manifest = command(str(sdk / "build-tools/37.0.0/aapt"), "dump", "xmltree", str(apk), "AndroidManifest.xml")
+            identity["native_library_extraction"] = bench_native_library_extraction(manifest)
             verification = command(str(sdk / "build-tools/37.0.0/apksigner"), "verify",
                                    "--verbose", "--print-certs", str(apk))
             identity.update(bench_signer(verification))

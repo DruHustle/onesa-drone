@@ -61,7 +61,7 @@ jobs:
         working-directory: frontend/drone/mobile
         env:
           NODE_ENV: production
-        run: ./android/gradlew -p android :app:assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon --console=plain
+        run: ./android/gradlew -p android :app:assembleRelease -PreactNativeArchitectures=arm64-v8a -Pexpo.useLegacyPackaging=true --no-daemon --console=plain
       - name: Qualify bench APK and source proof
         run: python3 -m scripts.mobile_native_compile qualify --platform android --bench --output "$RUNNER_TEMP/drone-native-android-bench"
       - name: Retain bench APK and proof for one day
