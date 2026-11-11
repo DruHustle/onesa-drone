@@ -8,6 +8,8 @@ iOS and Android React Native/Expo SDK 58 prototype. Production aircraft control 
 - Security rounds, farm inspections, conservancy observation, medical-delivery and e-commerce-delivery planning templates.
 - Local-only route simulation with positions explicitly identified as synthetic. Hardware position, battery and camera state remain unavailable without a verified source.
 - Up to 12 device-local drafts in Expo SecureStore. At capacity, the planner preserves each saved route and prompts the operator to delete one before adding another. Concurrent saves and interrupted storage operations have regression coverage.
+- Under **Aircraft**, a recoverable encrypted ground bench record captures the asset label, known firmware and companion-app versions, and four timestamped human observations. The operator can reopen it offline, share the record explicitly, or delete it.
+- Under **Monitor**, choose a bench observation or a simulation review, then choose a session note or an encrypted note saved on this device. Each log holds ten notes and preserves existing entries when full.
 - Camera panel explaining the local CHUBORY FLY Wi-Fi feed and offering an external handoff to the official companion app.
 - Safety checklist and no remote flight, mission launch, take-off, payload release, human tracking, automated surveillance or live video endpoints.
 

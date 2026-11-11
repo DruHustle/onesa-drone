@@ -1,8 +1,10 @@
 """Local synthetic contract tests. No production/staging account or flight is used."""
 
 from dataclasses import replace
+from types import SimpleNamespace
 from urllib.parse import urlsplit, parse_qs
 from uuid import uuid4
+import asyncio
 import time
 import os
 
@@ -519,6 +521,43 @@ def test_shared_signout_clears_local_session_even_when_issuer_is_unavailable(sha
     assert shared["client"].cookies.get("drone_session") is None
     with shared["store"].session() as db:
         assert db.get(IdentitySession, digest(token)) is None
+
+
+@pytest.mark.parametrize(
+    ("code", "status", "expected"),
+    [
+        ("identity_unavailable", 503, 'event: unavailable\ndata: {"reason":"identity"}\n\n'),
+        ("identity_rejected", 401, "event: expired\ndata: {}\n\n"),
+        ("identity_mfa_required", 403, "event: expired\ndata: {}\n\n"),
+    ],
+)
+def test_shared_stream_distinguishes_outage_from_lost_access(shared, monkeypatch, code, status, expected):
+    complete(shared)
+    account = select_workspace(shared).json()
+    app = shared["app"]
+    route = next(r for r in app.routes if r.path == "/api/v1/stream")
+    request = SimpleNamespace(
+        cookies={"drone_session": shared["client"].cookies.get("drone_session")},
+        is_disconnected=lambda: asyncio.sleep(0, result=False),
+    )
+
+    def fail_validation(*args):
+        raise protocol.IdentityError(code, "Synthetic validation failure", status)
+
+    async def exercise():
+        response = await route.endpoint(request, account)
+        with monkeypatch.context() as patch:
+            patch.setattr(protocol, "validate_session", fail_validation)
+            assert [frame async for frame in response.body_iterator] == [expected]
+        assert app.state.health["streams"] == 0
+        if status == 503:
+            recovered = await route.endpoint(request, account)
+            try:
+                assert (await anext(recovered.body_iterator)).startswith("event: telemetry\n")
+            finally:
+                await recovered.body_iterator.aclose()
+
+    asyncio.run(exercise())
 
 
 def test_expired_central_grant_does_not_claim_everywhere_logout(shared, monkeypatch):

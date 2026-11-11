@@ -11,9 +11,17 @@ Sources: https://apps.apple.com/app/id6467178101 ; https://play.google.com/store
 
 ## Delivered software boundary
 
-The mobile app supports route draft/edit, scenario selection (security, conservancy, farm, medical/e-commerce), encrypted local storage, route distance estimate, synthetic marker playback, field notes within the running session, manual safety checklist and explicit vendor-app video handoff. An A77 has no live position or live video inside Onesa until the hardware interface is qualified. Backends and edge integrations remain **simulation-only** under `AGENTS.md`.
+The mobile app supports route draft/edit, scenario selection (security, conservancy, farm, medical/e-commerce), encrypted local storage, route distance estimate, synthetic marker playback, operator-labelled bench and simulation notes held in-session or saved to encrypted device storage, manual safety checklist and explicit vendor-app video handoff. An A77 has no live position or live video inside Onesa until the hardware interface is qualified. Backends and edge integrations remain **simulation-only** under `AGENTS.md`.
 
 **Never automatically launch a physical flight, operate payload releases, initiate a patrol, or infer a person's identity or location.** Do not substitute the smartphone GPS for aircraft GPS or simulate a "live" feed. Drone location telemetry, battery and camera must show unavailable if no authenticated hardware sample exists.
+
+## Using the mobile app for a ground bench check
+
+With the aircraft stationary and its motors off, open **Aircraft → A77 ground bench record**. Enter the aircraft's local asset label. Enter the firmware and CHUBORY FLY version if known. Unavailable versions appear as **Unknown** in the report.
+
+The four checks cover what CHUBORY FLY displays for connection, loss and restoration of the local link, and what Onesa displays for actual aircraft position. Record **Observed** or **Issue** for each check you perform. Leave **Untested** for anything you did not check. Each result records the phone's UTC time. These entries are operator observations.
+
+Reopen Onesa to resume the record. **Share bench record** opens the phone's share sheet with the asset, versions, timestamps and individual findings. The app holds one encrypted worksheet per device. Share any record you need to keep before confirming its deletion to start the next one. Under **Monitor → Human observations**, you can also keep free-text bench notes separate from simulation review notes.
 
 ## Next validated hardware steps
 
