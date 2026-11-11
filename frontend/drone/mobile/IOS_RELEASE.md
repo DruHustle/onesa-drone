@@ -12,7 +12,7 @@ On the approved Mac, use a clean checkout, the pinned Node/Expo dependencies and
 npm --prefix frontend/drone/mobile ci --include=dev --ignore-scripts --no-audit --no-fund
 npm --prefix frontend/drone/mobile test
 python3 -m scripts.mobile_native_compile prepare --platform ios --output "$DRONE_IOS_BUILD_DIR"
-pod install --project-directory=frontend/drone/mobile/ios
+(cd frontend/drone/mobile/ios && pod install)
 ```
 
 In the generated `frontend/drone/mobile/ios/OnesaDrone.xcworkspace`, select the approved team in the app target's Signing & Capabilities settings. For manual signing, choose that team's matching distribution profile for Release. With this configuration and its signing material already available in the owner’s keychain, create a separate signed archive.

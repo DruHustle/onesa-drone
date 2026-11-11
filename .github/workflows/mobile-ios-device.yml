@@ -35,7 +35,7 @@ jobs:
           npm --prefix frontend/drone/mobile ci --include=dev --ignore-scripts --no-audit --no-fund
           npm --prefix frontend/drone/mobile test
           python3 -m scripts.mobile_native_compile prepare --platform ios --output "$RUNNER_TEMP/device-prepared"
-          pod install --project-directory=frontend/drone/mobile/ios
+          (cd frontend/drone/mobile/ios && pod install)
       - name: Archive the Release app for a physical arm64 iOS device without distribution signing
         working-directory: frontend/drone/mobile
         run: |
