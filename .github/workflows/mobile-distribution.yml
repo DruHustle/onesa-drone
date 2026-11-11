@@ -56,6 +56,8 @@ jobs:
           "$ANDROID_HOME/build-tools/37.0.0/apksigner" sign --ks "$out/fixture.p12" --ks-key-alias fixture \
             --ks-pass env:FIXTURE_PASSWORD --v1-signing-enabled false --v2-signing-enabled true --v3-signing-enabled true \
             --out "$out/fixture.apk" "$out/aligned-unsigned.apk"
+          "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --verbose --print-certs "$out/fixture.apk" |
+            grep -E '^Verified using|^Number of signers| certificate (DN|SHA-256 digest)'
           version=$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["versionName"])' "$out/unsigned-receipt.json")
           python -m scripts.mobile_android_distribution verify --directory "$out" --apk "$out/fixture.apk" \
             --certificate-sha256 "$cert" --url "https://drone.onesa.eu/downloads/onesa-drone-android-v$version.apk" > "$out/receipt.json"

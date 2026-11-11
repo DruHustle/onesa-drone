@@ -1,5 +1,7 @@
 """Check release-only identity and signer validation using synthetic local inputs."""
 
+import base64
+import hashlib
 import tempfile
 import unittest
 from pathlib import Path
@@ -17,13 +19,14 @@ class AndroidDistributionTests(unittest.TestCase):
                 release_version(value)
 
     def test_single_pinned_distribution_signer(self):
-        certificate = "a" * 64
-        report = ("Verified using v2 scheme (APK Signature Scheme v2): true\n"
-                  "Signer #1 certificate DN: CN=Fixture\nSigner #1 certificate SHA-256 digest: " + certificate)
+        der = b"demo signer fixture"
+        certificate = hashlib.sha256(der).hexdigest()
+        pem = "-----BEGIN CERTIFICATE-----\n" + base64.b64encode(der).decode() + "\n-----END CERTIFICATE-----"
+        report = "Verified using v2 scheme (APK Signature Scheme v2): true\nSigner #1 certificate DN: CN=Fixture\n" + pem
         verify_signer(report, certificate)
-        for value in [report.replace(certificate, "b" * 64), report.replace(": true", ": false"),
-                      report.replace("CN=Fixture", "CN=Android Debug"),
-                      report + "\nSigner #2 certificate SHA-256 digest: " + certificate]:
+        for value in [report.replace(pem, ""), report.replace(": true", ": false"),
+                      report.replace("CN=Fixture", "CN=Android Debug"), report + "\n" + pem,
+                      report.replace(base64.b64encode(der).decode(), "bm90IHRoZSBwaW4=")]:
             with self.assertRaises(ValueError):
                 verify_signer(value, certificate)
 

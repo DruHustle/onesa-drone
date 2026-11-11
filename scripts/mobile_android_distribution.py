@@ -1,6 +1,7 @@
 """Build a private unsigned release and verify a separately owner-signed Drone APK."""
 
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -53,11 +54,13 @@ def release_version(badging):
 
 def verify_signer(report, expected):
     native.require(re.fullmatch(r"[0-9a-f]{64}", expected), "Independent release certificate SHA-256 required")
-    certs = re.findall(r"^Signer #[0-9]+ certificate SHA-256 digest: ([0-9a-fA-F]{64})$", report, re.M)
-    native.require([item.lower() for item in certs] == [expected]
-                   and re.search(r"^Verified using v[23] scheme .*: true$", report, re.M)
+    blocks = re.findall(r"-----BEGIN CERTIFICATE-----\s*([A-Za-z0-9+/=\s]+?)\s*-----END CERTIFICATE-----", report)
+    native.require(len(blocks) == 1, "Expected precisely one release signer certificate")
+    der = base64.b64decode("".join(blocks[0].split()), validate=True)
+    native.require(hashlib.sha256(der).hexdigest() == expected, "Independent signer certificate pin differs")
+    native.require(re.search(r"^Verified using v(?:2|3(?:\.1)?) scheme [^\n]+:\s*true\s*$", report, re.M)
                    and not re.search(r"certificate DN:.*\bAndroid Debug\b", report, re.I),
-                   "Release signer or APK signature scheme differs")
+                   "Release APK signature scheme or signer identity differs")
 
 
 def build(directory):
@@ -96,7 +99,7 @@ def verify(directory, apk, certificate, url):
                    and payload_hash(directory / "aligned-unsigned.apk") == receipt["payloadSha256"],
                    "Signed payload differs from the prepared build")
     native.command(sdk_tool("zipalign"), "-c", "-P", "16", "4", str(apk))
-    verify_signer(native.command(sdk_tool("apksigner"), "verify", "--verbose", "--print-certs", str(apk)), certificate)
+    verify_signer(native.command(sdk_tool("apksigner"), "verify", "--verbose", "--print-certs-pem", str(apk)), certificate)
     version = expected["versionName"]
     filename = "onesa-drone-android-v" + version + ".apk"
     native.require(url in {"https://github.com/DruHustle/onesa-drone/releases/download/mobile-v" + version + "/" + filename,
