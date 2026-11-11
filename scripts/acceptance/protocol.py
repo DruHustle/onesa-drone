@@ -101,10 +101,26 @@ def run(role, evidence):
                     info["email"] == role + "@example.test" and info["global_admin"] == (role == "admin"),
                     "native identity role",
                 )
+                expected_workspaces = {fixture["tenant"]: "operator"}
+                if role == "admin":
+                    expected_workspaces = {fixture["tenant"]: "admin", fixture["other"]: "admin"}
+                check(
+                    {row["id"]: row["role"] for row in info["workspaces"]} == expected_workspaces,
+                    "native workspace grants",
+                )
+                mobile_headers = {"Authorization": "Bearer " + session}
+                logout = expect(
+                    client.post(drone_origin + "/api/v1/auth/mobile/logout", headers=mobile_headers), 200
+                ).json()
+                check(
+                    logout == {"local_signed_out": True, "central_signed_out": True}, "native global logout"
+                )
+                expect(client.get(drone_origin + "/api/v1/auth/mobile/account", headers=mobile_headers), 401)
+                expect(client.get(drone_origin + "/api/v1/auth/me"), 401)
                 print(
                     "PASS "
                     + step
-                    + " actual issuer + custom callback + account API; device dispatch unobserved",
+                    + " issuer + custom callback + authorized workspaces + global logout and invalidated web grant; device dispatch unobserved",
                     flush=True,
                 )
                 continue
@@ -217,7 +233,8 @@ def run(role, evidence):
                     )
             if state == "signed out":
                 client.cookies.delete("drone_session")
-        expect(client.post(drone_origin + "/api/v1/auth/logout", headers=headers), 200)
+        if not native:
+            expect(client.post(drone_origin + "/api/v1/auth/logout", headers=headers), 200)
         expect(client.get(drone_origin + "/api/v1/auth/me"), 401)
         print("PASS " + role + " global sign-out", flush=True)
 
