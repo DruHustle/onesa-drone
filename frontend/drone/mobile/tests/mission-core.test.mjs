@@ -73,7 +73,7 @@ test("malformed stored records are not trusted", async () => {
       status: "draft", execution_enabled: true, waypoints: DEMO_ROUTE }));
   assert.deepEqual(await loadDrafts(storage), []);
 });
-test("secure index-write failure rolls back a new draft", async () => {
+test("secure index-write failure leaves no private record", async () => {
   const storage = fakeStore();
   const draft = makeDraft({
     id: "draft_abc12345", title: "Crop inspection", purpose: "farm-inspection",
@@ -86,4 +86,53 @@ test("secure index-write failure rolls back a new draft", async () => {
   };
   await assert.rejects(saveDraft(storage, draft), /Keychain unavailable/);
   assert.equal(storage.values.has("onesa.drone.draft." + draft.id), false);
+});
+
+function numberedDraft(n) {
+  return makeDraft({
+    id: "draft_example_" + n, title: "Inspection " + n, purpose: "farm-inspection",
+    points: DEMO_ROUTE, now: 1793900000000 + n,
+  });
+}
+
+test("concurrent saves preserve all 12 drafts and refuse overflow without data loss", async () => {
+  const store = fakeStore();
+  const drafts = Array.from({ length: 12 }, (_, n) => numberedDraft(n));
+  await Promise.all(drafts.map(draft => saveDraft(store, draft)));
+  await assert.rejects(saveDraft(store, numberedDraft(12)), /12 draft slots/);
+  assert.deepEqual(await loadDrafts(store), drafts.toReversed());
+  assert.equal(store.values.size, 13);
+  const updated = { ...drafts[0], title: "Revised inspection" };
+  await saveDraft(store, updated);
+  assert.equal((await loadDrafts(store))[0].title, updated.title);
+  await deleteDraft(store, drafts[1].id);
+  assert.equal(await saveDraft(store, numberedDraft(12)), 12);
+});
+
+test("failed secure deletion keeps the record visible for a retry", async () => {
+  const store = fakeStore();
+  const draft = numberedDraft(1);
+  await saveDraft(store, draft);
+  const remove = store.deleteItemAsync;
+  store.deleteItemAsync = async () => { throw new Error("Keychain locked"); };
+  await assert.rejects(deleteDraft(store, draft.id), /Keychain locked/);
+  assert.deepEqual(await loadDrafts(store), [draft]);
+  store.deleteItemAsync = remove;
+  await deleteDraft(store, draft.id);
+  assert.deepEqual(await loadDrafts(store), []);
+});
+
+test("a failed payload write leaves room for the next save", async () => {
+  const store = fakeStore();
+  const write = store.setItemAsync;
+  const abandoned = numberedDraft(0);
+  store.setItemAsync = async (key, value) => {
+    if (key.endsWith(abandoned.id)) throw new Error("Write interrupted");
+    return write(key, value);
+  };
+  await assert.rejects(saveDraft(store, abandoned), /Write interrupted/);
+  store.setItemAsync = write;
+  for (let n = 1; n <= 12; n++) await saveDraft(store, numberedDraft(n));
+  assert.equal((await loadDrafts(store)).length, 12);
+  assert.equal(store.values.size, 13);
 });
