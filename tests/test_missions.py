@@ -5,6 +5,7 @@ import pytest
 from sqlalchemy import select, func
 from backend.app.models import Mission, Aircraft, MissionEvent, Telemetry
 from backend.app.service import advance, mission_out
+from autonomy.navigation.geometry import distance, xy
 from conftest import delivery, cmd, launch
 
 
@@ -148,6 +149,130 @@ def test_active_cancellation_returns_home(stack, aircraft):
     assert m["state"] == "returning"
     m = tick(stack, m["id"], 100)
     assert m["state"] == "cancelled" and not m["delivered"]
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("endurance", float("inf")),
+        ("endurance", 0),
+        ("capacity", float("inf")),
+        ("capacity", 0),
+        ("battery", 101),
+    ],
+)
+def test_launch_rechecks_aircraft_observations_after_authorization(stack, aircraft, field, value):
+    mission = delivery(stack)["mission"]
+    for action in ["plan", "validate", "authorize"]:
+        response = cmd(stack, mission, action)
+        assert response.status_code == 200
+        mission = response.json()
+    with stack["store"].transaction(stack["tenant"]) as db:
+        setattr(db.get(Aircraft, aircraft["id"]), field, value)
+    denied = cmd(stack, mission, "launch")
+    assert denied.status_code == 422
+    with stack["store"].session() as db:
+        row = db.get(Mission, mission["id"])
+        assert row.state == "authorized" and row.tick == 0
+        assert row.last_telemetry == "{}"
+        assert db.get(Aircraft, aircraft["id"]).status == "available"
+
+
+def test_unavailable_endurance_during_simulation_holds_without_inventing_an_estimate(stack, aircraft):
+    mission, _ = launch(stack)
+    before = tick(stack, mission["id"], 6)
+    with stack["store"].transaction(stack["tenant"]) as db:
+        db.get(Aircraft, aircraft["id"]).endurance = float("inf")
+        advance(db, db.get(Mission, mission["id"]))
+    held = tick(stack, mission["id"])
+    assert held["state"] == "paused"
+    assert held["last_telemetry"]["endurance_quality"] == "unavailable"
+    assert held["last_telemetry"]["position"] == before["last_telemetry"]["position"]
+    operations = stack["client"].get("/api/v1/operations")
+    assert operations.status_code == 200
+    assert operations.json()["aircraft"][0]["endurance"] is None
+    assert cmd(stack, held, "recover").status_code == 422
+    with stack["store"].transaction(stack["tenant"]) as db:
+        db.get(Aircraft, aircraft["id"]).endurance = 35
+    assert cmd(stack, held, "recover").status_code == 200
+    resumed = tick(stack, mission["id"])
+    assert "endurance_quality" not in resumed["last_telemetry"]
+
+
+@pytest.mark.parametrize("state", ["taking_off", "outbound", "delivering", "returning", "landing"])
+def test_invalid_battery_holds_every_active_phase_and_keeps_replay_truthful(stack, aircraft, state):
+    m, _ = launch(stack)
+    for _ in range(150):
+        if m["state"] == state:
+            break
+        m = tick(stack, m["id"])
+    assert m["state"] == state
+    before = m["last_telemetry"]
+    with stack["store"].transaction(stack["tenant"]) as db:
+        a = db.get(Aircraft, aircraft["id"])
+        a.battery = float("inf")
+        advance(db, db.get(Mission, m["id"]))
+    held = tick(stack, m["id"], 3)
+    assert held["state"] == "paused" and held["outcome"] == "aborted"
+    assert held["tick"] == m["tick"] + 1
+    assert held["last_telemetry"]["battery_quality"] == "unavailable"
+    assert held["last_telemetry"]["ground_speed_mps"] == 0
+    assert held["last_telemetry"].get("position") == before.get("position")
+    history = stack["client"].get(f"/api/v1/missions/{m['id']}/history").json()
+    assert history["telemetry"][-1] == held["last_telemetry"]
+    assert "Invalid battery observation" in history["events"][-1]["detail"]["reason"]
+    operations = stack["client"].get("/api/v1/operations")
+    assert operations.status_code == 200
+    assert operations.json()["aircraft"][0]["battery"] is None
+    assert operations.json()["missions"][0]["last_telemetry"] == held["last_telemetry"]
+    assert cmd(stack, held, "recover").status_code == 422
+    # Repairing a synthetic observation does not automatically resume motion.
+    with stack["store"].transaction(stack["tenant"]) as db:
+        db.get(Aircraft, aircraft["id"]).battery = 75
+    assert tick(stack, m["id"])["state"] == "paused"
+    recovered = cmd(stack, held, "recover").json()
+    resumed = tick(stack, recovered["id"])
+    assert resumed["state"] == ("landing" if state == "landing" else "returning")
+    assert "battery_quality" not in resumed["last_telemetry"]
+
+
+@pytest.mark.parametrize(("state", "phase_ticks"), [("returning", 4), ("landing", 1)])
+@pytest.mark.parametrize("action", ["recover", "cancel"])
+def test_held_return_or_landing_preserves_progress_after_operator_action(
+    stack, aircraft, state, phase_ticks, action
+):
+    m, _ = launch(stack)
+    for _ in range(150):
+        if m["state"] == state:
+            break
+        m = tick(stack, m["id"])
+    assert m["state"] == state
+    before = tick(stack, m["id"], phase_ticks)["last_telemetry"]
+    with stack["store"].transaction(stack["tenant"]) as db:
+        db.get(Aircraft, aircraft["id"]).battery = float("inf")
+        advance(db, db.get(Mission, m["id"]))
+    held = tick(stack, m["id"])
+    assert held["state"] == "paused"
+    assert held["last_telemetry"]["position"] == before["position"]
+    assert held["last_telemetry"]["altitude_m"] == before["altitude_m"]
+    with stack["store"].transaction(stack["tenant"]) as db:
+        db.get(Aircraft, aircraft["id"]).battery = 75
+    response = cmd(stack, held, action)
+    assert response.status_code == 200
+    resumed = tick(stack, m["id"])
+    latest = resumed["last_telemetry"]
+    assert latest["flight_mode"] == state
+    if state == "landing":
+        assert latest["position"] == m["origin"]
+        assert 0 < latest["altitude_m"] < before["altitude_m"]
+    else:
+        home = m["origin"]
+        assert distance(xy(latest["position"], home), xy(before["position"], home)) <= 50.1
+        assert distance(xy(latest["position"], home), (0, 0)) < distance(xy(before["position"], home), (0, 0))
+    terminal = tick(stack, m["id"], 100)
+    assert terminal["state"] == ("cancelled" if action == "cancel" else "aborted")
+    assert terminal["last_telemetry"]["position"] == m["origin"]
+    assert terminal["last_telemetry"]["altitude_m"] == 0
 
 
 def test_prelaunch_cancel_releases_aircraft(stack, aircraft):

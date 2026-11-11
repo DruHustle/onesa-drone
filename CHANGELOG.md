@@ -16,6 +16,13 @@
 
 ## Unreleased — 0.1 simulation implementation
 
+- Refuse nonfinite launch data in the independent supervisor. Invalid battery/endurance
+  observations pause every simulated flight phase and remain visibly unavailable
+  in fleet, telemetry and replay until repaired and explicitly recovered. Operations
+  and SSE remain readable; unavailable aircraft observations cannot enter planning.
+  Recovery and cancellation preserve held return/descent progress.
+  Physical interfaces remain disabled; this is not hardware qualification.
+
 - Add optional shared Onesa sign-in and central administrator access. Users keep
   one account across AI Platform, Company Portal, Drone and Robot; Drone receives
   current permissions through the registered issuer and retains tenant boundaries.

@@ -962,7 +962,9 @@ function App() {
                   label="Fleet battery"
                   value={
                     data.aircraft.length
-                      ? `${Math.round(data.aircraft.reduce((s, a) => s + a.battery, 0) / data.aircraft.length)}%`
+                      ? data.aircraft.some((a) => a.battery === null)
+                        ? "Unavailable"
+                        : `${Math.round(data.aircraft.reduce((s, a) => s + (a.battery ?? 0), 0) / data.aircraft.length)}%`
                       : "—"
                   }
                   foot="Illustrative energy model"
@@ -1019,13 +1021,19 @@ function App() {
                           <small>{human(a.category)}</small>
                         </div>
                         <div className="battery">
-                          <span>{a.battery.toFixed(0)}%</span>
-                          <meter
-                            min="0"
-                            max="100"
-                            value={a.battery}
-                            aria-label={`${a.name} battery`}
-                          />
+                          <span>
+                            {a.battery === null
+                              ? "Unavailable"
+                              : `${a.battery.toFixed(0)}%`}
+                          </span>
+                          {a.battery !== null && (
+                            <meter
+                              min="0"
+                              max="100"
+                              value={a.battery}
+                              aria-label={`${a.name} battery`}
+                            />
+                          )}
                         </div>
                         <Badge
                           state={a.active_mission_id ? "reserved" : a.status}
@@ -1103,19 +1111,29 @@ function App() {
                       <dl className="specs">
                         <div>
                           <dt>Battery</dt>
-                          <dd>{a.battery.toFixed(1)}%</dd>
+                          <dd>
+                            {a.battery === null
+                              ? "Unavailable"
+                              : `${a.battery.toFixed(1)}%`}
+                          </dd>
                         </div>
                         <div>
                           <dt>Payload</dt>
                           <dd>
-                            {prefs.units === "imperial"
-                              ? (a.capacity * 2.20462).toFixed(1) + " lb"
-                              : a.capacity + " kg"}
+                            {a.capacity === null
+                              ? "Unavailable"
+                              : prefs.units === "imperial"
+                                ? (a.capacity * 2.20462).toFixed(1) + " lb"
+                                : a.capacity + " kg"}
                           </dd>
                         </div>
                         <div>
                           <dt>Endurance</dt>
-                          <dd>{a.endurance} min</dd>
+                          <dd>
+                            {a.endurance === null
+                              ? "Unavailable"
+                              : `${a.endurance} min`}
+                          </dd>
                         </div>
                         <div>
                           <dt>Firmware</dt>
@@ -1580,8 +1598,18 @@ function App() {
                     />
                     <Metric
                       label="Battery"
-                      value={`${(telemetry.battery_percent || 0).toFixed(1)}%`}
-                      foot={`${telemetry.remaining_endurance_min || 0} min estimated`}
+                      value={
+                        telemetry.battery_quality === "unavailable"
+                          ? "Unavailable"
+                          : `${(telemetry.battery_percent || 0).toFixed(1)}%`
+                      }
+                      foot={
+                        telemetry.battery_quality === "unavailable"
+                          ? "Simulation paused; check observation"
+                          : telemetry.endurance_quality === "unavailable"
+                            ? "Endurance unavailable; simulation paused"
+                            : `${telemetry.remaining_endurance_min || 0} min estimated`
+                      }
                     />
                     <Metric
                       label="Payload"
@@ -2565,9 +2593,10 @@ function TelemetryChart({
 }) {
   if (!samples.length) return null;
   const points = samples
-    .map(
-      (s, i) =>
-        `${(i / Math.max(samples.length - 1, 1)) * 900},${160 - s.battery_percent * 1.4}`,
+    .map((s, i) =>
+      s.battery_quality === "unavailable"
+        ? ""
+        : `${i === 0 || samples[i - 1].battery_quality === "unavailable" ? "M" : "L"}${(i / Math.max(samples.length - 1, 1)) * 900},${160 - s.battery_percent * 1.4}`,
     )
     .join(" ");
   return (
@@ -2575,7 +2604,7 @@ function TelemetryChart({
       <figcaption>{title} · simulation samples</figcaption>
       <svg
         role="img"
-        aria-label={`${title}: ${samples.length} samples, last battery ${samples.at(-1)?.battery_percent}%`}
+        aria-label={`${title}: ${samples.length} samples, last battery ${samples.at(-1)?.battery_quality === "unavailable" ? "unavailable" : `${samples.at(-1)?.battery_percent}%`}`}
         viewBox="0 0 900 180"
         preserveAspectRatio="none"
       >
@@ -2584,8 +2613,8 @@ function TelemetryChart({
           stroke="var(--onesa-divider)"
           fill="none"
         />
-        <polyline
-          points={points}
+        <path
+          d={points}
           fill="none"
           stroke="var(--onesa-accent)"
           strokeWidth="3"
