@@ -41,3 +41,15 @@ test("official listings are allowed independently for each platform", () => {
   expect(storeListing("ios", ios.replace("apps.apple.com", "example.test"))).toBeNull();
   expect(storeListing("android", android.replace("eu.onesa.drone", "another.app"))).toBeNull();
 });
+
+test("direct APK links require both pins and public iOS invites use the official beta host", () => {
+  const url = "https://github.com/DruHustle/onesa-drone/releases/download/mobile-v0.1.0/onesa-drone-android-v0.1.0.apk";
+  const verified = { url, sha256: "a".repeat(64), certificateSha256: "b".repeat(64), sourceCommit: "c".repeat(40) };
+  expect(storeListing("android", verified)).toBe(url);
+  expect(storeListing("android", { ...verified, certificateSha256: "" })).toBeNull();
+  expect(storeListing("android", { ...verified, url: url.replace("DruHustle", "untrusted") })).toBeNull();
+  expect(storeListing("android", url)).toBeNull();
+  const beta = "https://testflight.apple.com/join/Ab12Cd34";
+  expect(storeListing("ios", beta)).toBe(beta);
+  expect(storeListing("ios", beta.replace("testflight.apple.com", "example.test"))).toBeNull();
+});
