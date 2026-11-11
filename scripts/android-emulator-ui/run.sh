@@ -61,7 +61,7 @@ device shell wm dismiss-keyguard
 for port in 54844 54843 8081; do device reverse "tcp:$port" "tcp:$port"; done
 export CHROME_DEVTOOLS_PORT
 CHROME_DEVTOOLS_PORT=$(device forward tcp:0 localabstract:chrome_devtools_remote)
-(cd "$mobile" && CI=1 EXPO_NO_TELEMETRY=1 exec node node_modules/expo/bin/cli start --offline --localhost --port 8081) > "$work/metro.log" 2>&1 &
+(cd "$mobile" && CI=1 EXPO_OFFLINE=1 EXPO_NO_TELEMETRY=1 exec node node_modules/expo/bin/cli start --localhost --port 8081) > "$work/metro.log" 2>&1 &
 metro=$!
 for attempt in {1..90}; do
   if curl --silent --fail http://127.0.0.1:8081/status | grep -q 'packager-status:running'; then break; fi

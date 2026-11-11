@@ -78,10 +78,31 @@ def launch():
     require("Status: ok" in result, "Android did not launch the release activity")
 
 
-def verify_offline():
-    require(shell("settings", "get", "global", "airplane_mode_on") == "1"
-            and re.search(r"Active default network:\s*(?:none|null)\b", shell("dumpsys", "connectivity"), re.I),
-            "Emulator must be offline for this test")
+def restrict_app_network():
+    # A booting emulator may advertise an Ethernet network even in airplane
+    # mode. Its production app must be unable to reach that network, regardless
+    # of Android's current choice of default network. Scope the packet policy
+    # to this freshly installed UID on the named throwaway emulator.
+    require(adb("emu", "avd", "name").splitlines()[0] == AVD, "Expected the disposable offline emulator")
+    adb("root")
+    adb("wait-for-device")
+    require(shell("id", "-u") == "0", "Expected an SDK emulator that supports adb root")
+    record = shell("cmd", "package", "list", "packages", "-U", APP_ID)
+    match = re.fullmatch(r"package:" + re.escape(APP_ID) + r"\s+uid:(\d+)", record)
+    require(match is not None and int(match[1]) >= 10000, "Could not determine installed release UID")
+    uid = match[1]
+    for tool in ("iptables", "ip6tables"):
+        shell(tool, "-w", "3", "-I", "OUTPUT", "1", "!", "-o", "lo", "-m", "owner", "--uid-owner", uid, "-j", "REJECT")
+    return uid
+
+
+def verify_offline(uid):
+    require(shell("settings", "get", "global", "airplane_mode_on") == "1", "Airplane mode is off")
+    for tool in ("iptables", "ip6tables"):
+        rules = shell(tool, "-w", "3", "-S", "OUTPUT").splitlines()
+        first = next((rule for rule in rules if rule.startswith("-A OUTPUT ")), "")
+        require("! -o lo" in first and ("--uid-owner " + uid + " ") in first and "-j REJECT" in first,
+                "The app's non-loopback network traffic must be rejected by the first " + tool + " rule")
 
 
 def screenshot(directory, name):
@@ -156,7 +177,8 @@ def exercise(apk, screenshots=None):
                 shell("svc", "wifi", "disable")
                 shell("svc", "data", "disable")
                 require("Success" in adb("install", str(apk), timeout=90), "Could not install universal APK")
-                verify_offline()
+                uid = restrict_app_network()
+                verify_offline(uid)
                 launch()
                 find("Mission planner")
                 receipt("Offline cold launch")
@@ -188,8 +210,8 @@ def exercise(apk, screenshots=None):
                 tap("Video")
                 find("No live feed", scroll=True)
                 screenshot(screenshots, "03-hardware-video-unavailable.png")
-                verify_offline()
-                receipt("No hardware camera feed and emulator still offline")
+                verify_offline(uid)
+                receipt("No hardware camera feed; airplane mode and app IPv4/IPv6 isolation verified again")
                 planning_and_share()
             finally:
                 if process.poll() is None:
