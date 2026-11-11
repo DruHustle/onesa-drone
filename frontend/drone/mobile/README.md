@@ -56,10 +56,12 @@ No map tiles are sent to third parties: route sketches use local SVG geometry an
 
 ## Website downloads
 
-The public website and signed-in console read each platform’s store URL from
+The public website and signed-in console read each platform’s release destination from
 `frontend/drone/web/src/mobile-downloads.json`. Both currently show unavailable.
 After the store has approved a public release, verify the listing’s publisher,
 product name and `eu.onesa.drone` application identifier against its release
 record, then set that platform’s URL in the configuration. The other platform
 remains independent. Retain the release record with the change and run
 `npm --prefix frontend run test:unit` and the browser checks before promotion.
+
+For a signed direct Android APK or an approved iOS public beta, follow the [companion release and verification procedure](DISTRIBUTION.md).
