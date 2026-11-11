@@ -1,5 +1,13 @@
 let csrf = "";
 let sessionGeneration = 0;
+export class APIError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
 export class SessionChangedError extends Error {
   constructor() {
     super("Session changed; previous response ignored.");
@@ -32,7 +40,8 @@ export async function api<T>(
   const data = await response.json();
   if (generation !== sessionGeneration) throw new SessionChangedError();
   if (!response.ok)
-    throw new Error(
+    throw new APIError(
+      response.status,
       typeof data.detail === "string"
         ? data.detail
         : `Request rejected (${response.status})`,

@@ -588,7 +588,12 @@ def create_app(settings=None):
                         return
                     yield "event: telemetry\ndata: " + j(data) + "\n\n"
                     await asyncio.sleep(1)
-            except (HTTPException, identity_protocol.IdentityError):
+            except identity_protocol.IdentityError as error:
+                if error.status >= 500:
+                    yield 'event: unavailable\ndata: {"reason":"identity"}\n\n'
+                else:
+                    yield "event: expired\ndata: {}\n\n"
+            except HTTPException:
                 yield "event: expired\ndata: {}\n\n"
             except SQLAlchemyError:
                 yield 'event: unavailable\ndata: {"reason":"storage"}\n\n'
@@ -804,15 +809,15 @@ def create_app(settings=None):
                 db.scalars(
                     select(MissionEvent)
                     .where(MissionEvent.mission_id == identifier, MissionEvent.tenant_id == a["tenant_id"])
-                    .order_by(MissionEvent.at)
-                    .limit(1000)
+                    .order_by(MissionEvent.at.desc(), MissionEvent.id.desc())
+                    .limit(1001)
                 )
             )
             telemetry = list(
                 db.scalars(
                     select(Telemetry)
                     .where(Telemetry.mission_id == identifier, Telemetry.tenant_id == a["tenant_id"])
-                    .order_by(Telemetry.seq)
+                    .order_by(Telemetry.seq.desc())
                     .limit(cfg.telemetry_limit)
                 )
             )
@@ -825,9 +830,10 @@ def create_app(settings=None):
                         "detail": json.loads(e.detail),
                         "correlation_id": e.correlation_id,
                     }
-                    for e in events
+                    for e in reversed(events[:1000])
                 ],
-                "telemetry": [json.loads(t.payload) for t in telemetry],
+                "events_truncated": len(events) > 1000,
+                "telemetry": [json.loads(t.payload) for t in reversed(telemetry)],
                 "mode": "simulation",
                 "retention_samples": cfg.telemetry_limit,
             }

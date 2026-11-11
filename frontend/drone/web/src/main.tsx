@@ -11,6 +11,7 @@ import {
 } from "react";
 import { createRoot } from "react-dom/client";
 import { api, setCSRF, SessionChangedError } from "./api";
+import { subscribeToOperations, type StreamStatus } from "./operationsStream";
 import FlightPlanPreview from "./FlightPlanPreview";
 import MobileDownloads from "./MobileDownloads";
 import {
@@ -114,7 +115,7 @@ function App() {
     [selected, setSelected] = useState(""),
     [notice, setNotice] = useState(accountError),
     [busy, setBusy] = useState(false),
-    [connection, setConnection] = useState("connecting"),
+    [connection, setConnection] = useState<StreamStatus>("connecting"),
     [mobile, setMobile] = useState(false),
     [compactNavigation, setCompactNavigation] = useState(
       () => matchMedia("(max-width: 850px)").matches,
@@ -212,8 +213,10 @@ function App() {
   }, [flight?.id]);
   const mounted = useRef(true);
   const currentAction = useRef(0);
+  const snapshotVersion = useRef(0);
   const resetWorkspace = useCallback(() => {
     currentAction.current++;
+    snapshotVersion.current++;
     setBusy(false);
     setNotice("");
     setSignOutAccountUrl("");
@@ -263,8 +266,9 @@ function App() {
     }
   }, []);
   const refresh = useCallback(async () => {
-    const d = await api<Operations>("/operations");
-    setData(d);
+    const version = ++snapshotVersion.current;
+    const value = await api<Operations>("/operations");
+    if (version === snapshotVersion.current) setData(value);
   }, []);
   useEffect(() => {
     mounted.current = true;
@@ -291,16 +295,10 @@ function App() {
   }, []);
   useEffect(() => {
     if (!user?.tenant_id) return;
-    let stopped = false,
-      source: EventSource | undefined,
-      timer: ReturnType<typeof setTimeout>;
-    void api<Operations>("/operations")
-      .then((value) => {
-        if (!stopped) setData(value);
-      })
-      .catch((e) => {
-        if (!stopped) setNotice(e.message);
-      });
+    let stopped = false;
+    void refresh().catch((e) => {
+      if (!stopped) setNotice(e.message);
+    });
     void api<Preferences>("/settings")
       .then((value) => {
         if (!stopped) setPrefs(value);
@@ -308,41 +306,23 @@ function App() {
       .catch((e) => {
         if (!stopped) setNotice(e.message);
       });
-    let attempts = 0;
-    function connect() {
-      source = new EventSource("/api/v1/stream");
-      source.addEventListener("telemetry", (event) => {
-        if (stopped) return;
-        attempts = 0;
-        setConnection("receiving");
-        setData(JSON.parse((event as MessageEvent).data));
-      });
-      source.addEventListener("expired", () => {
-        if (stopped) return;
-        source?.close();
+    const unsubscribe = subscribeToOperations(
+      (snapshot) => {
+        snapshotVersion.current++;
+        setData(snapshot);
+      },
+      setConnection,
+      () => {
+        stopped = true;
         setCSRF("");
         resetWorkspace();
-        setConnection("session expired");
         setUser(null);
-      });
-      source.addEventListener("unavailable", () => {
-        if (!stopped) setConnection("storage unavailable");
-      });
-      source.onerror = () => {
-        source?.close();
-        if (stopped) return;
-        setConnection("reconnecting");
-        timer = setTimeout(
-          connect,
-          Math.min(30000, 1000 * 2 ** Math.min(attempts++, 5)),
-        );
-      };
-    }
-    connect();
+      },
+    );
     return () => {
       stopped = true;
-      source?.close();
-      clearTimeout(timer);
+      snapshotVersion.current++;
+      unsubscribe();
     };
   }, [user, refresh, resetWorkspace]);
   useEffect(() => {
@@ -934,6 +914,13 @@ function App() {
               virtual. No physical-flight controls.
             </p>
           </div>
+          {connection !== "receiving" && connection !== "connecting" && (
+            <p className="error" role="status">
+              {data.at > 0
+                ? `Updates interrupted. Showing the last snapshot from ${new Date(data.at * 1000).toLocaleString()}.`
+                : "Updates interrupted. No operations snapshot has arrived."}
+            </p>
+          )}
           {notice && (
             <div className="error" role="alert">
               {notice}
@@ -1550,6 +1537,12 @@ function App() {
                       {history && (
                         <>
                           <h3>Mission events</h3>
+                          {history.events_truncated && (
+                            <p className="fine">
+                              Showing the latest {history.events.length} mission
+                              events. Earlier events are outside this view.
+                            </p>
+                          )}
                           <ol className="timeline">
                             {history.events.map((e) => (
                               <li key={e.id}>

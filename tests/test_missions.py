@@ -313,6 +313,44 @@ def test_telemetry_retention_is_bounded(stack, aircraft):
         )
 
 
+def test_history_returns_newest_window_in_chronological_order(stack):
+    mission = delivery(stack)["mission"]
+    tenant = stack["tenant"]
+    mission_id = mission["id"]
+    limit = stack["app"].state.settings.telemetry_limit
+    url = f"/api/v1/missions/{mission_id}/history"
+    assert stack["client"].get(url).json()["events_truncated"] is False
+
+    # Earlier deployments may retain more telemetry than today's response limit.
+    with stack["store"].transaction(tenant) as db:
+        db.add_all(
+            Telemetry(tenant_id=tenant, mission_id=mission_id, seq=i, payload=json.dumps({"seq": i}))
+            for i in range(1, limit + 2)
+        )
+        # A stable tie-break also keeps the retained window deterministic.
+        at = time.time() + 1
+        db.add_all(
+            MissionEvent(
+                tenant_id=tenant,
+                mission_id=mission_id,
+                id=f"{mission_id}-{i:04d}",
+                at=at,
+                state="paused",
+                actor="fixture",
+                correlation_id="fixture",
+                detail="{}",
+            )
+            for i in range(1001)
+        )
+
+    response = stack["client"].get(url)
+    assert response.status_code == 200
+    history = response.json()
+    assert [sample["seq"] for sample in history["telemetry"]] == list(range(2, limit + 2))
+    assert history["events_truncated"] is True
+    assert [event["id"] for event in history["events"]] == [f"{mission_id}-{i:04d}" for i in range(1, 1001)]
+
+
 def test_revision_conflict_and_reschedule_invalidates_authorization(stack, aircraft):
     first = delivery(stack)["mission"]
     m = cmd(stack, first, "plan").json()

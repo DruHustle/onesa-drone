@@ -116,7 +116,7 @@ exit 99
                 self.assertEqual(result.returncode, status, result.stdout + result.stderr)
                 self.assertEqual(int((output / "attempt-count").read_text()), attempts)
 
-    def android(self, *, machine=183, extra=None):
+    def android(self, *, machine=183, extra=None, native_compression=zipfile.ZIP_STORED, hermes=False):
         apk = self.root / "app-debug.apk"
         header = bytearray(64)
         header[:6] = b"\x7fELF\x02\x01"
@@ -124,7 +124,9 @@ exit 99
         with zipfile.ZipFile(apk, "w") as archive:
             archive.writestr("AndroidManifest.xml", b"synthetic compiled manifest")
             archive.writestr("classes.dex", b"dex\n035\x00synthetic")
-            archive.writestr("lib/arm64-v8a/libreactnative.so", header)
+            archive.writestr("lib/arm64-v8a/libreactnative.so", header, compress_type=native_compression)
+            if hermes:
+                archive.writestr("lib/arm64-v8a/libhermesvm.so", header, compress_type=native_compression)
             if extra:
                 archive.writestr(extra, b"synthetic")
         return apk
@@ -444,6 +446,134 @@ exit 99
         self.assertIs(proof["release_authorized"], False)
         self.assertIs(proof["hardware_flight_enabled"], False)
         self.assertEqual(proof["qualification"], "native-compilation-only")
+
+    def test_qualified_bench_artifact_has_distinct_identity_bundle_and_test_signature(self):
+        output = self.prepared("android")
+        prepared = output / "prepared.json"
+        prepared.write_text(json.dumps({**json.loads(prepared.read_text()), "variant": "bench"}))
+        apk = self.root / native.MOBILE_PATH / "android/app/build/outputs/apk/release/app-release.apk"
+        apk.parent.mkdir(parents=True)
+        apk.write_bytes(self.android(native_compression=zipfile.ZIP_DEFLATED, hermes=True).read_bytes())
+        badging = ("package: name='eu.onesa.drone.bench' versionCode='1'\n"
+                   "application-label:'Onesa Drone Bench'\n"
+                   "launchable-activity: name='eu.onesa.drone.MainActivity' label='' icon=''\n")
+        signer = ("Verified using v2 scheme (APK Signature Scheme v2): true\nNumber of signers: 1\n"
+                  f"Signer #1 certificate SHA-256 digest: {native.BENCH_CERT_SHA256}")
+        manifest = "    E: application (line=51)\n      A: android:extractNativeLibs(0x010104ea)=(type 0x12)0xffffffff"
+        with self.assertRaisesRegex(ValueError, "Hermes bundle missing"):
+            native.android_identity(apk, badging, bench=True)
+        payload = bytearray(256)
+        payload[:8] = native.HERMES_MAGIC
+        struct.pack_into("<I", payload, 8, native.HERMES_VERSION)
+        struct.pack_into("<I", payload, 32, len(payload) + 20)
+        bundle = bytes(payload) + hashlib.sha1(payload).digest()
+        with zipfile.ZipFile(apk, "a") as archive:
+            archive.writestr("assets/index.android.bundle", bundle)
+        for bad in (badging.replace(".bench'", "'"), badging + "application-debuggable\n",
+                    badging.replace(" Drone Bench", " Drone"), badging.replace(".MainActivity", ".OtherActivity")):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                native.android_identity(apk, bad, bench=True)
+        for bad in (signer.replace(native.BENCH_CERT_SHA256, "f" * 64), signer.replace(": true", ": false"),
+                    signer.replace("signers: 1", "signers: 2"), signer + "\nSigner #2 certificate SHA-256 digest: ab"):
+            with self.subTest(bad=bad), self.assertRaisesRegex(ValueError, "test signing"):
+                native.bench_signer(bad)
+        with self.assertRaisesRegex(ValueError, "variant"):
+            native.qualify("android", output, self.root)
+        with patch.object(native, "locked_inputs", return_value={}), patch.object(native, "source_unchanged"), \
+                patch.object(native, "command", side_effect=["v24.22.1", badging, manifest, signer]) as invoked, \
+                patch.object(native.os, "environ", {"ANDROID_HOME": "/synthetic-sdk"}), \
+                patch.object(native.subprocess, "run", return_value=SimpleNamespace(
+                    stderr='openjdk version "17.0.1"', stdout="")):
+            native.qualify("android", output, self.root, bench=True)
+        invoked.assert_any_call("/synthetic-sdk/build-tools/37.0.0/apksigner", "verify",
+                                "--verbose", "--print-certs", str(apk))
+        proof = json.loads((output / "compile-proof.json").read_text())
+        self.assertEqual(proof["target"], "android-arm64-bench")
+        self.assertEqual(proof["qualification"], "offline-bench-package")
+        self.assertEqual(proof["identity"]["native_library_packaging"], "compressed-for-install-time-extraction")
+        self.assertEqual(proof["identity"]["native_library_extraction"], "explicit")
+        self.assertFalse(proof["device_launch_verified"])
+        self.assertFalse(proof["release_authorized"])
+        self.assertFalse(proof["hardware_flight_enabled"])
+        self.assertFalse(proof["identity"]["distribution_signed"])
+        self.assertEqual(proof["identity"]["configuration"], "release")
+        self.assertEqual(proof["identity"]["embedded_bundle"]["sha256"], hashlib.sha256(bundle).hexdigest())
+        self.assertEqual(proof["identity"]["signer_certificate_sha256"], native.BENCH_CERT_SHA256)
+        self.assertEqual(proof["output"]["name"], "OnesaDrone-arm64-bench.apk")
+        self.assertEqual(proof["output"]["sha256"], hashlib.sha256(apk.read_bytes()).hexdigest())
+        self.assertEqual((output / proof["output"]["name"]).read_bytes(), apk.read_bytes())
+
+    def test_bench_rejects_direct_apk_loading_on_translated_android(self):
+        application = "    E: application (line=51)"
+        attribute = "      A: android:extractNativeLibs(0x010104ea)=(type 0x12)"
+        self.assertEqual(native.bench_native_library_extraction(application), "platform-default")
+        for false_setting in (attribute + "0x0", attribute + "invalid"):
+            with self.assertRaisesRegex(ValueError, "permit native-library extraction"):
+                native.bench_native_library_extraction(application + "\n" + false_setting)
+        with self.assertRaisesRegex(ValueError, "manifest missing"):
+            native.bench_native_library_extraction("")
+        badging = ("package: name='eu.onesa.drone.bench' versionCode='1'\n"
+                   "application-label:'Onesa Drone Bench'\n"
+                   "launchable-activity: name='eu.onesa.drone.MainActivity' label='' icon=''")
+        # The prior APK had correct ARM64 binaries and Hermes bytecode but stored
+        # its shared libraries uncompressed. Mixed compression also fails the check.
+        with patch.object(native, "embedded_hermes", return_value={}):
+            with self.assertRaisesRegex(ValueError, "compressed for install-time"):
+                native.android_identity(self.android(hermes=True), badging, bench=True)
+            with self.assertRaisesRegex(ValueError, "Hermes native runtime missing"):
+                native.android_identity(self.android(native_compression=zipfile.ZIP_DEFLATED), badging, bench=True)
+            apk = self.android(native_compression=zipfile.ZIP_DEFLATED, hermes=True)
+            with zipfile.ZipFile(apk, "a") as archive:
+                archive.writestr("lib/arm64-v8a/libother.so", bytes(64))
+            with self.assertRaisesRegex(ValueError, "compressed for install-time"):
+                native.android_identity(apk, badging, bench=True)
+
+    def test_bench_signer_accepts_actual_sdk_37_certificate_labels_and_rejects_other_certs(self):
+        # SDK 37 verification of the retained Expo APK (v2) and the same fixture
+        # signed using the template test certificate with v3 enabled.
+        pin = native.BENCH_CERT_SHA256
+        modern = "Verified using v2 scheme (APK Signature Scheme v2): true\n"
+        count = "Number of signers: 1\n"
+        field = " certificate SHA-256 digest: "
+        v2 = "V2 Signer:" + field + pin
+        v3 = "V3.0 Signer:" + field + pin
+        low = "Signer (minSdkVersion=28, maxSdkVersion=32)" + field + pin
+        high = "Signer (minSdkVersion=33, maxSdkVersion=2147483647)" + field + pin
+        for certs in (v2, v3, low + "\n" + high):
+            self.assertEqual(native.bench_signer(modern + count + certs)["signer_certificate_sha256"], pin)
+        for certs in (v2 + "\n" + v3.replace(pin, "f" * 64), high.replace(pin, ""),
+                      v2.replace("certificate", "public key"), v2.replace("V2 Signer:", "Signer #2")):
+            with self.subTest(certs=certs), self.assertRaisesRegex(ValueError, "certificate entries"):
+                native.bench_signer(modern + count + certs)
+        with self.assertRaisesRegex(ValueError, "verified schemes: none"):
+            native.bench_signer(modern.replace(": true", ": false") + count + v2)
+
+    def test_bench_rejects_plain_javascript_and_invalid_hermes_files(self):
+        apk = self.root / "bench.apk"
+        hbc = bytearray(256)
+        hbc[:8] = native.HERMES_MAGIC
+        struct.pack_into("<I", hbc, 8, native.HERMES_VERSION)
+        struct.pack_into("<I", hbc, 32, len(hbc) + 20)
+        for payload in [b"console.log('test')", b"x" * 256, bytes(hbc) + b"x" * 20,
+                        bytes(hbc) + hashlib.sha1(hbc).digest() + b"trailing"]:
+            with zipfile.ZipFile(apk, "w") as archive:
+                archive.writestr("assets/index.android.bundle", payload)
+            with zipfile.ZipFile(apk) as archive, self.assertRaisesRegex(ValueError, "Hermes"):
+                native.embedded_hermes(archive)
+        with self.assertRaisesRegex(ValueError, "require Android"):
+            native.prepare("ios", self.root / "output", self.root, bench=True)
+
+    def test_bench_changes_only_the_generated_id_and_label(self):
+        gradle = self.root / "app/build.gradle"
+        strings = self.root / "app/src/main/res/values/strings.xml"
+        strings.parent.mkdir(parents=True)
+        gradle.write_text('namespace "eu.onesa.drone"\napplicationId \'eu.onesa.drone\'\n')
+        strings.write_text('<resources><string name="app_name">Onesa Drone</string></resources>')
+        native.configure_bench(self.root)
+        self.assertEqual(gradle.read_text(), 'namespace "eu.onesa.drone"\napplicationId \'eu.onesa.drone.bench\'\n')
+        self.assertIn('Onesa Drone Bench</string>', strings.read_text())
+        with self.assertRaisesRegex(ValueError, "configuration differs"):
+            native.configure_bench(self.root)
 
     def test_ios_proof_retains_only_simulator_app_and_actual_resolver_locks(self):
         output = self.prepared("ios")

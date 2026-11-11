@@ -112,6 +112,7 @@ export type User = {
 };
 export type Workspace = { id: string; name: string; role: string };
 export type History = {
+  events_truncated?: boolean;
   events: {
     id: string;
     at: number;

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  Linking, Platform, Pressable, ScrollView, StatusBar, StyleSheet,
-  Text, TextInput, View, useColorScheme,
+  Linking, Platform, Pressable, ScrollView, StatusBar,
+  Text, View, useColorScheme,
 } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Circle, Line, Polyline, Rect, Text as SvgText } from "react-native-svg";
@@ -11,6 +11,10 @@ import {
   waypoint, inspectRoute, makeDraft, simulationPosition, physicalDispatchStatus,
 } from "./src/mission-core.mjs";
 import { saveDraft, loadDrafts, deleteDraft } from "./src/mission-store.mjs";
+
+import { Body, Button, Input, Panel, styles } from "./src/field-ui.jsx";
+import BenchPanel from "./src/BenchPanel.jsx";
+import ObservationLog from "./src/ObservationLog.jsx";
 
 const TABS = ["Plan", "Monitor", "Video", "Missions", "Aircraft"];
 const palette = dark => dark ? {
@@ -22,52 +26,6 @@ const palette = dark => dark ? {
   border:"#CCDDE1", brand:"#006D60", brandText:"#FFFFFF", accent:"#DDECEB",
   rail:"#E7F2F1", danger:"#A34A1A",
 };
-const styles = StyleSheet.create({
-  root:{ flex:1 }, scroll:{ flex:1 }, content:{ paddingHorizontal:16, paddingBottom:30, gap:14, maxWidth:720, alignSelf:"center", width:"100%" },
-  header:{ paddingHorizontal:18, paddingTop:10, paddingBottom:14, gap:5 },
-  eyebrow:{ fontSize:11, fontWeight:"800", letterSpacing:1.6, textTransform:"uppercase" },
-  brand:{ fontSize:25, fontWeight:"800" }, title:{ fontSize:21, fontWeight:"800" },
-  h3:{ fontSize:16, fontWeight:"700" }, body:{ fontSize:14, lineHeight:21 },
-  small:{ fontSize:12, lineHeight:18 }, label:{ fontSize:13, fontWeight:"700" },
-  card:{ borderWidth:1, borderRadius:15, padding:16, gap:12 },
-  row:{ flexDirection:"row", alignItems:"center", gap:10 },
-  wrap:{ flexDirection:"row", gap:8, flexWrap:"wrap" }, grow:{ flex:1 },
-  button:{ paddingHorizontal:14, minHeight:46, borderRadius:11, justifyContent:"center", alignItems:"center", borderWidth:1 },
-  buttonText:{ fontWeight:"800", fontSize:13, textAlign:"center" },
-  pill:{ minHeight:44, paddingHorizontal:13, paddingVertical:10, borderWidth:1, borderRadius:12, justifyContent:"center" },
-  input:{ minHeight:48, borderWidth:1, borderRadius:10, paddingHorizontal:12, fontSize:15 },
-  grid:{ flexDirection:"row", gap:9 }, half:{ flex:1, minWidth:0 },
-  item:{ borderTopWidth:1, paddingVertical:11, gap:5 },
-  tabRail:{ borderTopWidth:1, flexDirection:"row", paddingHorizontal:5 },
-  tab:{ flex:1, minHeight:60, justifyContent:"center", alignItems:"center", gap:3 },
-  tabText:{ fontSize:11, fontWeight:"700", textAlign:"center" },
-  marker:{ height:7, width:7, borderRadius:4 },
-  map:{ width:"100%", height:250, borderRadius:12, overflow:"hidden" },
-  media:{ height:215, borderRadius:13, justifyContent:"center", alignItems:"center", padding:20, gap:12 },
-  divider:{ height:1 }, notice:{ borderWidth:1, borderRadius:10, padding:12 },
-});
-function Panel({ children, colors }) {
-  return <View style={[styles.card,{backgroundColor:colors.surface,borderColor:colors.border}]}>{children}</View>;
-}
-function Body({ children, colors, muted=false, small=false, style }) {
-  return <Text style={[small?styles.small:styles.body,{color:muted?colors.muted:colors.text},style]}>{children}</Text>;
-}
-function Button({ children, onPress, colors, secondary=false, disabled=false, style }) {
-  return <Pressable accessibilityRole="button" accessibilityState={{disabled}} onPress={onPress}
-    disabled={disabled} style={({pressed})=>[styles.button,{borderColor:colors.brand,
-      backgroundColor:secondary?colors.surface:colors.brand,opacity:disabled?0.45:pressed?0.75:1},style]}>
-    <Text style={[styles.buttonText,{color:secondary?colors.brand:colors.brandText}]}>{children}</Text>
-  </Pressable>;
-}
-function Input({label,value,onChangeText,colors,placeholder,keyboardType="default",maxLength=80}) {
-  return <View style={{gap:6,flex:1}}>
-    <Text style={[styles.label,{color:colors.text}]}>{label}</Text>
-    <TextInput accessibilityLabel={label} value={value} onChangeText={onChangeText}
-      placeholder={placeholder} placeholderTextColor={colors.muted} keyboardType={keyboardType}
-      autoCorrect={false} maxLength={maxLength} selectionColor={colors.brand}
-      style={[styles.input,{backgroundColor:colors.surface,borderColor:colors.border,color:colors.text}]} />
-  </View>;
-}
 function RouteSketch({ points, marker, colors }) {
   const all = points.length ? points : DEMO_ROUTE;
   const lats = all.map(p=>p.lat), lons=all.map(p=>p.lon);
@@ -107,8 +65,6 @@ function Screen() {
   const [simulating,setSimulating]=useState(false);
   const [progress,setProgress]=useState(0);
   const [checks,setChecks]=useState([]);
-  const [notes,setNotes]=useState([]);
-  const [note,setNote]=useState("");
   useEffect(()=>{
     let mounted=true;
     loadDrafts(SecureStore).then(rows=>{if(mounted)setDrafts(rows);})
@@ -175,12 +131,6 @@ function Screen() {
       ?"https://apps.apple.com/app/id6467178101"
       :"https://play.google.com/store/apps/details?id=com.h8.chubory";
     try{await Linking.openURL(url);}catch{setNotice("Open CHUBORY FLY in your device's app store.");}
-  }
-  function report(){
-    const text=note.trim();
-    if(text.length<3 || text.length>250){setNotice("Enter a short observation (3–250 characters).");return;}
-    setNotes(old=>[{text,at:new Date().toLocaleTimeString(),source:"local-simulation"},...old].slice(0,10));
-    setNote("");setNotice("Observation added to this session only. Not sent to an incident system.");
   }
   const title={Plan:"Mission planner",Monitor:"Aircraft position",Video:"Video & evidence",Missions:"Encrypted drafts",Aircraft:"Aircraft & safety"}[tab];
   const hardware=aircraftLocation(),dispatch=physicalDispatchStatus();
@@ -280,17 +230,8 @@ function Screen() {
           </View>
           <Body colors={colors} muted small>Demo marker is calculated locally. It is never transmitted to, or read from, the aircraft.</Body>
         </Panel>
-        <Panel colors={colors}>
-          <Text style={[styles.h3,{color:colors.text}]}>Human observations</Text>
-          <Input label="Inspection note" value={note} onChangeText={setNote} colors={colors}
-            placeholder="E.g. fence area requires review" maxLength={250}/>
-          <Button colors={colors} secondary onPress={report}>Add to session log</Button>
-          {notes.map((entry,i)=><View key={i} style={[styles.item,{borderColor:colors.border}]}>
-            <Body colors={colors}>{entry.text}</Body>
-            <Body colors={colors} muted small>{entry.at} · Local note, not an alert</Body>
-          </View>)}
-        </Panel>
       </>}
+      <ObservationLog active={tab==="Monitor"} colors={colors}/>
 
       {tab==="Video" && <>
         <Panel colors={colors}>
@@ -299,7 +240,7 @@ function Screen() {
             <Text style={[styles.title,{color:colors.text}]}>No live feed</Text>
             <Body colors={colors} muted style={{textAlign:"center"}}>A77 video is available through its own Wi-Fi companion app. An authenticated stream bridge is not verified.</Body>
           </View>
-          <Button colors={colors} onPress={vendorApp}>Open CHUBORY FLY</Button>
+          <Button colors={colors} onPress={vendorApp}>View CHUBORY FLY in the store</Button>
           <Body colors={colors} muted small>Use the manufacturer's control app while flying. This screen does not mirror, relay, record or stream camera footage.</Body>
         </Panel>
         <Panel colors={colors}>
@@ -329,7 +270,7 @@ function Screen() {
         <Panel colors={colors}>
           <Text style={[styles.h3,{color:colors.text}]}>{A77.manufacturer} · {A77.model}</Text>
           {[
-            ["Connection", "CHUBORY FLY over local Wi-Fi"],
+            ["Onesa aircraft connection", "Disconnected"],
             ["Position / GPS", "Unverified"],
             ["Real-time cloud video", "No supported relay"],
             ["Waypoint dispatch", "Disabled"],
@@ -339,7 +280,7 @@ function Screen() {
             <Body colors={colors} muted small>{a}</Body>
             <Body colors={colors} small style={{textAlign:"right",maxWidth:"60%"}}>{b}</Body>
           </View>)}
-          <Button colors={colors} secondary onPress={vendorApp}>Open CHUBORY FLY</Button>
+          <Button colors={colors} secondary onPress={vendorApp}>View CHUBORY FLY in the store</Button>
           <Body colors={colors} muted small>{dispatch.reason}</Body>
         </Panel>
         <Panel colors={colors}>
@@ -355,6 +296,7 @@ function Screen() {
           <Body colors={colors} muted small>{checks.length} / {planningChecks.length} reviewed · Physical dispatch remains locked.</Body>
         </Panel>
       </>}
+      <BenchPanel visible={tab==="Aircraft"} colors={colors}/>
     </ScrollView>
     <View style={[styles.tabRail,{borderColor:colors.border,backgroundColor:colors.surface}]}>
       {TABS.map(next=><Pressable key={next} accessibilityRole="tab"
