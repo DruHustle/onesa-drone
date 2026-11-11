@@ -172,11 +172,20 @@ def embedded_hermes(archive):
 
 
 def bench_signer(verification):
-    digests = re.findall(r"^Signer #[0-9]+ certificate SHA-256 digest: ([0-9a-fA-F]+)$", verification, re.M)
-    require([digest.lower() for digest in digests] == [BENCH_CERT_SHA256]
-            and re.search(r"^Number of signers: 1$", verification, re.M)
-            and re.search(r"^Verified using v[23] scheme [^\n]+: true$", verification, re.M),
-            "Expected the reviewed Expo test signing certificate and modern APK signature")
+    counts = re.findall(r"^Number of signers: ([0-9]+)$", verification, re.M)
+    schemes = re.findall(r"^Verified using v(2|3(?:\.[12])?) scheme [^\n]+: true$", verification, re.M)
+    certs = re.findall(r"^(.+?) certificate SHA-256 digest: (.*)$", verification, re.M)
+    # Build-tools 37 names the signature scheme in the signer label. Each SDK
+    # range may also list the same certificate. Check every reported certificate.
+    label = r"(?:V(?:2|3(?:\.[012])?) Signer:|Signer #1|Signer \(minSdkVersion=\d+, maxSdkVersion=\d+\):?)"
+    all_labels_known = all(re.fullmatch(label, prefix) for prefix, _ in certs)
+    digests = {digest.lower() for _, digest in certs}
+    matches = digests == {BENCH_CERT_SHA256}
+    require(counts == ["1"] and schemes and matches and all_labels_known,
+            "Expected the reviewed Expo test signing certificate and modern APK signature "
+            f"(signer count: {','.join(counts) or 'unreported'}, verified schemes: "
+            f"{','.join(schemes) or 'none'}, certificate entries: {len(certs)}, "
+            f"all labels recognized: {all_labels_known}, certificate pin matches: {matches})")
     return {"code_signature": "expo-template-test-key", "signer_certificate_sha256": BENCH_CERT_SHA256,
             "distribution_signed": False}
 

@@ -498,6 +498,26 @@ exit 99
         self.assertEqual(proof["output"]["sha256"], hashlib.sha256(apk.read_bytes()).hexdigest())
         self.assertEqual((output / proof["output"]["name"]).read_bytes(), apk.read_bytes())
 
+    def test_bench_signer_accepts_actual_sdk_37_certificate_labels_and_rejects_other_certs(self):
+        # SDK 37 verification of the retained Expo APK (v2) and the same fixture
+        # signed using the template test certificate with v3 enabled.
+        pin = native.BENCH_CERT_SHA256
+        modern = "Verified using v2 scheme (APK Signature Scheme v2): true\n"
+        count = "Number of signers: 1\n"
+        field = " certificate SHA-256 digest: "
+        v2 = "V2 Signer:" + field + pin
+        v3 = "V3.0 Signer:" + field + pin
+        low = "Signer (minSdkVersion=28, maxSdkVersion=32)" + field + pin
+        high = "Signer (minSdkVersion=33, maxSdkVersion=2147483647)" + field + pin
+        for certs in (v2, v3, low + "\n" + high):
+            self.assertEqual(native.bench_signer(modern + count + certs)["signer_certificate_sha256"], pin)
+        for certs in (v2 + "\n" + v3.replace(pin, "f" * 64), high.replace(pin, ""),
+                      v2.replace("certificate", "public key"), v2.replace("V2 Signer:", "Signer #2")):
+            with self.subTest(certs=certs), self.assertRaisesRegex(ValueError, "certificate entries"):
+                native.bench_signer(modern + count + certs)
+        with self.assertRaisesRegex(ValueError, "verified schemes: none"):
+            native.bench_signer(modern.replace(": true", ": false") + count + v2)
+
     def test_bench_rejects_plain_javascript_and_invalid_hermes_files(self):
         apk = self.root / "bench.apk"
         hbc = bytearray(256)
