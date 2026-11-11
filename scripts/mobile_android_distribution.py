@@ -7,7 +7,13 @@ import json
 import os
 from pathlib import Path
 import re
+import secrets
+import shutil
+import ssl
+import struct
 import subprocess
+import tempfile
+import xml.etree.ElementTree as ET
 import zipfile
 
 from scripts import mobile_native_compile as native
@@ -63,17 +69,149 @@ def verify_signer(report, expected):
                    "Release APK signature scheme or signer identity differs")
 
 
-def build(directory):
+BUNDLETOOL_SHA256 = "a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29"
+PLAY_ABIS = ("arm64-v8a", "x86_64")
+ANDROID_ATTRIBUTE = "{http://schemas.android.com/apk/res/android}"
+
+
+def bundle_manifest(xml, config):
+    manifest = ET.fromstring(xml)
+    app = manifest.find("application")
+    sdk = manifest.find("uses-sdk")
+    native.require(manifest.tag == "manifest" and manifest.get("package") == native.APP_ID
+                   and app is not None and app.get(ANDROID_ATTRIBUTE + "debuggable", "false") == "false"
+                   and app.get(ANDROID_ATTRIBUTE + "testOnly", "false") == "false" and sdk is not None,
+                   "Expected a non-debuggable production Drone bundle")
+    filters = app.findall("activity/intent-filter")
+    login_filters = [item for item in filters if
+                     any(node.get(ANDROID_ATTRIBUTE + "scheme") == "onesadrone" for node in item.findall("data"))]
+    native.require(any(
+        "android.intent.action.VIEW" in {n.get(ANDROID_ATTRIBUTE + "name") for n in item.findall("action")}
+        and "android.intent.category.BROWSABLE" in {n.get(ANDROID_ATTRIBUTE + "name") for n in item.findall("category")}
+        for item in login_filters
+    ), "The store bundle is missing its browser sign-in callback")
+    native.require(all(node.get(ANDROID_ATTRIBUTE + "scheme") != native.BENCH_SCHEME
+                       for item in filters for node in item.findall("data")),
+                   "The store bundle must not register the bench scheme")
+    version = manifest.get(ANDROID_ATTRIBUTE + "versionName")
+    code = int(manifest.get(ANDROID_ATTRIBUTE + "versionCode", "0"))
+    minimum = int(sdk.get(ANDROID_ATTRIBUTE + "minSdkVersion", "0"))
+    target = int(sdk.get(ANDROID_ATTRIBUTE + "targetSdkVersion", "0"))
+    native.require(version == config["version"] and code == config["android"].get("versionCode", 1)
+                   and code > 0 and 24 <= minimum <= target and 36 <= target <= 37,
+                   "Unexpected version or SDK range in the release manifest")
+    return {"package": native.APP_ID, "versionName": version, "versionCode": code,
+            "minSdk": minimum, "targetSdk": target}
+
+
+def android_page_alignment(bundle, config):
+    # Bundletool dumps its protobuf config as JSON. Some versions preserve
+    # protobuf field names and others use the equivalent JSON camelCase name.
+    optimizations = config.get("optimizations", {})
+    libs = optimizations.get("uncompressNativeLibraries", optimizations.get("uncompress_native_libraries", {}))
+    if libs.get("enabled") is False:
+        packaging = "compressed"
+    else:
+        native.require(libs.get("alignment") == "PAGE_ALIGNMENT_16K", "Bundle lacks 16 KB native ZIP alignment")
+        packaging = "PAGE_ALIGNMENT_16K"
+    count = 0
+    with zipfile.ZipFile(bundle) as archive:
+        for info in archive.infolist():
+            if not re.fullmatch(r"[^/]+/lib/[^/]+/[^/]+\.so", info.filename):
+                continue
+            with archive.open(info) as stream:
+                header = stream.read(64)
+                native.require(len(header) == 64 and header[:6] == b"\x7fELF\x02\x01",
+                               "Expected a 64-bit little-endian ELF in " + info.filename)
+                start = struct.unpack_from("<Q", header, 32)[0]
+                entry_size, entries = struct.unpack_from("<HH", header, 54)
+                native.require(entry_size == 56 and 0 < entries < 1024 and start >= 64
+                               and start + entries * entry_size <= info.file_size, "Invalid ELF program headers")
+                stream.seek(start)
+                segments = 0
+                for entry in struct.iter_unpack("<IIQQQQQQ", stream.read(entry_size * entries)):
+                    kind, _, offset, address, _, _, _, align = entry
+                    if kind != 1:  # PT_LOAD
+                        continue
+                    native.require(align >= 16384 and align & (align - 1) == 0 and (address - offset) % 16384 == 0,
+                                   "ELF load segment lacks 16 KB alignment in " + info.filename)
+                    segments += 1
+                native.require(segments > 0, "ELF has no loadable segments")
+                count += 1
+    native.require(count > 0, "No native libraries verified")
+    return {"nativeLibrariesVerified": count, "minElfPageBytes": 16384, "nativeZipAlignment": packaging}
+
+
+def bundle_contents(bundle, *, signed):
+    native.require(bundle.is_file() and 0 < bundle.stat().st_size <= native.FILE_LIMIT, "Invalid bundle size")
+    with zipfile.ZipFile(bundle) as archive:
+        entries = archive.infolist()
+        names = set(archive.namelist())
+        native.require(len(names) == len(entries) <= 32768
+                       and sum(entry.file_size for entry in entries) <= native.BUNDLE_LIMIT,
+                       "Invalid bundle entries")
+        native.require({"BundleConfig.pb", "base/manifest/AndroidManifest.xml", "base/dex/classes.dex",
+                        "base/assets/index.android.bundle", "base/lib/arm64-v8a/libreactnative.so"} <= names,
+                       "Required Play bundle contents missing")
+        signatures = [name.upper() for name in names if re.fullmatch(r"META-INF/[^/]+\.(SF|RSA|EC|DSA)", name, re.I)]
+        if signed:
+            native.require(len(signatures) == 2 and len({name.rsplit(".", 1)[0] for name in signatures}) == 1
+                           and any(name.endswith(".SF") for name in signatures), "One upload signer required")
+        else:
+            native.require(not signatures, "Unsigned bundle unexpectedly contains a JAR signature")
+        abis = {name.split("/")[2] for name in names if name.startswith("base/lib/") and name.endswith(".so")}
+        native.require(abis == set(PLAY_ABIS) and all(
+            f"base/lib/{abi}/libreactnative.so" in names for abi in PLAY_ABIS
+        ), "Prepared bundle ABIs differ from the release target")
+        excluded = {*signatures, "META-INF/MANIFEST.MF"}
+        payload = []
+        for name in sorted(names):
+            if archive.getinfo(name).is_dir() or name.upper() in excluded:
+                continue
+            with archive.open(name) as member:
+                payload.append([name, hashlib.file_digest(member, "sha256").hexdigest()])
+    return hashlib.sha256(native.canonical(payload)).hexdigest()
+
+
+def verify_play(directory, bundle, certificate):
+    receipt = json.loads(native.regular_bytes(directory / "play-receipt.json", 64 * 1024))
+    native.require(bundle_contents(bundle, signed=True) == receipt["payloadSha256"] ==
+                   bundle_contents(directory / "OnesaDrone-unsigned.aab", signed=False),
+                   "Signed bundle content differs from the prepared release")
+    public_cert = ssl.PEM_cert_to_DER_cert(native.regular_bytes(certificate, 64 * 1024).decode().strip())
+    pin = hashlib.sha256(public_cert).hexdigest()
+    native.require(pin != native.BENCH_CERT_SHA256, "Bench signing key is ineligible for Play")
+    # A trusted certificate entry lets strict verification check every signed
+    # member against the owner's independently exported upload certificate.
+    with tempfile.TemporaryDirectory() as tmp:
+        trust = str(Path(tmp) / "upload-certificate.p12")
+        env = {**os.environ, "DRONE_VERIFY_STORE_PASSWORD": secrets.token_urlsafe(24)}
+        store = ["-keystore", trust, "-storetype", "PKCS12", "-storepass:env", "DRONE_VERIFY_STORE_PASSWORD"]
+        subprocess.run(["keytool", "-importcert", "-noprompt", *store, "-alias", "upload",
+                        "-file", str(certificate)], check=True, capture_output=True, env=env)
+        subprocess.run(["jarsigner", "-verify", "-strict", *store, str(bundle), "upload"],
+                       check=True, capture_output=True, env=env)
+    return {**receipt, "signedBundleSha256": native.file_record(bundle)["sha256"],
+            "uploadCertificateSha256": pin}
+
+
+def build(directory, bundletool=None):
     directory = directory.resolve()
     native.require(not directory.is_relative_to(native.ROOT), "Use an output directory outside the checkout")
     directory.mkdir(mode=0o700, parents=True, exist_ok=False)
+    if bundletool:
+        native.require(native.file_record(bundletool)["sha256"] == BUNDLETOOL_SHA256,
+                       "Use the pinned Google bundletool 1.18.3")
     native.prepare("android", directory / "source")
     mobile = native.ROOT / native.MOBILE_PATH
     init = directory / "unsigned.gradle"
     init.write_text(UNSIGNED)
-    subprocess.run([str(mobile / "android/gradlew"), "-p", str(mobile / "android"), "-I", str(init),
-                    ":app:assembleRelease", "-PreactNativeArchitectures=arm64-v8a", "--no-daemon", "--console=plain"],
-                   cwd=mobile, check=True, env={**os.environ, "NODE_ENV": "production", "EXPO_NO_TELEMETRY": "1"})
+    def gradle(task, architectures):
+        subprocess.run([str(mobile / "android/gradlew"), "-p", str(mobile / "android"), "-I", str(init), task,
+                        "-PreactNativeArchitectures=" + architectures, "--no-daemon", "--console=plain"],
+                       cwd=mobile, check=True, env={**os.environ, "NODE_ENV": "production", "EXPO_NO_TELEMETRY": "1"})
+
+    gradle(":app:assembleRelease", "arm64-v8a")
     apk = mobile / "android/app/build/outputs/apk/release/app-release-unsigned.apk"
     native.require(apk.is_file(), "Expected the unsigned release build output")
     aligned = directory / "aligned-unsigned.apk"
@@ -86,6 +224,22 @@ def build(directory):
     native.require(prepared["inputs"] == native.locked_inputs(mobile), "Locked native inputs changed")
     receipt = {"sourceCommit": prepared["source"]["source_commit"], "payloadSha256": payload_hash(aligned), **version}
     (directory / "unsigned-receipt.json").write_bytes(native.canonical(receipt) + b"\n")
+    if bundletool:
+        gradle(":app:bundleRelease", ",".join(PLAY_ABIS))
+        native.source_unchanged(native.ROOT, prepared["source"], "android")
+        native.require(prepared["inputs"] == native.locked_inputs(mobile), "Locked mobile inputs changed")
+        bundle = directory / "OnesaDrone-unsigned.aab"
+        shutil.copyfile(mobile / "android/app/build/outputs/bundle/release/app-release.aab", bundle)
+        bundle_arg = "--bundle=" + str(bundle)
+        native.command("java", "-jar", str(bundletool), "validate", bundle_arg)
+        manifest = native.command("java", "-jar", str(bundletool), "dump", "manifest", "--module=base", bundle_arg)
+        checked = bundle_manifest(manifest, json.loads((mobile / "app.json").read_bytes())["expo"])
+        config = json.loads(native.command("java", "-jar", str(bundletool), "dump", "config", bundle_arg))
+        support = android_page_alignment(bundle, config)
+        play = {**checked, **support, "sourceCommit": receipt["sourceCommit"], "architectures": list(PLAY_ABIS),
+                "unsignedBundleSha256": native.file_record(bundle)["sha256"],
+                "payloadSha256": bundle_contents(bundle, signed=False)}
+        (directory / "play-receipt.json").write_bytes(native.canonical(play) + b"\n")
     return receipt
 
 
@@ -111,7 +265,14 @@ def verify(directory, apk, certificate, url):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("build").add_argument("--directory", required=True, type=Path)
+    prepare = sub.add_parser("build")
+    prepare.add_argument("--directory", required=True, type=Path)
+    prepare.add_argument("--bundletool", type=Path, help="Also prepare and verify a Play release AAB")
+    play = sub.add_parser("verify-play", help="Verify the owner-signed application bundle")
+    play.add_argument("--directory", required=True, type=Path)
+    play.add_argument("--aab", required=True, type=Path)
+    play.add_argument("--upload-certificate", required=True, type=Path, help="Trusted public X.509 PEM")
+
     review = sub.add_parser("verify")
     review.add_argument("--directory", required=True, type=Path)
     review.add_argument("--apk", required=True, type=Path)
@@ -119,7 +280,9 @@ def main():
     review.add_argument("--url", required=True)
     args = parser.parse_args()
     if args.command == "build":
-        result = build(args.directory)
+        result = build(args.directory, args.bundletool.resolve() if args.bundletool else None)
+    elif args.command == "verify-play":
+        result = verify_play(args.directory, args.aab, args.upload_certificate)
     else:
         result = verify(args.directory, args.apk, args.certificate_sha256.lower(), args.url)
     print(json.dumps(result, sort_keys=True))

@@ -2,6 +2,12 @@ name: Android bench APK
 on:
   push:
     branches: ['bench/android/**']
+  pull_request:
+    branches: [dev, staging, main]
+    paths:
+      - '.github/workflows/android-bench.yml'
+      - 'frontend/drone/mobile/**'
+      - 'scripts/mobile_native_compile.py'
   workflow_dispatch:
 permissions:
   contents: read

@@ -4,8 +4,10 @@ on:
     branches: [dev, staging, main]
     paths:
       - "scripts/mobile_android_distribution.py"
+      - "scripts/android_planner_smoke.py"
       - "tests/test_mobile_android_distribution.py"
-      - "frontend/drone/mobile/DISTRIBUTION.md"
+      - "frontend/drone/mobile/**"
+      - "scripts/mobile_native_compile.py"
       - ".github/workflows/mobile-distribution.yml"
   workflow_dispatch:
 permissions:
@@ -14,7 +16,7 @@ jobs:
   release-procedure:
     if: ${{ github.event.repository.private == false || vars.ONESA_PRIVATE_HOSTED_VALIDATION_ENABLED == 'true' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       EXPO_NO_TELEMETRY: '1'
       CI: '1'
@@ -39,6 +41,12 @@ jobs:
           test -f "$ANDROID_HOME/platforms/android-37.0/android.jar"
           if [ ! -e "$ANDROID_HOME/platforms/android-37" ]; then ln -s android-37.0 "$ANDROID_HOME/platforms/android-37"; fi
           npm --prefix frontend/drone/mobile ci --ignore-scripts --no-audit --no-fund
+      - name: Prepare the disposable Android 15 emulator
+        run: |
+          test -c /dev/kvm
+          sudo chgrp "$(id -gn)" /dev/kvm
+          sudo chmod g+rw /dev/kvm
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "emulator" "platform-tools" "system-images;android-35;google_apis;x86_64"
       - name: Build and sign with a discarded test identity, then verify
         env:
           FIXTURE_PASSWORD: local-distribution-procedure-only
@@ -48,7 +56,10 @@ jobs:
           out="$RUNNER_TEMP/drone-install-fixture"
           trap 'rm -rf -- "$out"' EXIT
           npm --prefix frontend/drone/mobile test
-          python -m scripts.mobile_android_distribution build --directory "$out"
+          bundletool="$RUNNER_TEMP/bundletool-all-1.18.3.jar"
+          curl --fail --location --silent --show-error --retry 3 -o "$bundletool" \
+            'https://github.com/google/bundletool/releases/download/1.18.3/bundletool-all-1.18.3.jar'
+          python -m scripts.mobile_android_distribution build --directory "$out" --bundletool "$bundletool"
           keytool -genkeypair -keystore "$out/fixture.p12" -storetype PKCS12 \
             -storepass:env FIXTURE_PASSWORD -alias fixture -keyalg RSA -keysize 2048 \
             -validity 2 -dname 'CN=Disposable CI Fixture'
@@ -62,3 +73,42 @@ jobs:
           python -m scripts.mobile_android_distribution verify --directory "$out" --apk "$out/fixture.apk" \
             --certificate-sha256 "$cert" --url "https://drone.onesa.eu/downloads/onesa-drone-android-v$version.apk" > "$out/receipt.json"
           test -s "$out/receipt.json"
+          keytool -exportcert -rfc -keystore "$out/fixture.p12" -storepass:env FIXTURE_PASSWORD \
+            -alias fixture -file "$out/fixture.pem"
+          jarsigner -keystore "$out/fixture.p12" -storepass:env FIXTURE_PASSWORD \
+            -signedjar "$out/fixture.aab" "$out/OnesaDrone-unsigned.aab" fixture
+          python -m scripts.mobile_android_distribution verify-play --directory "$out" \
+            --aab "$out/fixture.aab" --upload-certificate "$out/fixture.pem" > "$out/play-qualified.json"
+          python - "$out/play-qualified.json" <<'PY'
+          import json, os, sys
+          with open(sys.argv[1]) as stream:
+              r = json.load(stream)
+          text = (f"{r['package']} {r['versionName']} ({r['versionCode']}), API {r['minSdk']}–{r['targetSdk']}, "
+                  f"{', '.join(r['architectures'])}, {r['nativeLibrariesVerified']} native libraries, "
+                  f"{r['minElfPageBytes']} byte ELF / {r['nativeZipAlignment']}, disposable signature verified")
+          print("::notice title=Qualified Android release AAB::" + text)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as stream:
+              stream.write("### Release AAB\n\n" + text + "\n\nSource `" + r["sourceCommit"] + "`\n")
+          PY
+          printf '%s\n' "$FIXTURE_PASSWORD" > "$out/fixture-password"
+          java -jar "$bundletool" build-apks --bundle="$out/fixture.aab" --output="$out/fixture.apks" \
+            --mode=universal --ks="$out/fixture.p12" --ks-key-alias=fixture \
+            --ks-pass="file:$out/fixture-password" --key-pass="file:$out/fixture-password"
+          unzip -p "$out/fixture.apks" universal.apk > "$RUNNER_TEMP/offline-planner-fixture.apk"
+      - name: Exercise the verified store bundle on the offline Android 15 emulator
+        run: |
+          set -euo pipefail
+          apk="$RUNNER_TEMP/offline-planner-fixture.apk"
+          trap 'rm -f -- "$apk"' EXIT
+          timeout 15m python -u -m scripts.android_planner_smoke "$apk" --screenshots "$RUNNER_TEMP/offline-planner-images"
+      - name: Preserve only signed-out synthetic planner images
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: android-offline-planner-screenshots
+          path: |
+            ${{ runner.temp }}/offline-planner-images/01-offline-planner.png
+            ${{ runner.temp }}/offline-planner-images/02-completed-synthetic-replay.png
+            ${{ runner.temp }}/offline-planner-images/03-hardware-video-unavailable.png
+          if-no-files-found: warn
+          retention-days: 7

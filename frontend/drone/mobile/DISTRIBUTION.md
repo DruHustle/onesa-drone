@@ -32,6 +32,31 @@ The verifier checks the installed Android signing tool’s result, exactly one a
 
 Install the signed candidate on a supported arm64 device. Test a cold start offline, draft create/reload, simulation and disabled aircraft controls. Publish the signed bytes to the approved destination, retrieve its public bytes as a visitor and verify the SHA-256 against the verifier output. Add its emitted object (`url`, `sha256`, `certificateSha256`, `sourceCommit`) as `android` in `frontend/drone/web/src/mobile-downloads.json`. A verified Google Play listing can alternatively be configured as a store URL. Keep the other platform’s status independent.
 
+## Prepare a Google Play app bundle
+
+Use the release toolchain above and a new private output directory on every build. The Play bundle supports arm64 phones and x86_64 devices. Set `DRONE_BUNDLETOOL` to Google's bundletool 1.18.3 JAR. The build checks its published SHA-256 before executing it. Set the reviewed Expo `android.versionCode` above the highest version code already used on any Play track.
+
+```sh
+npm --prefix frontend/drone/mobile ci --ignore-scripts --no-audit --no-fund
+curl -fL -o "$DRONE_BUNDLETOOL" https://github.com/google/bundletool/releases/download/1.18.3/bundletool-all-1.18.3.jar
+python3 -m scripts.mobile_android_distribution build --directory "$DRONE_RELEASE_DIR" --bundletool "$DRONE_BUNDLETOOL"
+```
+
+Read `play-receipt.json` for the exact commit, unsigned bundle SHA-256, application ID, Android version, minimum and target API levels, verified 16 KB ELF load segments across both ABIs and the bundle native ZIP alignment. The release invokes `:app:bundleRelease` with template signing disabled, validates the AAB with bundletool, checks the embedded native libraries for both supported ABIs, offline JS and base manifest, and writes `OnesaDrone-unsigned.aab`.
+
+Sign the bundle with the upload key registered for this application in Google Play Console. Export the matching **public upload certificate** from **App integrity** and supply its PEM file to the verifier. Keep the keystore password at the interactive prompt. An approved managed signing provider can produce the same signed bundle.
+
+```sh
+jarsigner -keystore "$DRONE_PLAY_UPLOAD_KEYSTORE" -signedjar "$DRONE_RELEASE_DIR/OnesaDrone-play.aab" \
+  "$DRONE_RELEASE_DIR/OnesaDrone-unsigned.aab" "$DRONE_PLAY_UPLOAD_ALIAS"
+python3 -m scripts.mobile_android_distribution verify-play --directory "$DRONE_RELEASE_DIR" \
+  --aab "$DRONE_RELEASE_DIR/OnesaDrone-play.aab" --upload-certificate "$DRONE_PLAY_UPLOAD_CERT_PEM"
+```
+
+The verifier compares all payload members to the unsigned build and uses strict JAR signature verification against the independently obtained public certificate. The distribution workflow creates a universal APK from the signed fixture AAB, installs it on a new x86_64 Android 15 emulator in airplane mode, saves an encrypted route, force-stops and reopens it, and checks simulated replay, unavailable aircraft position and camera status. To repeat this part locally, install the `system-images;android-35;google_apis;x86_64` SDK image and run `python3 -m scripts.android_planner_smoke /absolute/path/to/universal.apk` on a host with Android emulator acceleration. Select the verified AAB in the intended Play Console internal testing release. Review supported devices, permissions, data safety, privacy policy, account deletion and reviewer access. Install the Play-generated build as a tester and exercise sign-in, sign-out, local draft recovery and simulated playback before requesting review.
+
+[Android app bundle build and signing](https://developer.android.com/build/building-cmdline) · [Play upload and testing](https://developer.android.com/studio/publish/upload-bundle) · [Google bundletool release](https://github.com/google/bundletool/releases/tag/1.18.3) · [Android 16 KB page support](https://developer.android.com/guide/practices/page-sizes)
+
 ## iOS release and public beta
 
 See [iOS device archive and public distribution](IOS_RELEASE.md) for the exact Release archive, signed export, TestFlight and App Store steps.

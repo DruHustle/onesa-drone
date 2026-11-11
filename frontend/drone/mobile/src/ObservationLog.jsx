@@ -1,10 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Alert, Pressable, Text, View } from "react-native";
-import * as SecureStore from "expo-secure-store";
 import { Body, Button, Input, Panel, styles } from "./field-ui.jsx";
 import { NOTE_LIMIT, NOTE_SOURCES, makeObservation, loadObservations, saveObservation, deleteObservation } from "./observation-log.mjs";
 
-export default function ObservationLog({active, colors}) {
+export default function ObservationLog({active, store, colors}) {
   const [source, setSource] = useState("");
   const [note, setNote] = useState("");
   const [session, setSession] = useState([]);
@@ -29,7 +28,7 @@ export default function ObservationLog({active, colors}) {
   }
   function refresh() {
     return withStorage(async () => {
-      setSaved(await loadObservations(SecureStore));
+      setSaved(await loadObservations(store));
       setStatus("");
     });
   }
@@ -47,7 +46,7 @@ export default function ObservationLog({active, colors}) {
     }
     if (persist) {
       withStorage(async () => {
-        setSaved(await saveObservation(SecureStore, entry));
+        setSaved(await saveObservation(store, entry));
         setNote("");
         setStatus("Saved in the encrypted log on this device.");
       });
@@ -63,7 +62,7 @@ export default function ObservationLog({active, colors}) {
     Alert.alert("Delete saved note?", "This removes the entry from this device.", [
       {text:"Cancel", style:"cancel"},
       {text:"Delete", style:"destructive", onPress:() => withStorage(async () => {
-        setSaved(await deleteObservation(SecureStore, entry));
+        setSaved(await deleteObservation(store, entry));
         setStatus("Saved note deleted.");
       })},
     ]);

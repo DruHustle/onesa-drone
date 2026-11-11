@@ -1,0 +1,139 @@
+name: Portal and Drone sign-in acceptance
+on:
+  pull_request:
+    branches: [dev, staging, main]
+    paths:
+      - ".github/workflows/portal-acceptance.yml"
+      - "scripts/acceptance/**"
+      - "scripts/android-emulator-ui/**"
+      - "scripts/android_fixture_auth.py"
+      - "scripts/android_planner_smoke.py"
+      - "scripts/ios-simulator-ui/**"
+      - "backend/**"
+      - "frontend/drone/**"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: portal-drone-acceptance-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  browser:
+    name: ${{ matrix.journey }}
+    strategy:
+      fail-fast: false
+      matrix:
+        journey: [browser, android-system-browser]
+    if: ${{ github.event.repository.private == false || vars.ONESA_PRIVATE_HOSTED_VALIDATION_ENABLED == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: drone
+          persist-credentials: false
+      - name: Check out the Portal issuer qualified with this consumer
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: DruHustle/onesa-company-portal
+          ref: 6e8e6888e67bd671c898852d046cf30008a6b53e
+          path: portal
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24.22.1'
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Build the two independent applications
+        run: |
+          python -m venv drone/.venv311
+          drone/.venv311/bin/python -m pip install -r drone/backend/requirements.lock
+          npm --prefix drone/frontend ci --ignore-scripts --no-audit --no-fund
+          npm --prefix drone/frontend run build
+          npm --prefix portal/onesa-company-portal-backend ci --ignore-scripts --no-audit --no-fund
+          npm --prefix portal/onesa-company-portal-backend run build
+          npm --prefix portal/onesa-company-portal-frontend ci --ignore-scripts --no-audit --no-fund
+      - if: matrix.journey == 'browser'
+        working-directory: drone/frontend
+        run: npx --no-install playwright install chromium
+      - name: Verify browser sessions, permissions, deletion intake and native session exchange
+        if: matrix.journey == 'browser'
+        working-directory: drone
+        run: |
+          test -x "$(pg_config --bindir)/initdb"
+          .venv311/bin/python scripts/acceptance/run_local.py --portal ../portal --pg-bin "$(pg_config --bindir)"
+      - name: Prepare the isolated Android system-browser fixture
+        if: matrix.journey == 'android-system-browser'
+        working-directory: drone
+        run: |
+          test -c /dev/kvm
+          sudo chgrp "$(id -gn)" /dev/kvm
+          sudo chmod g+rw /dev/kvm
+          export JAVA_HOME="$JAVA_HOME_17_X64"
+          echo "JAVA_HOME=$JAVA_HOME" >> "$GITHUB_ENV"
+          echo "$JAVA_HOME/bin" >> "$GITHUB_PATH"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-37.0' 'build-tools;37.0.0' \
+            'ndk;27.1.12297006' 'emulator' 'platform-tools' 'system-images;android-33;google_apis;x86_64'
+          if [ ! -e "$ANDROID_HOME/platforms/android-37" ]; then ln -s android-37.0 "$ANDROID_HOME/platforms/android-37"; fi
+          npm --prefix frontend/drone/mobile ci --ignore-scripts --no-audit --no-fund
+          .venv311/bin/python -m scripts.mobile_native_compile prepare --platform android --output "$RUNNER_TEMP/fixture-android-source"
+          cd frontend/drone/mobile
+          ./android/gradlew -p android :app:assembleDebug -PreactNativeArchitectures=x86_64 --no-daemon --console=plain
+      - name: Exercise native Android login with the actual Portal and Drone
+        if: matrix.journey == 'android-system-browser'
+        working-directory: drone
+        run: |
+          .venv311/bin/python scripts/acceptance/run_local.py --portal ../portal --pg-bin "$(pg_config --bindir)" --native-ui android
+
+  installed-ios:
+    if: ${{ github.event.repository.private == false || vars.ONESA_PRIVATE_HOSTED_VALIDATION_ENABLED == 'true' }}
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      CI: '1'
+      EXPO_NO_TELEMETRY: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: drone
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: DruHustle/onesa-company-portal
+          ref: 6e8e6888e67bd671c898852d046cf30008a6b53e
+          path: portal
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24.22.1'
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Prepare separate issuer and debug application
+        run: |
+          python -m venv drone/.venv311
+          drone/.venv311/bin/python -m pip install -r drone/backend/requirements.lock
+          npm --prefix portal/onesa-company-portal-backend ci --ignore-scripts --no-audit --no-fund
+          npm --prefix portal/onesa-company-portal-backend run build
+          npm --prefix portal/onesa-company-portal-frontend ci --ignore-scripts --no-audit --no-fund
+          npm --prefix drone/frontend/drone/mobile ci --ignore-scripts --no-audit --no-fund
+          cd drone
+          python3 -m scripts.mobile_native_compile prepare --platform ios --output "$RUNNER_TEMP/paired-ios"
+          scripts/ios-simulator-ui/run.sh prepare
+      - name: Qualify installed iOS callback, warm and cold sign-in, MFA, Keychain and logout
+        working-directory: drone
+        run: |
+          postgres=$(command -v pg_config || true)
+          if [[ -z "$postgres" || ! -x "$("$postgres" --bindir)/initdb" ]]; then
+            brew list --versions postgresql@17 >/dev/null || brew install postgresql@17
+            postgres="$(brew --prefix postgresql@17)/bin/pg_config"
+          fi
+          .venv311/bin/python scripts/acceptance/run_local.py --portal ../portal --pg-bin "$("$postgres" --bindir)" --native-ui ios
+      - name: Retain sanitized installed account result
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: ios-installed-portal-account
+          path: drone/frontend/drone/mobile/.validation/installed-account-summary.json
+          if-no-files-found: error
+          retention-days: 7

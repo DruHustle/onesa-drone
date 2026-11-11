@@ -141,13 +141,21 @@ def return_home(db, m, actor, correlation, detail):
     m.phase_tick = phase_tick
 
 
-def idempotent(db, tenant, actor, key, body, fn):
+def idempotent(db, tenant, actor, key, body, fn, *, expires_at=None):
     request_hash = digest(j(body))
     row = db.get(Receipt, (tenant, key))
     if row:
         if row.actor != actor or row.request_hash != request_hash:
             raise HTTPException(409, "Idempotency key already used for a different command")
         return json.loads(row.response)
+    # Check once the tenant lock is held, immediately before the first execution.
+    # A previously committed receipt only returns the original acknowledgement.
+    if expires_at is not None:
+        now = time.time()
+        if expires_at <= now:
+            raise HTTPException(408, "Simulation command expired before execution")
+        if expires_at > now + 60:
+            raise HTTPException(422, "Simulation command deadline exceeds one minute")
     response = fn()
     db.add(Receipt(tenant_id=tenant, key=key, actor=actor, request_hash=request_hash, response=j(response)))
     return response
@@ -324,6 +332,7 @@ def release(a):
 
 
 def record_telemetry(db, m, telemetry, limit):
+    telemetry["recorded_at"] = time.time()
     m.last_telemetry = j(telemetry)
     observation = Telemetry(tenant_id=m.tenant_id, mission_id=m.id, seq=m.tick, payload=j(telemetry))
     db.add(observation)

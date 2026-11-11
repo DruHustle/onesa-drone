@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { createRoot } from "react-dom/client";
-import { api, setCSRF, SessionChangedError } from "./api";
+import { api, APIError, setCSRF, SessionChangedError } from "./api";
 import { subscribeToOperations, type StreamStatus } from "./operationsStream";
 import FlightPlanPreview from "./FlightPlanPreview";
 import MobileDownloads from "./MobileDownloads";
@@ -115,6 +115,7 @@ function App() {
     [selected, setSelected] = useState(""),
     [notice, setNotice] = useState(accountError),
     [busy, setBusy] = useState(false),
+    [commandStatus, setCommandStatus] = useState(""),
     [connection, setConnection] = useState<StreamStatus>("connecting"),
     [mobile, setMobile] = useState(false),
     [compactNavigation, setCompactNavigation] = useState(
@@ -214,9 +215,12 @@ function App() {
   const mounted = useRef(true);
   const currentAction = useRef(0);
   const snapshotVersion = useRef(0);
+  const activeCommand = useRef<string | null>(null);
   const resetWorkspace = useCallback(() => {
     currentAction.current++;
     snapshotVersion.current++;
+    activeCommand.current = null;
+    setCommandStatus("");
     setBusy(false);
     setNotice("");
     setSignOutAccountUrl("");
@@ -400,34 +404,75 @@ function App() {
     setMobile(false);
     setNotice("");
   };
-  async function act(m: Mission, action: string, assignment?: string) {
+  async function sendCommand(
+    collection: "aircraft" | "missions",
+    target: { id: string; revision: number },
+    label: string,
+    action: string,
+    options: Record<string, unknown> = {},
+  ) {
+    if (activeCommand.current) return;
+    const key = crypto.randomUUID();
+    activeCommand.current = key;
+    const description = `${human(action)} · ${label}`;
+    setCommandStatus(`Pending — ${description}`);
     await run(async () => {
-      await api(
-        `/missions/${m.id}/commands`,
-        "POST",
-        {
-          action,
-          revision: m.revision,
-          ...(action === "plan"
-            ? { route_index: assignment ? 0 : routeIndex }
-            : {}),
-          ...(assignment ? { aircraft_id: assignment } : {}),
-        },
-        crypto.randomUUID(),
-      );
+      try {
+        const result = await api<{ id: string; revision: number }>(
+          `/${collection}/${target.id}/commands`,
+          "POST",
+          {
+            ...options,
+            action,
+            revision: target.revision,
+            // Use the time of the server snapshot the operator actually reviewed.
+            expires_at: data.at + 25,
+          },
+          key,
+        );
+        if (result.id !== target.id || !(result.revision > target.revision))
+          throw new Error("Unrecognized command acknowledgement");
+        if (activeCommand.current !== key) return;
+        setCommandStatus(
+          `Acknowledged by simulator — ${description} (revision ${result.revision})`,
+        );
+      } catch (error) {
+        if (
+          activeCommand.current !== key ||
+          error instanceof SessionChangedError
+        )
+          return;
+        if (error instanceof APIError && error.status === 408) {
+          setCommandStatus(`Timed out — ${description}. ${error.message}.`);
+        } else if (error instanceof APIError && error.status < 500) {
+          setCommandStatus(`Failed — ${description}. ${error.message}.`);
+        } else {
+          const status =
+            error instanceof Error && error.name === "TimeoutError"
+              ? "Timed out"
+              : "Acknowledgement unavailable";
+          setCommandStatus(
+            `${status} — ${description}. Check the latest state before sending another command.`,
+          );
+        }
+      } finally {
+        if (activeCommand.current === key) activeCommand.current = null;
+      }
+      // A read can reconcile a lost response. A disconnect never queues a write.
       await refresh();
     });
   }
-  async function aircraftAct(a: Aircraft, action: string, note = "") {
-    await run(async () => {
-      await api(
-        `/aircraft/${a.id}/commands`,
-        "POST",
-        { action, revision: a.revision, note },
-        crypto.randomUUID(),
-      );
-      await refresh();
+  async function act(m: Mission, action: string, assignment?: string) {
+    await sendCommand("missions", m, m.label, action, {
+      ...(action === "plan"
+        ? { route_index: assignment ? 0 : routeIndex }
+        : {}),
+      ...(assignment ? { aircraft_id: assignment } : {}),
+      ...(action === "reschedule" ? { scheduled_at: data.at + 300 } : {}),
     });
+  }
+  async function aircraftAct(a: Aircraft, action: string, note = "") {
+    await sendCommand("aircraft", a, a.name, action, { note });
   }
   const distance = (n: number) =>
     prefs.units === "imperial"
@@ -499,7 +544,7 @@ function App() {
                 disabled={busy}
                 onClick={() => void run(() => startSharedSignIn())}
               >
-                {busy ? "Opening Onesa sign-in…" : "Continue with Onesa"}
+                {busy ? "Opening Onesa sign-in…" : "Sign in with Onesa"}
               </button>
               <p className="fine">
                 New to Onesa? Create your account on the next screen.
@@ -914,6 +959,11 @@ function App() {
               virtual. No physical-flight controls.
             </p>
           </div>
+          {commandStatus && (
+            <p className="command-feedback" role="status">
+              {commandStatus}
+            </p>
+          )}
           {connection !== "receiving" && connection !== "connecting" && (
             <p className="error" role="status">
               {data.at > 0
@@ -1499,21 +1549,7 @@ function App() {
                           ) && (
                             <button
                               disabled={busy}
-                              onClick={() =>
-                                void run(async () => {
-                                  await api(
-                                    `/missions/${flight.id}/commands`,
-                                    "POST",
-                                    {
-                                      action: "reschedule",
-                                      revision: flight.revision,
-                                      scheduled_at: Date.now() / 1000 + 300,
-                                    },
-                                    crypto.randomUUID(),
-                                  );
-                                  await refresh();
-                                })
-                              }
+                              onClick={() => void act(flight, "reschedule")}
                             >
                               Reschedule +5 min
                             </button>
@@ -1578,37 +1614,70 @@ function App() {
                     <span>
                       Sequence {telemetry.seq} · {telemetry.simulation_seconds}{" "}
                       simulated seconds
+                      {telemetry.recorded_at
+                        ? ` · Recorded ${new Date(telemetry.recorded_at * 1000).toLocaleTimeString()}`
+                        : " · Sample time unavailable"}
                     </span>
                   </div>
+                  {telemetry.connectivity === "simulated-link-lost" && (
+                    <p role="status" className="error">
+                      Simulated aircraft link lost. Positions shown here come
+                      from the simulator.
+                    </p>
+                  )}
+                  {replay === null &&
+                    active.includes(flight) &&
+                    telemetry.recorded_at !== undefined &&
+                    data.at - telemetry.recorded_at > 12 && (
+                      <p role="status" className="error">
+                        Stale mission telemetry. The simulator has not recorded
+                        a new sample for{" "}
+                        {Math.floor(data.at - telemetry.recorded_at)} seconds.
+                      </p>
+                    )}
                   <div className="metrics">
                     <Metric
                       label="Altitude"
-                      value={distance(telemetry.altitude_m || 0)}
+                      value={
+                        telemetry.altitude_m === undefined
+                          ? "Unavailable"
+                          : distance(telemetry.altitude_m)
+                      }
                       foot="Virtual AGL"
                     />
                     <Metric
                       label="Ground speed"
-                      value={`${telemetry.ground_speed_mps || 0} m/s`}
-                      foot={`Heading ${telemetry.heading || 0}°`}
+                      value={
+                        telemetry.ground_speed_mps === undefined
+                          ? "Unavailable"
+                          : `${telemetry.ground_speed_mps} m/s`
+                      }
+                      foot={
+                        telemetry.heading === undefined
+                          ? "Heading unavailable"
+                          : `Heading ${telemetry.heading}°`
+                      }
                     />
                     <Metric
                       label="Battery"
                       value={
-                        telemetry.battery_quality === "unavailable"
+                        telemetry.battery_quality === "unavailable" ||
+                        telemetry.battery_percent === undefined
                           ? "Unavailable"
-                          : `${(telemetry.battery_percent || 0).toFixed(1)}%`
+                          : `${telemetry.battery_percent.toFixed(1)}%`
                       }
                       foot={
                         telemetry.battery_quality === "unavailable"
                           ? "Simulation paused; check observation"
-                          : telemetry.endurance_quality === "unavailable"
+                          : telemetry.endurance_quality === "unavailable" ||
+                              telemetry.remaining_endurance_min === undefined
                             ? "Endurance unavailable; simulation paused"
                             : `${telemetry.remaining_endurance_min || 0} min estimated`
                       }
                     />
                     <Metric
                       label="Payload"
-                      value={telemetry.payload_state || "aboard"}
+                      value={telemetry.payload_state || "Unavailable"}
                       foot={telemetry.flight_mode || ""}
                     />
                   </div>

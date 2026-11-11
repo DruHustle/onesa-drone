@@ -25,6 +25,36 @@ The four checks cover what CHUBORY FLY displays for connection, loss and restora
 
 Reopen Onesa to resume the record. **Share bench record** opens the phone's share sheet with the asset, versions, timestamps and individual findings. The app holds one encrypted worksheet per device. Share any record you need to keep before confirming its deletion to start the next one. Under **Monitor → Human observations**, you can also keep free-text bench notes separate from simulation review notes.
 
+### First supervised, stationary observation
+
+| Step | Operator action | Evidence to record |
+| --- | --- | --- |
+| 1. Identify | With the aircraft off, read the aircraft and controller labels. Compare the exact A77 variant and its supplied guide with the manufacturer's guide. Record a local asset label, controller revision, phone OS, companion app version and aircraft firmware if displayed. | Photograph labels for your private record. An app version is a separate value from aircraft firmware. Enter **Unknown** if firmware is unavailable. |
+| 2. Prepare | Keep the aircraft stationary on a clear, level bench. Remove propellers with power disconnected using the model's manual if supported. If safe non-actuating setup cannot be established, stop at identification. | Record the setup and who has physical control. Keep the remote and app's flight inputs untouched. |
+| 3. Connect | Use the guide supplied with the matching revision. The linked A77 manual, printed page 15, identifies a Wi-Fi network whose name begins with **CBR** and the **CHUBORY FLY** app. Open only one companion app at a time. | Record the Wi-Fi association and the vendor app's own connection indication separately. If the label, guide or network differs, stop and obtain confirmation for that variant. |
+| 4. Observe | From the companion app's stationary status/camera display, record exactly which values appear and their units. For a video check, point at a non-sensitive moving object to distinguish current frames from a still image. Stop if an observation would require motor activation. | Record unavailable fields explicitly. A phone location is phone data. Onesa **Monitor** should report actual aircraft position as unavailable. Vendor preview is separate from Onesa recording. |
+| 5. Disconnect | While stationary, disconnect the phone from the aircraft Wi-Fi. Observe connection indication, last image/status and elapsed time. | Record UTC times and whether values cleared, froze or were marked stale. Mark **Issue** if stale information looks current. |
+| 6. Reconnect | Rejoin the same network and confirm the vendor status has resumed or the camera shows a new scene. Close the app and power down according to the manual. | Record time to recovery and any unexpected action. Save each actual outcome under **Aircraft → A77 ground bench record**. |
+
+The supported interface documented here is first-party Wi-Fi access through the vendor app. For third-party telemetry, request a manufacturer-supported read-only SDK or interface for the aircraft/controller revision and firmware, including identity, timestamp, units, disconnect behavior and which data fields can be read. Only the operator with the aircraft can complete the observations above.
+
+[CHUBORY A77 beginner guide](https://chubory.com/pages/a77-beginner-guide) · [Operating manual, printed pages 15–17](https://cdn-files.myshopline.com/file/store/1685936101621/A77-USER-MANUAL.pdf)
+
+### Operator action paths
+
+| Operator action | API and process | Source of confirmation |
+| --- | --- | --- |
+| Register or edit fleet equipment | Web form → aircraft API → tenant-scoped database transaction | API returns the saved simulated aircraft. |
+| Inspect, charge, retire or restore | Web fleet action → aircraft command endpoint → tenant lock, idempotency receipt and revision check → simulation inventory | Updated aircraft revision and simulation audit. |
+| Request or plan a delivery and assign an aircraft | Web form → mission creation or mission command endpoint → stored mission or route planner → reservation | New mission, assignment, revision and mission history. Dispatch preview only proposes assignments. |
+| Validate, authorize, launch, cancel, replan, reschedule or recover | Web mission controls → mission command endpoint → state machine and launch safety supervisor → simulation worker | The API acknowledges a committed command. Worker progress arrives in operations snapshots and recorded mission events and samples. |
+| Inspect telemetry or replay | Web telemetry → operations snapshot/stream or mission history → selected tenant's records | Stream silence and stale mission samples are shown separately. Historical playback does not submit commands. |
+| Prepare a mobile route or play a marker | Mobile Plan and Monitor → encrypted draft or local interpolation | Local UI only. No upload, aircraft telemetry or command confirmation. |
+| Check camera or ground connection | Mobile Video/Aircraft → manufacturer listing / bench worksheet → operator opens CHUBORY FLY | Operator's vendor-app observation. No Onesa camera recording, command transport or A77 acknowledgement exists. |
+| Pair, arm or command A77 through Onesa | No operator path. The physical edge adapter rejects connect and send. | No hardware acknowledgement possible in this release. |
+
+Web simulation commands reference the displayed server snapshot with a 25-second deadline. A command that first reaches the server after expiry is refused. A duplicate of a committed request can return its stored acknowledgement without executing again. If the browser cannot establish whether a request committed, inspect the refreshed state or mission history before issuing another action. Reconnecting to the telemetry stream performs reads only.
+
 ## Next validated hardware steps
 
 1. Inventory the specific A77 hardware, firmware, controller, Wi-Fi hotspot and camera stream with owner and manufacturer's documentation. Obtain an SDK/protocol specification or explicit permitted integration path. Do not guess command bytes.

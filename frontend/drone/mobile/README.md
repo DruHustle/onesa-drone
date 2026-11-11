@@ -2,6 +2,12 @@
 
 iOS and Android React Native/Expo SDK 58 prototype. Production aircraft control is deliberately **disabled** by the Onesa Drone engineering policy.
 
+## Portal account and private field records
+
+Open **Onesa account → Sign in with Onesa**. The system browser uses the Portal session from that browser or asks for sign-in. Complete Portal MFA if prompted and accept the return to Drone. The account screen lists the workspaces and roles the Portal currently grants. Use **Open my field planner** for that account’s local drafts, notes and bench records. Pre-existing unsigned drafts remain in **Open device-only planner**. Switching identities never assigns those drafts to another person. Device-local data is not synchronized to the web console.
+
+The app exchanges a single-use authorization code through the Drone backend. It keeps the pending proof in memory and the resulting opaque credential in SecureStore. If the browser handoff is cancelled or the app restarts during sign-in, start again. Opening or resuming the private planner requires a current server response. Role, revocation and session expiry are rechecked on foregrounding and every 30 seconds while active. **Sign out of Onesa** removes the device credential and requests global sign-out. The app reports whether the Portal confirmed it.
+
 ## Implemented in the app
 
 - Manual latitude/longitude waypoints with validation, distance review, interactive relative map, route editing and saved mission drafts.
@@ -65,3 +71,5 @@ remains independent. Retain the release record with the change and run
 `npm --prefix frontend run test:unit` and the browser checks before promotion.
 
 For a signed direct Android APK or an approved iOS public beta, follow the [companion release and verification procedure](DISTRIBUTION.md).
+
+For a local development build, set `EXPO_PUBLIC_DRONE_DEV_ORIGIN` before starting Metro to the Drone API origin reachable from the simulator. Use `http://127.0.0.1:3400` for an iOS Simulator sharing its host’s loopback. For Android, run `adb reverse tcp:3400 tcp:3400` and reverse any separate loopback Portal port as well. The issuer, callback and system browser must agree on reachable origins. Release builds always use `https://drone.onesa.eu`. Use a separate checkout and disposable accounts for local testing.

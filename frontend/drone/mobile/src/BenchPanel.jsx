@@ -1,12 +1,11 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Alert, Platform, Pressable, Share, Text, View } from "react-native";
-import * as SecureStore from "expo-secure-store";
 import { Body, Button, Input, Panel, styles } from "./field-ui.jsx";
 import {
   BENCH_CHECKS, OUTCOME_LABELS, UnreadableBenchRecord, deleteReport, formatReport, loadReport, markCheck, saveReport, startReport,
 } from "./bench-report.mjs";
 
-export default function BenchPanel({ visible, colors }) {
+export default function BenchPanel({ visible, store, colors }) {
   const [report, setReport] = useState(null);
   const [aircraft, setAircraft] = useState("");
   const [firmware, setFirmware] = useState("");
@@ -20,7 +19,7 @@ export default function BenchPanel({ visible, colors }) {
   useEffect(() => {
     let active = true;
     setUnreadable(false);
-    loadReport(SecureStore).then(saved => {
+    loadReport(store).then(saved => {
       if (active) { setReport(saved); setLoaded(true); setStatus(""); }
     }).catch(error => {
       if (!active) return;
@@ -37,8 +36,8 @@ export default function BenchPanel({ visible, colors }) {
     setBusy(true);
     try {
       const next = nextReport();
-      if (next) await saveReport(SecureStore, next);
-      else await deleteReport(SecureStore);
+      if (next) await saveReport(store, next);
+      else await deleteReport(store);
       setReport(next);
       setUnreadable(false);
       setLoaded(true);

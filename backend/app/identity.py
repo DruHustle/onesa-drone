@@ -75,8 +75,10 @@ class IdentityService:
                 "identity_rejected", "Your Onesa session is no longer valid"
             ) from None
 
-    def begin(self, previous=None, previous_token=""):
+    def begin(self, previous=None, previous_token="", *, mobile=False):
         state, nonce, verifier = protocol.new_transaction()
+        if mobile:
+            state = "mobile_" + state
         browser = secrets.token_urlsafe(32)
         with self.store.transaction() as db:
             db.execute(delete(IdentityTransaction).where(IdentityTransaction.expires <= time.time()))
@@ -123,8 +125,10 @@ class IdentityService:
             db.delete(row)
             return row
 
-    def create_session(self, identity, identity_token, pending):
+    def create_session(self, identity, identity_token, pending, *, mobile=False):
         token, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(24)
+        if mobile:
+            token = "mobile_" + token
         choices = self.workspaces(identity)
         permitted = {item["id"] for item in choices}
         # An existing explicit choice survives reauthentication. A single normal
