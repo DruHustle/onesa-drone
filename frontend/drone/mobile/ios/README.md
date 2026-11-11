@@ -9,3 +9,23 @@ The A77 is **not** paired to this app. There is no CHUBORY SDK or supported remo
 On a Mac with Xcode, prepare the iOS project in a fresh checkout as described above. Use an Apple development team authorized for the app identifier and a connected development-enabled iPhone. From the mobile directory, run `npx expo run:ios --configuration Release --device` to embed the JavaScript and select the phone. The CI artifact targets the arm64 simulator. An iPhone bench trial requires its own device-signed build.
 
 Open **Aircraft → A77 ground bench record**, save an observation, close the app, and reopen it offline to verify Keychain persistence on the handset.
+
+
+### Run the native iPhone Simulator UI test
+
+From a clean checkout on an Apple silicon Mac with the repository's Node 24
+version, CocoaPods, Xcode 26 and an installed iPhone simulator runtime, run:
+
+```sh
+npm --prefix frontend/drone/mobile ci --ignore-scripts --no-audit --no-fund
+python3 -m scripts.mobile_native_compile prepare --platform ios --output "$(mktemp -d)/prepared"
+scripts/ios-simulator-ui/run.sh prepare
+scripts/ios-simulator-ui/run.sh test
+```
+
+Leave local port 8081 free. The test boots a fresh simulator, starts Metro for
+this checkout, and launches the actual Onesa app under XCUITest. It loads the
+example route, saves it to the iOS Keychain, terminates and relaunches the app,
+then reopens the saved route and reads the aircraft and video status screens.
+Xcode writes the test result to `frontend/drone/mobile/.validation/simulator-ui.xcresult`.
+For a repeat run on the prepared checkout, set `IOS_UI_RESULTS` to a new path.

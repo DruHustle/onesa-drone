@@ -1,0 +1,360 @@
+import argparse
+import os
+import sys
+import subprocess
+import contextlib
+import base64
+import json
+import time
+import socket
+import uuid
+import secrets
+import signal
+import tempfile
+from pathlib import Path
+import psycopg
+from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives.asymmetric import rsa
+
+scripts = Path(__file__).resolve().parent
+parser = argparse.ArgumentParser(
+    description="Run the actual Portal and Drone issuer, API and browser client with disposable loopback databases."
+)
+parser.add_argument(
+    "--portal",
+    required=True,
+    type=Path,
+    help="Portal checkout with installed locked dependencies and built backend",
+)
+parser.add_argument(
+    "--pg-bin", required=True, type=Path, help="Directory containing PostgreSQL initdb and postgres"
+)
+parser.add_argument(
+    "--chromium", type=Path, help="Use this Chromium binary instead of the Playwright Chromium installation"
+)
+parser.add_argument(
+    "--protocol-only",
+    action="store_true",
+    help="Skip Chromium; exercise both products over HTTPS including native callback transport",
+)
+args = parser.parse_args()
+drone = scripts.parent.parent
+portal = args.portal.resolve()
+pg_bin = args.pg_bin.resolve()
+portal_backend = portal / "onesa-company-portal-backend"
+portal_frontend = portal / "onesa-company-portal-frontend"
+if not (portal_backend / "dist/src/app.js").is_file():
+    sys.exit("Build the selected Portal backend before running acceptance.")
+if not args.protocol_only and not (drone / "frontend/dist/index.html").is_file():
+    sys.exit("Build the selected Drone frontend before running browser acceptance.")
+drone_origin = "https://127.0.0.1:54844"
+portal_origin = "https://localhost:54843"
+
+allowed = ["PATH", "HOME", "LANG", "TMPDIR", "LD_LIBRARY_PATH"]
+env = {name: os.environ[name] for name in allowed if name in os.environ}
+env.update(
+    {
+        "NO_PROXY": "localhost,127.0.0.1",
+        "RAYON_NUM_THREADS": "2",
+        "UV_THREADPOOL_SIZE": "2",
+        "TZ": "UTC",
+        "NEXT_TELEMETRY_DISABLED": "1",
+    }
+)
+env["NODE_OPTIONS"] = "--max-old-space-size=700"
+
+
+def execute(args, cwd, extra=None):
+    # Dependency and database exceptions may include the connection URL.
+    with (temp / "setup.log").open("ab") as log:
+        result = subprocess.run(args, cwd=cwd, env=env | dict(extra or {}), stdout=log, stderr=log)
+    if result.returncode:
+        raise RuntimeError(f"Local setup failed in {Path(args[0]).name} (exit {result.returncode})")
+
+
+def up(resources, label, args, cwd, extra=None):
+    f = resources.enter_context(open(temp / (label + ".log"), "w"))
+    p = subprocess.Popen(
+        args, cwd=cwd, env=env | dict(extra or {}), stdout=f, stderr=f, start_new_session=True
+    )
+
+    def end():
+        if p.poll() is None:
+            os.killpg(p.pid, signal.SIGTERM)
+            try:
+                p.wait(timeout=8)
+            except subprocess.TimeoutExpired:
+                os.killpg(p.pid, signal.SIGKILL)
+                p.wait()
+
+    resources.callback(end)
+    return p
+
+
+def ready(port, p):
+    for i in range(200):
+        if p.poll() is not None:
+            raise RuntimeError(f"service {port} exited {p.returncode}")
+        try:
+            with socket.create_connection(("127.0.0.1", port), 0.2):
+                return
+        except OSError:
+            time.sleep(0.15)
+    raise RuntimeError(f"service {port} timed out")
+
+
+def random_secret():
+    return secrets.token_hex(32)
+
+
+def jwk_integer(i):
+    return base64.urlsafe_b64encode(i.to_bytes((i.bit_length() + 7) // 8, "big")).rstrip(b"=").decode()
+
+
+def report(t):
+    print(t, flush=True)
+
+
+with contextlib.ExitStack() as resources:
+    temp = Path(resources.enter_context(tempfile.TemporaryDirectory(prefix="onesa-drone-acceptance-")))
+    cert = temp / "fixture.crt"
+    key = temp / "fixture.key"
+    execute(
+        [
+            "openssl",
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-keyout",
+            key,
+            "-out",
+            cert,
+            "-days",
+            "1",
+            "-subj",
+            "/CN=localhost",
+            "-addext",
+            "subjectAltName=DNS:localhost,IP:127.0.0.1",
+        ],
+        temp,
+    )
+    key.chmod(0o600)
+    db_password = secrets.token_hex(32)
+    password_file = temp / "pg-password"
+    password_file.write_text(db_password + "\n")
+    password_file.chmod(0o600)
+    execute(["node", scripts / "build-account.mjs"], temp, {"PORTAL_ROOT": str(portal)})
+    data = temp / "pg"
+    execute(
+        [
+            pg_bin / "initdb",
+            "-D",
+            data,
+            "-A",
+            "scram-sha-256",
+            "--pwfile",
+            password_file,
+            "-U",
+            "fixture",
+            "--locale=C",
+            "--encoding=UTF8",
+        ],
+        temp,
+    )
+    p = up(
+        resources,
+        "postgres",
+        [
+            pg_bin / "postgres",
+            "-D",
+            data,
+            "-c",
+            "unix_socket_directories=",
+            "-h",
+            "127.0.0.1",
+            "-p",
+            "56882",
+            "-c",
+            "ssl=on",
+            "-c",
+            f"ssl_key_file={key}",
+            "-c",
+            f"ssl_cert_file={cert}",
+        ],
+        temp,
+    )
+    ready(56882, p)
+    with psycopg.connect(
+        f"postgresql://fixture:{db_password}@127.0.0.1:56882/postgres", autocommit=True
+    ) as db:
+        db.execute("create database drone_test")
+        db.execute("create database portal_test")
+    report("Isolated PostgreSQL databases ready")
+    client = "test_onesa_drone_a77"
+    secret = random_secret()
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048).private_numbers()
+    jwk = {
+        "kty": "RSA",
+        "alg": "RS256",
+        "use": "sig",
+        "kid": "synthetic_onesa_test",
+        "n": jwk_integer(private_key.public_numbers.n),
+        "e": jwk_integer(private_key.public_numbers.e),
+        "d": jwk_integer(private_key.d),
+        "p": jwk_integer(private_key.p),
+        "q": jwk_integer(private_key.q),
+        "dp": jwk_integer(private_key.dmp1),
+        "dq": jwk_integer(private_key.dmq1),
+        "qi": jwk_integer(private_key.iqmp),
+    }
+    cfg = {
+        "issuer": portal_origin + "/api/v1/identity",
+        "clients": [
+            {
+                "product": "drone",
+                "clientId": client,
+                "clientSecret": secret,
+                "redirectUri": drone_origin + "/api/v1/auth/identity/callback",
+                "applicationUrl": drone_origin + "/",
+            }
+        ],
+        "cookieKeys": [random_secret()],
+        "jwks": {"keys": [jwk]},
+    }
+    session = random_secret()
+    proxy = random_secret()
+    member = str(uuid.uuid4())
+    admin = str(uuid.uuid4())
+    tenant = str(uuid.uuid4())
+    other = str(uuid.uuid4())
+    password = random_secret()
+    portal_env = {
+        "DATABASE_URL": f"postgresql://fixture:{db_password}@127.0.0.1:56882/portal_test",
+        "SESSION_KEY": session,
+        "PUBLIC_ORIGIN": portal_origin,
+        "PROXY_SHARED_KEY": proxy,
+        "ONESA_IDENTITY_ENABLED": "true",
+        "ONESA_IDENTITY_CONFIG_B64": base64.b64encode(json.dumps(cfg).encode()).decode(),
+        "AWS_EC2_METADATA_DISABLED": "true",
+        "NODE_ENV": "test",
+        "MAIL_PROVIDER": "smtp",
+    }
+    drone_env = {
+        "DATABASE_URL": f"postgresql+psycopg://fixture:{db_password}@127.0.0.1:56882/drone_test?sslmode=verify-full&sslrootcert={cert}",
+        "APP_ORIGIN": drone_origin,
+        "COOKIE_SECURE": "true",
+        "SIMULATION_WORKER": "true",
+        "ONESA_IDENTITY_ENABLED": "true",
+        "ONESA_IDENTITY_ISSUER": cfg["issuer"],
+        "ONESA_IDENTITY_CLIENT_ID": client,
+        "ONESA_IDENTITY_CLIENT_SECRET": secret,
+        "ONESA_IDENTITY_ENCRYPTION_KEY": Fernet.generate_key().decode(),
+        "ONESA_IDENTITY_CALLBACK": cfg["clients"][0]["redirectUri"],
+        "SSL_CERT_FILE": str(cert),
+        "ONESA_AI_PROVIDER": "disabled",
+    }
+    execute([sys.executable, "-m", "scripts.migrate"], drone, drone_env)
+    execute(["node", "--import", "tsx", "src/services/migrate.ts"], portal_backend, portal_env)
+    with psycopg.connect(
+        f"postgresql://fixture:{db_password}@127.0.0.1:56882/drone_test", autocommit=True
+    ) as db:
+        for i, label in [(tenant, "Fixture workspace"), (other, "Other organization")]:
+            db.execute(
+                "INSERT INTO tenants(id,name,settings,audit_head) VALUES(%s,%s,%s,%s)",
+                (i, label, '{"currency":"EUR","units":"metric","language":"en","region":"fixture"}', ""),
+            )
+    # Generate registered identities with the real Portal password/MFA encoder; never log fixture material.
+    fixture = {
+        "tenant": tenant,
+        "other": other,
+        "admin": admin,
+        "member": member,
+        "password": password,
+        "codes": [random_secret() for _ in range(8)],
+        "drone": drone_origin,
+        "portal": portal_origin,
+    }
+    seed = """
+ const {db}=await import('./src/services/db.ts');
+ const {encrypt,passwordHash,hash}=await import('./src/auth/crypto.ts');
+ const f=JSON.parse(process.env.LOCAL_FIXTURE);
+ for (const role of ['member','admin']){
+ const id=f[role]; await db.query('INSERT INTO users(id,email,password_hash,role,mfa_secret) VALUES($1,$2,$3,$4,$5)',[id,role+'@example.test',passwordHash(f.password),role==='admin'?'administrator':'member',role==='admin'?encrypt('JBSWY3DPEHPK3PXP'):null]);
+ await db.query('INSERT INTO identity_profiles(user_id,display_name,email_verified_at) VALUES($1,$2,now())',[id,'Synthetic '+role]);
+ }
+ for (const code of f.codes) await db.query('INSERT INTO mfa_recovery(user_id,code_hash) VALUES($1,$2)',[f.admin,hash(code)]);
+ await db.query("INSERT INTO identity_product_access(user_id,product,role,status) VALUES($1,'drone','operator','active')",[f.member]);
+ await db.query("INSERT INTO identity_drone_memberships VALUES($1,$2,'operator','Fixture workspace')",[f.member,f.tenant]);await db.end();
+ """
+    execute(
+        ["node", "--import", "tsx", "--input-type=module", "-e", seed],
+        portal_backend,
+        portal_env | {"LOCAL_FIXTURE": json.dumps(fixture)},
+    )
+    report("Synthetic approved identities and two isolated workspaces ready")
+    p = up(
+        resources,
+        "portal-api",
+        [
+            "node",
+            "--max-old-space-size=150",
+            "--input-type=module",
+            "-e",
+            "const {buildApp}=await import('./dist/src/app.js');const app=await buildApp({logging:false});await app.listen({host:'127.0.0.1',port:58300});",
+        ],
+        portal_backend,
+        portal_env,
+    )
+    ready(58300, p)
+    p = up(
+        resources,
+        "drone-api",
+        [
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "backend.app.main:app",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "58400",
+            "--no-access-log",
+        ],
+        drone,
+        drone_env,
+    )
+    ready(58400, p)
+    p = up(
+        resources,
+        "frontend-tls",
+        ["node", scripts / "tls.mjs"],
+        temp,
+        {
+            "STATIC": str(drone / "frontend/dist"),
+            "PROXY_SHARED_KEY": proxy,
+            "PUBLIC_ORIGIN": portal_origin,
+            "BACKEND_URL": "http://127.0.0.1:58300",
+            "ONESA_IDENTITY_CALLBACKS_JSON": json.dumps([cfg["clients"][0]["redirectUri"]]),
+        },
+    )
+    ready(54843, p)
+    ready(54844, p)
+    report(
+        "Running the Portal account component and API proxy, Drone web build, and both independent APIs over loopback TLS."
+    )
+    test_env = env | {"LOCAL_FIXTURE": json.dumps(fixture), "FIXTURE_CA": str(cert), "NATIVE": "1"}
+    if not args.protocol_only:
+        browser_fixture = fixture | {"codes": fixture["codes"][4:]}
+        browser_env = test_env | {
+            "LOCAL_FIXTURE": json.dumps(browser_fixture),
+            "PW_ROOT": str(drone / "frontend/node_modules/@playwright/test"),
+        }
+        if args.chromium:
+            browser_env["CHROMIUM_PATH"] = str(args.chromium.resolve())
+        browser_check = subprocess.run(["node", scripts / "journey.cjs"], env=browser_env, cwd=temp)
+        if browser_check.returncode:
+            sys.exit(1)
+    protocol = subprocess.run([sys.executable, scripts / "protocol.py"], env=test_env, cwd=temp)
+    sys.exit(0 if protocol.returncode == 0 else 1)

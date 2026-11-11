@@ -460,6 +460,7 @@ exit 99
         signer = ("Verified using v2 scheme (APK Signature Scheme v2): true\nNumber of signers: 1\n"
                   f"Signer #1 certificate SHA-256 digest: {native.BENCH_CERT_SHA256}")
         manifest = "    E: application (line=51)\n      A: android:extractNativeLibs(0x010104ea)=(type 0x12)0xffffffff"
+        manifest += '\n    A: android:scheme(0x01010027)="onesadrone-bench"'
         with self.assertRaisesRegex(ValueError, "Hermes bundle missing"):
             native.android_identity(apk, badging, bench=True)
         payload = bytearray(256)
@@ -563,15 +564,20 @@ exit 99
         with self.assertRaisesRegex(ValueError, "require Android"):
             native.prepare("ios", self.root / "output", self.root, bench=True)
 
-    def test_bench_changes_only_the_generated_id_and_label(self):
+    def test_bench_build_uses_distinct_package_callback_and_offline_entry(self):
         gradle = self.root / "app/build.gradle"
         strings = self.root / "app/src/main/res/values/strings.xml"
+        manifest = self.root / "app/src/main/AndroidManifest.xml"
         strings.parent.mkdir(parents=True)
-        gradle.write_text('namespace "eu.onesa.drone"\napplicationId \'eu.onesa.drone\'\n')
+        gradle.write_text("namespace 'eu.onesa.drone'\napplicationId 'eu.onesa.drone'\n" + native.EXPO_ENTRY)
         strings.write_text('<resources><string name="app_name">Onesa Drone</string></resources>')
+        manifest.write_text('<data android:scheme="onesadrone"/>')
         native.configure_bench(self.root)
-        self.assertEqual(gradle.read_text(), 'namespace "eu.onesa.drone"\napplicationId \'eu.onesa.drone.bench\'\n')
+        self.assertIn("namespace 'eu.onesa.drone'", gradle.read_text())
+        self.assertIn("applicationId 'eu.onesa.drone.bench'", gradle.read_text())
+        self.assertIn('entryFile = new File(projectRoot, "bench-entry.jsx")', gradle.read_text())
         self.assertIn('Onesa Drone Bench</string>', strings.read_text())
+        self.assertEqual(manifest.read_text(), '<data android:scheme="onesadrone-bench"/>')
         with self.assertRaisesRegex(ValueError, "configuration differs"):
             native.configure_bench(self.root)
 

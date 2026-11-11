@@ -148,7 +148,9 @@ function Screen({account, colors, openAccount}) {
     <View style={[styles.header,{borderBottomColor:colors.border,borderBottomWidth:1}]}>
       <Text style={[styles.eyebrow,{color:colors.brand}]}>ONESA / FIELD OPERATIONS</Text>
       <Text style={[styles.brand,{color:colors.text}]}>Drone Mission Control</Text>
-      <Button secondary colors={colors} onPress={openAccount}>{account ? account.email : "Onesa account"}</Button>
+      {openAccount
+        ? <Button secondary colors={colors} onPress={openAccount}>{account ? account.email : "Onesa account"}</Button>
+        : <Body colors={colors} small>Bench edition · Device-only records</Body>}
       <Body colors={colors} muted small>CHUBORY A77 prototype  ·  Offline planner  ·  No live aircraft connection</Body>
     </View>
     <ScrollView style={styles.scroll} contentContainerStyle={styles.content}
@@ -303,7 +305,7 @@ function Screen({account, colors, openAccount}) {
       <BenchPanel store={store} visible={tab==="Aircraft"} colors={colors}/>
     </ScrollView>
     <View style={[styles.tabRail,{borderColor:colors.border,backgroundColor:colors.surface}]}>
-      {TABS.map(next=><Pressable key={next} accessibilityRole="tab"
+      {TABS.map(next=><Pressable key={next} testID={"planner-tab-"+next} accessibilityRole="tab"
         accessibilityState={{selected:next===tab}} onPress={()=>setTab(next)} style={styles.tab}>
         <View style={[styles.marker,{backgroundColor:next===tab?colors.brand:"transparent"}]}/>
         <Text style={[styles.tabText,{color:next===tab?colors.brand:colors.muted}]}>{next}</Text>
@@ -311,6 +313,11 @@ function Screen({account, colors, openAccount}) {
     </View>
   </SafeAreaView>;
 }
+export function OfflineBenchApp() {
+  const colors = palette(useColorScheme() === "dark");
+  return <SafeAreaProvider><Screen colors={colors}/></SafeAreaProvider>;
+}
+
 export default function App() {
   const colors = palette(useColorScheme() === "dark");
   return <SafeAreaProvider><AccountHome colors={colors}>

@@ -22,3 +22,6 @@ frontend/*.tsbuildinfo
 local-tools/
 working-tools/
 .venv*/
+
+# Expo prebuild caches resized copies of the tracked store icon.
+frontend/drone/mobile/.expo/web/cache/production/images/**/*.png

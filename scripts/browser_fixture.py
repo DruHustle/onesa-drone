@@ -15,7 +15,8 @@ from backend.app.security import password_hash
 def seed_browser_accounts(store):
     with store.transaction() as db:
         t = Tenant(name="Browser acceptance fixture")
-        db.add(t)
+        review_tenant = Tenant(name="Isolated fleet and incident review")
+        db.add_all([t, review_tenant])
         db.flush()
         # Each browser scenario owns its sign-ins. Reusing one account across the
         # suite exceeds the unchanged six-attempt/minute authentication limit.
@@ -23,18 +24,20 @@ def seed_browser_accounts(store):
             "flight-preview",
             "flight-session",
             "delivery",
+            "fleet-review",
             *(f"nvidia-{case}" for case in (
                 "load", "failure", "integrity", "no-webgl", "context", "cancel",
                 "mobile-light", "mobile-dark",
             )),
             *(f"navigation-{scheme}-{width}" for scheme in ("light", "dark") for width in (390, 768, 1440)),
         ]
+        fixture_password = password_hash("Synthetic-browser-password-42!")
         for account in accounts:
             db.add(
                 User(
-                    tenant_id=t.id,
+                    tenant_id=review_tenant.id if account == "fleet-review" else t.id,
                     email=f"browser-{account}@example.test",
-                    password=password_hash("Synthetic-browser-password-42!"),
+                    password=fixture_password,
                     role="admin",
                 )
             )

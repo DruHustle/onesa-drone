@@ -4,6 +4,7 @@ on:
     branches: [dev, staging, main]
     paths:
       - "scripts/mobile_android_distribution.py"
+      - "scripts/android_planner_smoke.py"
       - "tests/test_mobile_android_distribution.py"
       - "frontend/drone/mobile/**"
       - "scripts/mobile_native_compile.py"
@@ -15,7 +16,7 @@ jobs:
   release-procedure:
     if: ${{ github.event.repository.private == false || vars.ONESA_PRIVATE_HOSTED_VALIDATION_ENABLED == 'true' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       EXPO_NO_TELEMETRY: '1'
       CI: '1'
@@ -40,6 +41,12 @@ jobs:
           test -f "$ANDROID_HOME/platforms/android-37.0/android.jar"
           if [ ! -e "$ANDROID_HOME/platforms/android-37" ]; then ln -s android-37.0 "$ANDROID_HOME/platforms/android-37"; fi
           npm --prefix frontend/drone/mobile ci --ignore-scripts --no-audit --no-fund
+      - name: Prepare the disposable Android 15 emulator
+        run: |
+          test -c /dev/kvm
+          sudo chgrp "$(id -gn)" /dev/kvm
+          sudo chmod g+rw /dev/kvm
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "emulator" "platform-tools" "system-images;android-35;google_apis;x86_64"
       - name: Build and sign with a discarded test identity, then verify
         env:
           FIXTURE_PASSWORD: local-distribution-procedure-only
@@ -72,3 +79,9 @@ jobs:
             -signedjar "$out/fixture.aab" "$out/OnesaDrone-unsigned.aab" fixture
           python -m scripts.mobile_android_distribution verify-play --directory "$out" \
             --aab "$out/fixture.aab" --upload-certificate "$out/fixture.pem"
+          printf '%s\n' "$FIXTURE_PASSWORD" > "$out/fixture-password"
+          java -jar "$bundletool" build-apks --bundle="$out/fixture.aab" --output="$out/fixture.apks" \
+            --mode=universal --ks="$out/fixture.p12" --ks-key-alias=fixture \
+            --ks-pass="file:$out/fixture-password" --key-pass="file:$out/fixture-password"
+          unzip -p "$out/fixture.apks" universal.apk > "$out/planner.apk"
+          timeout 12m python -u -m scripts.android_planner_smoke "$out/planner.apk"

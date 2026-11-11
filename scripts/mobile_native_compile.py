@@ -34,6 +34,11 @@ APP_ID = "eu.onesa.drone"
 APP_NAME = "OnesaDrone"
 BENCH_APP_ID = APP_ID + ".bench"
 BENCH_LABEL = "Onesa Drone Bench"
+BENCH_SCHEME = "onesadrone-bench"
+EXPO_ENTRY = (
+    'entryFile = file(["node", "-e", "require(\'expo/scripts/resolveAppEntry\')", '
+    'projectRoot, "android", "absolute"].execute(null, rootDir).text.trim())'
+)
 # SHA-256 of the DER certificate in the locked Expo template's android/app/debug.keystore.
 BENCH_CERT_SHA256 = "fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c"
 HERMES_VERSION = 99  # Bytecode emitted by the locked hermes-compiler package.
@@ -118,6 +123,9 @@ def configure_bench(native):
     # Only change generated native inputs. Keep the Java namespace, entry activity,
     # locked Expo bundler and the template's test-signing configuration intact.
     for path, old, new in [
+        (native / "app/build.gradle", EXPO_ENTRY, 'entryFile = new File(projectRoot, "bench-entry.jsx")'),
+        (native / "app/src/main/AndroidManifest.xml", 'android:scheme="onesadrone"',
+         f'android:scheme="{BENCH_SCHEME}"'),
         (native / "app/build.gradle", f"applicationId '{APP_ID}'", f"applicationId '{BENCH_APP_ID}'"),
         (native / "app/src/main/res/values/strings.xml", '<string name="app_name">Onesa Drone</string>',
          f'<string name="app_name">{BENCH_LABEL}</string>'),
@@ -427,6 +435,10 @@ def qualify(platform, output, root=ROOT, *, bench=False):
         identity = android_identity(apk, badging, bench=bench)
         if bench:
             manifest = command(str(sdk / "build-tools/37.0.0/aapt"), "dump", "xmltree", str(apk), "AndroidManifest.xml")
+            schemes = re.findall(r'android:scheme\(0x[0-9a-f]+\)="([^"]+)"', manifest)
+            require(BENCH_SCHEME in schemes and "onesadrone" not in schemes,
+                    "Bench APK must not register the store account callback")
+            identity["url_scheme"] = BENCH_SCHEME
             identity["native_library_extraction"] = bench_native_library_extraction(manifest)
             verification = command(str(sdk / "build-tools/37.0.0/apksigner"), "verify",
                                    "--verbose", "--print-certs", str(apk))

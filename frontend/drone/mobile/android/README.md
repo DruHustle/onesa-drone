@@ -10,7 +10,10 @@ The **Android bench APK** workflow builds a separate arm64 app named **Onesa Dro
 Bench**, with the application ID `eu.onesa.drone.bench`. It embeds the mobile app
 in the APK so the operator can reopen the worksheet with the phone offline or on
 the aircraft's local Wi-Fi. It uses a development test certificate and a separate
-data store from the public app.
+data store from the public app. Its separate native entry opens the device-only
+planner. The bench build handles `onesadrone-bench` links. The store release
+handles `onesadrone://account/callback` for Portal sign-in, so both editions can
+stay installed on one phone.
 
 Select a successful workflow run for the intended commit and download its
 artifact. Extract `OnesaDrone-arm64-bench.apk` and `compile-proof.json` together.
