@@ -1,5 +1,9 @@
 import { test, expect, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { readFileSync } from "node:fs";
+import { storeListing } from "../src/mobile-store-listing.ts";
+
+const mobileListings = JSON.parse(readFileSync(new URL("../src/mobile-downloads.json", import.meta.url), "utf8"));
 
 // UI acceptance uses synthetic local identity responses. Protocol and tenant
 // authorization are covered separately against the real Python application.
@@ -128,6 +132,24 @@ async function identityUI(
   });
   return writes;
 }
+
+test("public sign-in shows separate mobile release availability without sending visitors to an unpublished app", async ({ page }) => {
+  await identityUI(page);
+  await page.goto("/");
+  const downloads = page.getByRole("region", { name: "Onesa Drone mobile downloads" });
+  await expect(downloads).toBeVisible();
+  for (const platform of ["ios", "android"] as const) {
+    const label = platform === "ios" ? "iOS" : "Android";
+    const href = storeListing(platform, mobileListings[platform]);
+    const link = downloads.getByRole("link", { name: "Download Onesa Drone for " + label });
+    if (href) {
+      await expect(link).toHaveAttribute("href", href);
+    } else {
+      await expect(downloads.getByText(label + " · Unavailable")).toBeVisible();
+      await expect(link).toHaveCount(0);
+    }
+  }
+});
 
 test("shared sign-in has one clear entry and no second account form", async ({
   page,
