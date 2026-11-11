@@ -1,0 +1,61 @@
+name: Offline Android bench emulator check
+on:
+  push:
+    branches: [qa/android-bench-smoke-20261111]
+# Retarget these two fixed values together after a successful bench build.
+env:
+  BENCH_BUILD_RUN: '43023755896'
+  BENCH_SOURCE_SHA: '7215b97a5e05190466b26aec8d651ccdbe381999'
+permissions:
+  actions: read
+  contents: read
+jobs:
+  offline:
+    if: ${{ github.repository == 'DruHustle/onesa-drone' && github.event.repository.private == false }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Install the Google APIs API 30 image and prepare an empty KVM-backed device
+        run: |
+          test -c /dev/kvm
+          sudo chgrp "$(id -gn)" /dev/kvm
+          sudo chmod g+rw /dev/kvm
+          tools="$ANDROID_HOME/cmdline-tools/latest/bin"
+          "$tools/sdkmanager" "platform-tools" "emulator" "system-images;android-30;google_apis;x86_64"
+          "$ANDROID_HOME/emulator/emulator" -accel-check
+          echo no | "$tools/avdmanager" create avd --name OnesaBenchQA --package "system-images;android-30;google_apis;x86_64" --device pixel
+      - name: Read exact successful build and verify its source and APK digest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [[ "$BENCH_BUILD_RUN" =~ ^[1-9][0-9]*$ && "$BENCH_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          for attempt in {1..40}; do
+            gh api "repos/DruHustle/onesa-drone/actions/runs/$BENCH_BUILD_RUN" > "$RUNNER_TEMP/bench-run.json"
+            if jq -e '.status == "completed"' "$RUNNER_TEMP/bench-run.json" >/dev/null; then break; fi
+            sleep 15
+          done
+          jq -e --arg run "$BENCH_BUILD_RUN" --arg sha "$BENCH_SOURCE_SHA" '(.id | tostring) == $run and .conclusion == "success" and .path == ".github/workflows/android-bench.yml" and .head_sha == $sha' "$RUNNER_TEMP/bench-run.json"
+          gh run download "$BENCH_BUILD_RUN" --repo DruHustle/onesa-drone --name onesa-drone-android-bench --dir "$RUNNER_TEMP/bench-artifact"
+          python3 qa/bench_emulator.py verify
+      - name: Boot offline, install, save, terminate and reopen a synthetic bench record
+        run: |
+          export PATH="$ANDROID_HOME/platform-tools:$PATH"
+          "$ANDROID_HOME/emulator/emulator" -avd OnesaBenchQA -port 5554 -accel on -gpu swiftshader_indirect -no-window -no-audio -no-snapshot -wipe-data -no-boot-anim -camera-front none -camera-back none -cores 2 -memory 3072 > "$RUNNER_TEMP/qa-emulator.log" 2>&1 &
+          avd_pid=$!
+          trap 'kill "$avd_pid" 2>/dev/null || true' EXIT
+          if ! timeout 12m python3 -u qa/bench_emulator.py exercise; then
+            timeout 90s python3 -u qa/bench_emulator.py diagnostics || true
+            tail -n 45 "$RUNNER_TEMP/qa-emulator.log"
+            exit 1
+          fi
+      - name: Retain disposable emulator failure evidence
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: android-bench-emulator-failure
+          path: ${{ runner.temp }}/bench-qa-failure/
+          retention-days: 1
+          if-no-files-found: ignore
