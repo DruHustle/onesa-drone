@@ -128,6 +128,84 @@ test("real delivery, telemetry, replay, assistant and tracking", async ({
   );
   expect(errors).toEqual([]);
 });
+test("fleet maintenance, delivery cancellation, incident resolution and report persist", async ({
+  page,
+}) => {
+  await login(page, "fleet-review");
+  const button = (name: string) =>
+    page.getByRole("button", { name, exact: true });
+  await button("+ Register aircraft").click();
+  await page.getByLabel("Aircraft identifier").fill("SIM-REVIEW");
+  await button("Save aircraft").click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await button("Maintenance").click();
+  const aircraft = page.getByRole("article").filter({ hasText: "SIM-REVIEW" });
+  await aircraft.getByRole("button", { name: "Edit", exact: true }).click();
+  await page
+    .getByLabel("Model", { exact: true })
+    .fill("Reviewed reference model");
+  await button("Save aircraft").click();
+  await expect(aircraft).toContainText("Reviewed reference model");
+  await aircraft.getByRole("button", { name: "Inspect", exact: true }).click();
+  await expect(aircraft).toContainText("Illustrative software inspection");
+  const charged = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      response.url().endsWith("/commands"),
+  );
+  await aircraft.getByRole("button", { name: "Recharge", exact: true }).click();
+  expect((await (await charged).json()).battery).toBe(100);
+  await aircraft
+    .getByRole("button", { name: "Decommission", exact: true })
+    .click();
+  await expect(
+    aircraft.getByRole("button", { name: "Recharge", exact: true }),
+  ).toBeDisabled();
+  await aircraft.getByRole("button", { name: "Restore", exact: true }).click();
+  await expect(
+    aircraft.getByRole("button", { name: "Recharge", exact: true }),
+  ).toBeEnabled();
+
+  await button("+ New delivery").click();
+  await page.getByLabel("Delivery reference").fill("Cancelled review parcel");
+  await button("Register delivery").click();
+  await button("Continue to mission").click();
+  await button("Plan & assign").click();
+  await button("Reschedule +5 min").click();
+  await button("Cancel mission").click();
+  await expect(page.locator(".mission-detail .badge")).toHaveText(/cancelled/);
+  await button("Cybersecurity").click();
+  await page
+    .getByLabel("Title", { exact: true })
+    .fill("Synthetic inspection alert");
+  await page
+    .getByLabel("Details", { exact: true })
+    .fill("Fixture review of a simulated link loss.");
+  await button("Record incident").click();
+  const incident = page
+    .getByRole("article")
+    .filter({ hasText: "Synthetic inspection alert" });
+  await incident.getByRole("button", { name: "Resolve" }).click();
+  await expect(incident).toContainText("resolved");
+  await page.reload();
+  await button("Cybersecurity").click();
+  await expect(incident).toContainText("resolved");
+  await button("Analytics").click();
+  const downloadEvent = page.waitForEvent("download");
+  await button("Download report").click();
+  const download = await downloadEvent;
+  expect(download.suggestedFilename()).toBe("onesa-simulation-report.json");
+  const stream = await download.createReadStream();
+  const chunks = [];
+  for await (const chunk of stream!) chunks.push(chunk);
+  const report = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  expect(report.mode).toBe("simulation");
+  expect(
+    report.missions.map((mission: { state: string }) => mission.state),
+  ).toEqual(["cancelled"]);
+  expect(JSON.stringify(report)).not.toContain("Cancelled review parcel");
+});
+
 for (const colorScheme of ["light", "dark"] as const)
   for (const width of [390, 768, 1440]) {
     test(`${colorScheme} ${width}: navigation, accessibility and rendering`, async ({

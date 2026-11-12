@@ -173,10 +173,10 @@ test("shared sign-in has one clear entry and no second account form", async ({
   ).toBeVisible();
   await expect(page.getByLabel("Password", { exact: true })).toHaveCount(0);
   await expect(
-    page.getByRole("button", { name: "Continue with Onesa" }),
+    page.getByRole("button", { name: "Sign in with Onesa" }),
   ).toBeVisible();
   const button = await page
-    .getByRole("button", { name: "Continue with Onesa" })
+    .getByRole("button", { name: "Sign in with Onesa" })
     .boundingBox();
   expect(button!.y + button!.height).toBeLessThan(644);
   expect(
@@ -198,7 +198,7 @@ test("shared sign-in has one clear entry and no second account form", async ({
       fullPage: true,
     });
   }
-  await page.getByRole("button", { name: "Continue with Onesa" }).click();
+  await page.getByRole("button", { name: "Sign in with Onesa" }).click();
   await expect(
     page.getByRole("heading", { name: "Onesa account" }),
   ).toBeVisible();
@@ -296,7 +296,7 @@ test("callback failure is readable and removes the transient query from browser 
   );
   await expect(page).toHaveURL(/\/$/);
   await expect(
-    page.getByRole("button", { name: "Continue with Onesa" }),
+    page.getByRole("button", { name: "Sign in with Onesa" }),
   ).toBeEnabled();
 });
 
@@ -332,7 +332,7 @@ test("partial central logout clears Drone and provides a direct account recovery
     page.getByRole("link", { name: "Open Onesa account", exact: true }),
   ).toHaveAttribute("href", account.account_url);
   await expect(
-    page.getByRole("button", { name: "Continue with Onesa" }),
+    page.getByRole("button", { name: "Sign in with Onesa" }),
   ).toBeVisible();
   await expect(page.getByText(account.email)).toHaveCount(0);
   expect(

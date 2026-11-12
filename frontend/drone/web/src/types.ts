@@ -20,6 +20,7 @@ export type Sample = {
   seq: number;
   mode: string;
   simulation_seconds: number;
+  recorded_at?: number;
   position: Point;
   altitude_m: number;
   ground_speed_mps: number;
@@ -112,6 +113,7 @@ export type User = {
 };
 export type Workspace = { id: string; name: string; role: string };
 export type History = {
+  events_truncated?: boolean;
   events: {
     id: string;
     at: number;

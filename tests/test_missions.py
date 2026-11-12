@@ -70,6 +70,34 @@ def test_duplicate_command_and_payload_conflict(stack, aircraft):
         )
 
 
+@pytest.mark.parametrize("target", ["aircraft", "missions"])
+def test_expired_commands_and_lost_acknowledgement_never_reapply(stack, aircraft, target, monkeypatch):
+    from types import SimpleNamespace
+    from backend.app import service
+
+    record = aircraft if target == "aircraft" else delivery(stack)["mission"]
+    action = "inspect" if target == "aircraft" else "plan"
+    now = time.time()
+    clock = SimpleNamespace(time=lambda: now)
+    monkeypatch.setattr(service, "time", clock)
+    path = f"/api/v1/{target}/{record['id']}/commands"
+    headers = {**stack["headers"], "Idempotency-Key": secrets.token_hex(12)}
+    body = {"action": action, "revision": record["revision"], "expires_at": now + 25}
+    clock.time = lambda: now + 26
+    assert stack["client"].post(path, json=body, headers=headers).status_code == 408
+    current = stack["client"].get("/api/v1/operations").json()[target]
+    assert next(item for item in current if item["id"] == record["id"])["revision"] == record["revision"]
+    clock.time = lambda: now
+    assert stack["client"].post(path, json={**body, "expires_at": now + 90}, headers=headers).status_code == 422
+    acknowledged = stack["client"].post(path, json=body, headers=headers)
+    assert acknowledged.status_code == 200 and acknowledged.json()["revision"] == record["revision"] + 1
+    clock.time = lambda: now + 26
+    duplicate = stack["client"].post(path, json=body, headers=headers)
+    assert duplicate.json() == acknowledged.json()
+    current = stack["client"].get("/api/v1/operations").json()[target]
+    assert next(item for item in current if item["id"] == record["id"])["revision"] == acknowledged.json()["revision"]
+
+
 def test_conflicting_aircraft_assignments(stack, aircraft):
     a = delivery(stack)["mission"]
     b = delivery(stack)["mission"]
@@ -311,6 +339,44 @@ def test_telemetry_retention_is_bounded(stack, aircraft):
         assert (
             db.scalar(select(func.count()).select_from(Telemetry).where(Telemetry.mission_id == m["id"])) == 5
         )
+
+
+def test_history_returns_newest_window_in_chronological_order(stack):
+    mission = delivery(stack)["mission"]
+    tenant = stack["tenant"]
+    mission_id = mission["id"]
+    limit = stack["app"].state.settings.telemetry_limit
+    url = f"/api/v1/missions/{mission_id}/history"
+    assert stack["client"].get(url).json()["events_truncated"] is False
+
+    # Earlier deployments may retain more telemetry than today's response limit.
+    with stack["store"].transaction(tenant) as db:
+        db.add_all(
+            Telemetry(tenant_id=tenant, mission_id=mission_id, seq=i, payload=json.dumps({"seq": i}))
+            for i in range(1, limit + 2)
+        )
+        # A stable tie-break also keeps the retained window deterministic.
+        at = time.time() + 1
+        db.add_all(
+            MissionEvent(
+                tenant_id=tenant,
+                mission_id=mission_id,
+                id=f"{mission_id}-{i:04d}",
+                at=at,
+                state="paused",
+                actor="fixture",
+                correlation_id="fixture",
+                detail="{}",
+            )
+            for i in range(1001)
+        )
+
+    response = stack["client"].get(url)
+    assert response.status_code == 200
+    history = response.json()
+    assert [sample["seq"] for sample in history["telemetry"]] == list(range(2, limit + 2))
+    assert history["events_truncated"] is True
+    assert [event["id"] for event in history["events"]] == [f"{mission_id}-{i:04d}" for i in range(1, 1001)]
 
 
 def test_revision_conflict_and_reschedule_invalidates_authorization(stack, aircraft):

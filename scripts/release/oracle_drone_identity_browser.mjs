@@ -119,7 +119,7 @@ export async function signInIdentity(page,context,identity,{actor='operator',dro
   }else{
    const start=page.waitForResponse(response=>response.request().method()==='POST'&&response.url()===drone+'/api/v1/auth/identity/start',{timeout:15000});
    start.catch(()=>{});
-   await page.getByRole('button',{name:stepUp?'Confirm administrator sign-in':'Continue with Onesa',exact:true}).click();
+   await page.getByRole('button',{name:stepUp?'Confirm administrator sign-in':'Sign in with Onesa',exact:true}).click();
    response=await start;
   }
   requireValue(response.status()===200);

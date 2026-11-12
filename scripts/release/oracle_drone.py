@@ -5,7 +5,9 @@ import hashlib
 import http.cookiejar
 import json
 import os
+from html.parser import HTMLParser
 from pathlib import Path
+from urllib.parse import urljoin
 import re
 import shutil
 import sqlite3
@@ -400,6 +402,75 @@ def validate_plan(plan, binding):
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *_args, **_kwargs):
         return None
+
+
+# The SPA fallback can return a 200 HTML document for a missing favicon.
+# Check the shell as a browser resolves it on both a root and a nested route.
+FAVICON_TYPES = {
+    "favicon.ico": {"image/x-icon", "image/vnd.microsoft.icon"},
+    "favicon.png": {"image/png"},
+    "favicon.svg": {"image/svg+xml"},
+    "apple-touch-icon.png": {"image/png"},
+}
+
+
+class IconLinks(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.in_head = False
+        self.base = None
+        self.links = []
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        if tag == "head":
+            self.in_head = True
+        if not self.in_head or not attrs.get("href"):
+            return
+        if tag == "base" and self.base is None:
+            self.base = attrs["href"]
+        if tag == "link":
+            for rel in (attrs.get("rel") or "").lower().split():
+                if rel in {"icon", "apple-touch-icon"}:
+                    self.links.append((rel, attrs["href"]))
+
+    def handle_endtag(self, tag):
+        if tag == "head":
+            self.in_head = False
+
+
+def verify_hosted_favicons(origin, static, protection=None):
+    if protection:
+        require(origin == ORIGINS["staging"][0], "Protection credential requires the staging origin")
+    opener = urllib.request.build_opener(NoRedirect())
+    headers = {"Cache-Control": "no-cache", "User-Agent": "OnesaDroneRelease/1.0"}
+    if protection:
+        headers["x-vercel-protection-bypass"] = protection
+
+    def read(path, types, limit):
+        url = origin + path
+        with opener.open(urllib.request.Request(url, headers=headers), timeout=10) as response:
+            require(response.status == 200 and response.geturl() == url, "Unexpected favicon probe response")
+            require(response.headers.get_content_type() in types, "Incorrect media type for " + path)
+            body = response.read(limit + 1)
+            require(0 < len(body) <= limit, "Unexpected response size for " + path)
+            return body
+
+    expected_links = {
+        ("apple-touch-icon" if name == "apple-touch-icon.png" else "icon", origin + "/" + name)
+        for name in FAVICON_TYPES
+    }
+    for path in ("/", "/track/favicon-check"):
+        markup = read(path, {"text/html"}, 256 * 1024)
+        parser = IconLinks()
+        parser.feed(markup.decode("utf-8"))
+        parser.close()
+        base = urljoin(origin + path, parser.base or "")
+        links = {(rel, urljoin(base, href)) for rel, href in parser.links}
+        require(links == expected_links, "Incorrect favicon links on " + path)
+    for name, types in FAVICON_TYPES.items():
+        expected = (static / name).read_bytes()
+        require(read("/" + name, types, len(expected)) == expected, "Incorrect favicon bytes for " + name)
 
 
 class Client:
@@ -1470,6 +1541,10 @@ print(json.dumps({'counts':counts,'schema_verified':True,'tls_and_wrong_ca':True
         bypass = config.get("protection_bypass_file")
         if bypass:
             body["protection_bypass"] = private(bypass).read_text().strip()
+        # Only frontend promotions invoke this browser phase. Use the same
+        # candidate package already checked against the native build manifest.
+        artifact = self.frontend_files(slot)
+        verify_hosted_favicons(config["origin"], artifact / ".vercel/output/static", body.get("protection_bypass"))
         raw = self.run(
             self.probe_arguments(),
             canonical(body),

@@ -19,6 +19,16 @@ def check(archive):
     native.require(info.get("CFBundleIdentifier") == native.APP_ID and info.get("CFBundleExecutable") == native.APP_NAME
                    and info.get("CFBundleSupportedPlatforms") == ["iPhoneOS"] and info.get("DTPlatformName") == "iphoneos"
                    and set(info.get("UIDeviceFamily", [])) == {1, 2}, "Expected the Drone iPhone/iPad device application")
+    config = json.loads((native.ROOT / native.MOBILE_PATH / "app.json").read_text())["expo"]
+    sdk = re.fullmatch(r"iphoneos(\d+)(?:\.\d+)*", info.get("DTSDKName", ""))
+    native.require(sdk and int(sdk[1]) >= 26, "App Store submission requires the iOS 26 SDK or later")
+    native.require(info.get("CFBundleVersion") == config["ios"]["buildNumber"]
+                   and info.get("CFBundleShortVersionString") == config["version"],
+                   "Archive version differs from the release configuration")
+    schemes = {scheme for entry in info.get("CFBundleURLTypes", []) for scheme in entry.get("CFBundleURLSchemes", [])}
+    native.require(config["scheme"] in schemes, "Native sign-in callback is missing from the archive")
+    native.require(info.get("CFBundleIcons", {}).get("CFBundlePrimaryIcon", {}).get("CFBundleIconName")
+                   and (app / "Assets.car").is_file(), "Compiled App Store icon is missing")
     native.require(not (app / "embedded.mobileprovision").exists() and not (app / "_CodeSignature").exists(),
                    "An unsigned archive must not carry a provisioning profile or application signature seal")
     executable = app / native.APP_NAME

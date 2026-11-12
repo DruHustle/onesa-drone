@@ -1,17 +1,12 @@
 // SecureStore is injected: the module can be tested without a device.
 import { inspectRoute, PURPOSES } from "./mission-core.mjs";
 
+import { inOrder } from "./secure-operations.mjs";
+
 const INDEX = "onesa.drone.draft-index.v1";
 const PREFIX = "onesa.drone.draft.";
 const MAX_DRAFTS = 12;
-const operations = new WeakMap();
 
-function inOrder(store, operation) {
-  const pending = operations.get(store) || Promise.resolve();
-  const next = pending.then(operation);
-  operations.set(store, next.catch(() => {}));
-  return next;
-}
 const safeId = id => typeof id === "string" && /^[a-zA-Z0-9_-]{8,64}$/.test(id);
 function key(id) {
   if (!safeId(id)) throw new RangeError("Invalid draft id");

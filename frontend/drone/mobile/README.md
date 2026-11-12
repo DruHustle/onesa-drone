@@ -2,12 +2,20 @@
 
 iOS and Android React Native/Expo SDK 58 prototype. Production aircraft control is deliberately **disabled** by the Onesa Drone engineering policy.
 
+## Portal account and private field records
+
+Open **Onesa account → Sign in with Onesa**. The system browser uses the Portal session from that browser or asks for sign-in. Complete Portal MFA if prompted and accept the return to Drone. The account screen lists the workspaces and roles the Portal currently grants. Use **Open my field planner** for that account’s local drafts, notes and bench records. Pre-existing unsigned drafts remain in **Open device-only planner**. Switching identities never assigns those drafts to another person. Device-local data is not synchronized to the web console.
+
+The app exchanges a single-use authorization code through the Drone backend. It keeps the pending proof in memory and the resulting opaque credential in SecureStore. If the browser handoff is cancelled or the app restarts during sign-in, start again. Opening or resuming the private planner requires a current server response. Role, revocation and session expiry are rechecked on foregrounding and every 30 seconds while active. **Sign out of Onesa** removes the device credential and requests global sign-out. The app reports whether the Portal confirmed it.
+
 ## Implemented in the app
 
 - Manual latitude/longitude waypoints with validation, distance review, interactive relative map, route editing and saved mission drafts.
 - Security rounds, farm inspections, conservancy observation, medical-delivery and e-commerce-delivery planning templates.
 - Local-only route simulation with positions explicitly identified as synthetic. Hardware position, battery and camera state remain unavailable without a verified source.
 - Up to 12 device-local drafts in Expo SecureStore. At capacity, the planner preserves each saved route and prompts the operator to delete one before adding another. Concurrent saves and interrupted storage operations have regression coverage.
+- Under **Aircraft**, a recoverable encrypted ground bench record captures the asset label, known firmware and companion-app versions, and four timestamped human observations. The operator can reopen it offline, share the record explicitly, or delete it.
+- Under **Monitor**, choose a bench observation or a simulation review, then choose a session note or an encrypted note saved on this device. Each log holds ten notes and preserves existing entries when full.
 - Camera panel explaining the local CHUBORY FLY Wi-Fi feed and offering an external handoff to the official companion app.
 - Safety checklist and no remote flight, mission launch, take-off, payload release, human tracking, automated surveillance or live video endpoints.
 
@@ -24,6 +32,8 @@ npm run android   # Android SDK
 ```
 
 `ios/` and `android/` contain the platform build targets; Expo prebuild generates platform-specific Xcode/Gradle source there. The Expo runtime and host OS tools are required for compiled native acceptance. The GitHub-hosted Node tests exercise planning, simulation and secure-store business rules, not physical A77 hardware.
+
+For a handset trial without a development server, use the [offline Android bench APK](android/README.md).
 
 The product verification workflow also compiles Android arm64 debug and iOS arm64
 simulator targets. It generates native sources from the template inside the locked
@@ -61,3 +71,5 @@ remains independent. Retain the release record with the change and run
 `npm --prefix frontend run test:unit` and the browser checks before promotion.
 
 For a signed direct Android APK or an approved iOS public beta, follow the [companion release and verification procedure](DISTRIBUTION.md).
+
+For a local development build, set `EXPO_PUBLIC_DRONE_DEV_ORIGIN` before starting Metro to the Drone API origin reachable from the simulator. Use `http://127.0.0.1:3400` for an iOS Simulator sharing its host’s loopback. For Android, run `adb reverse tcp:3400 tcp:3400` and reverse any separate loopback Portal port as well. The issuer, callback and system browser must agree on reachable origins. Release builds always use `https://drone.onesa.eu`. Use a separate checkout and disposable accounts for local testing.

@@ -112,6 +112,7 @@ test("changing mission clears the prior replay while the new history is loading"
           ],
           telemetry: [sample, { ...sample, seq: 10 }],
           retention_samples: 600,
+          ...(second ? {} : { events_truncated: true }),
         },
       });
     } else {
@@ -123,6 +124,9 @@ test("changing mission clears the prior replay while the new history is loading"
     .getByRole("button", { name: "Mission control", exact: true })
     .click();
   await expect(page.locator(".timeline")).toContainText("FIRST_MISSION_EVENT");
+  await expect(
+    page.getByText(/Earlier events are outside this view/),
+  ).toBeVisible();
   await page
     .getByRole("button", { name: "Play recorded telemetry", exact: true })
     .click();
@@ -150,4 +154,7 @@ test("changing mission clears the prior replay while the new history is loading"
     page.getByRole("heading", { name: "Simulation telemetry", exact: true }),
   ).toBeVisible();
   await expect(page.locator("body")).not.toContainText("FIRST_MISSION_EVENT");
+  await expect(
+    page.getByText(/Earlier events are outside this view/),
+  ).toHaveCount(0);
 });

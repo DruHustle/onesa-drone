@@ -21,3 +21,24 @@ Appearance follows prefers-color-scheme only. Respect reduced motion and forced 
 
 Production requires checked source, staging acceptance, provider readback, rollback,
 privacy review and owner authorization. Never bypass protection or invent approval.
+
+## Local work and verification
+
+Keep extra checkouts under `local-tools/worktrees`, provider receipts under
+`local-tools/deployment-evidence`, verification scripts and logs under
+`local-tools/release-verification`, and migration records under
+`local-tools/migrations`. Do not create workspace-root evidence directories.
+Inspect current open PRs and remote refs before implementing overlapping work.
+The shared-identity/native qualification candidate includes real Portal acceptance
+and synthetic simulation recovery tests; source does not establish deployment.
+Use locked Python 3.11 requirements and the Node 24 frontend lockfile. Local
+socket/browser tests require loopback access. SQLite results do not replace the
+separate PostgreSQL run, native compilation, signed release or device evidence.
+On the current Mac, Xcode exists at `/Applications/Xcode.app` even when
+`xcode-select` points to CommandLineTools; inspect `DEVELOPER_DIR` first.
+Android Studio's bundled JBR and the Android SDK exist outside the default PATH.
+Toolchain discovery does not establish signing custody or connected hardware.
+The next supported A77 bench activity is supervised identification and conditional
+manufacturer-app, motors-off observation. No manufacturer-supported Onesa command
+interface or validated aircraft firmware is established; retain the simulation-only
+physical adapter and operator control of any later physical testing.

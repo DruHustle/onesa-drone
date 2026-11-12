@@ -14,6 +14,7 @@ from fastapi import FastAPI, Request, Response, HTTPException, Depends, Header
 from fastapi.responses import StreamingResponse, JSONResponse, RedirectResponse
 from sqlalchemy import select, func, text
 from sqlalchemy.exc import SQLAlchemyError
+from .mobile_identity import install_mobile_identity, mobile_callback, is_mobile_state
 from .monitoring import Hysteresis
 from .config import Settings
 from .db import Store
@@ -364,6 +365,8 @@ def create_app(settings=None):
     def auth_config():
         return {"shared_account": bool(identity_service)}
 
+    install_mobile_identity(app, identity_service, limiter)
+
     @app.post("/api/v1/auth/identity/start")
     def identity_start(data: IdentityStart, request: Request, response: Response):
         origin(request)
@@ -410,6 +413,8 @@ def create_app(settings=None):
                 raise identity_protocol.IdentityError(
                     "identity_callback_invalid", "Sign-in has expired. Please start again"
                 )
+            if is_mobile_state(state):
+                return mobile_callback(identity_service, state, code, error)
             pending = identity_service.consume(state, request.cookies.get(TRANSACTION_COOKIE, ""))
             if error:
                 raise identity_protocol.IdentityError("identity_cancelled", "Sign-in was cancelled")
@@ -588,7 +593,12 @@ def create_app(settings=None):
                         return
                     yield "event: telemetry\ndata: " + j(data) + "\n\n"
                     await asyncio.sleep(1)
-            except (HTTPException, identity_protocol.IdentityError):
+            except identity_protocol.IdentityError as error:
+                if error.status >= 500:
+                    yield 'event: unavailable\ndata: {"reason":"identity"}\n\n'
+                else:
+                    yield "event: expired\ndata: {}\n\n"
+            except HTTPException:
                 yield "event: expired\ndata: {}\n\n"
             except SQLAlchemyError:
                 yield 'event: unavailable\ndata: {"reason":"storage"}\n\n'
@@ -766,7 +776,11 @@ def create_app(settings=None):
                 )
                 return aircraft_out(row)
 
-            return idempotent(db, a["tenant_id"], a["id"], k, {"path": identifier, **data.model_dump()}, run)
+            return idempotent(
+                db, a["tenant_id"], a["id"], k,
+                {"path": identifier, **data.model_dump(exclude={"expires_at"})}, run,
+                expires_at=data.expires_at,
+            )
 
     @app.post("/api/v1/missions", status_code=201)
     def new_mission(data: MissionIn, request: Request, a=Depends(operator), k=Depends(key)):
@@ -790,8 +804,9 @@ def create_app(settings=None):
                 a["tenant_id"],
                 a["id"],
                 k,
-                {"path": identifier, **data.model_dump()},
+                {"path": identifier, **data.model_dump(exclude={"expires_at"})},
                 lambda: command(db, a["tenant_id"], a["id"], identifier, data, request.state.correlation),
+                expires_at=data.expires_at,
             )
         app.state.loop.call_soon_threadsafe(wake.set)
         return result
@@ -804,15 +819,15 @@ def create_app(settings=None):
                 db.scalars(
                     select(MissionEvent)
                     .where(MissionEvent.mission_id == identifier, MissionEvent.tenant_id == a["tenant_id"])
-                    .order_by(MissionEvent.at)
-                    .limit(1000)
+                    .order_by(MissionEvent.at.desc(), MissionEvent.id.desc())
+                    .limit(1001)
                 )
             )
             telemetry = list(
                 db.scalars(
                     select(Telemetry)
                     .where(Telemetry.mission_id == identifier, Telemetry.tenant_id == a["tenant_id"])
-                    .order_by(Telemetry.seq)
+                    .order_by(Telemetry.seq.desc())
                     .limit(cfg.telemetry_limit)
                 )
             )
@@ -825,9 +840,10 @@ def create_app(settings=None):
                         "detail": json.loads(e.detail),
                         "correlation_id": e.correlation_id,
                     }
-                    for e in events
+                    for e in reversed(events[:1000])
                 ],
-                "telemetry": [json.loads(t.payload) for t in telemetry],
+                "events_truncated": len(events) > 1000,
+                "telemetry": [json.loads(t.payload) for t in reversed(telemetry)],
                 "mode": "simulation",
                 "retention_samples": cfg.telemetry_limit,
             }
