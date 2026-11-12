@@ -9,9 +9,8 @@ cd "$repo"
 mobile="$repo/frontend/drone/mobile"
 work=$(mktemp -d)
 chmod 700 "$work"
-emulator=''; metro=''
+emulator=''
 cleanup() {
-  if [[ -n "$metro" ]]; then kill "$metro" 2>/dev/null || true; wait "$metro" 2>/dev/null || true; fi
   if [[ -n "$emulator" ]]; then kill "$emulator" 2>/dev/null || true; wait "$emulator" 2>/dev/null || true; fi
   rm -rf -- "$work"
 }
@@ -58,21 +57,9 @@ device shell cmd role add-role-holder android.app.role.BROWSER com.android.chrom
 device shell wm size 1200x2400
 device shell wm density 240
 device shell wm dismiss-keyguard
-for port in 54844 54843 8081; do device reverse "tcp:$port" "tcp:$port"; done
+for port in 54844 54843; do device reverse "tcp:$port" "tcp:$port"; done
 export CHROME_DEVTOOLS_PORT
 CHROME_DEVTOOLS_PORT=$(device forward tcp:0 localabstract:chrome_devtools_remote)
-(cd "$mobile" && CI=1 EXPO_NO_TELEMETRY=1 EXPO_OFFLINE=1 exec node node_modules/expo/bin/cli start --localhost --port 8081) > "$work/metro.log" 2>&1 &
-metro=$!
-for attempt in {1..90}; do
-  if ! kill -0 "$metro" 2>/dev/null; then
-    sed -n '/^CommandError:/p' "$work/metro.log" >&2
-    echo "Metro exited before the local fixture became ready." >&2
-    exit 1
-  fi
-  if curl --noproxy '*' --max-time 2 --silent --fail http://127.0.0.1:8081/status | grep -q 'packager-status:running'; then break; fi
-  if [[ $attempt == 90 ]]; then echo "Metro did not become ready on loopback within 90 attempts." >&2; exit 1; fi
-  sleep 1
-done
 apk="$mobile/android/app/build/outputs/apk/debug/app-debug.apk"
 test -s "$apk"
 device install "$apk"
