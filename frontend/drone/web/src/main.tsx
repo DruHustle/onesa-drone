@@ -92,6 +92,7 @@ function Empty({ children }: { children: ReactNode }) {
   return <div className="empty">{children}</div>;
 }
 function App() {
+  const localSimulator = ["127.0.0.1", "localhost", "[::1]"].includes(window.location.hostname);
   const [sharedAccount, setSharedAccount] = useState<boolean | null>(null);
   const [choosingWorkspace, setChoosingWorkspace] = useState(false);
   const [signOutAccountUrl, setSignOutAccountUrl] = useState("");
@@ -528,13 +529,13 @@ function App() {
         <main className="login-form">
           <p className="eyebrow">MISSION OPERATIONS</p>
           <h2>
-            {sharedAccount
+            {(sharedAccount || !localSimulator)
               ? "One account. Every Onesa application."
               : "Sign in to your workspace"}
           </h2>
           <p>
-            {sharedAccount
-              ? "Use your Onesa account for AI Platform, Company Portal, Drone and Robot. Your workspace access follows you."
+            {(sharedAccount || !localSimulator)
+              ? "Sign in through Onesa Company Portal to open your approved Drone workspace."
               : "Use your individually provisioned operator account."}
           </p>
           {sharedAccount ? (
@@ -550,7 +551,7 @@ function App() {
                 New to Onesa? Create your account on the next screen.
               </p>
             </div>
-          ) : sharedAccount === false ? (
+          ) : localSimulator && sharedAccount === false ? (
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -589,7 +590,10 @@ function App() {
                 Sign in <span aria-hidden="true">→</span>
               </button>
             </form>
+          ) : !localSimulator ? (
+            <p role="status">Drone shared sign-in is temporarily unavailable. Reload this page to retry.</p>
           ) : null}
+          {!localSimulator && <a className="identity-link" href="https://portal.onesa.eu/account/register">Create an Onesa account</a>}
           {notice && (
             <div role="alert" className="error identity-notice">
               <p>{notice}</p>
