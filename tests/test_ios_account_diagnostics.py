@@ -16,13 +16,14 @@ ONESA_ACCOUNT_CHECKPOINT member:cold:account-screen-ready
 ONESA_ACCOUNT_CHECKPOINT member:cold:consent-tapped
 ONESA_ACCOUNT_CHECKPOINT member:cold:credentials-filled
 ONESA_ACCOUNT_CHECKPOINT member:cold:credentials-filled
+ONESA_ACCOUNT_CHECKPOINT member:cold:private-planner-open
 /private/secret/AccountTests.swift:53: error: XCTAssertTrue failed - secret@example.test
 https://issuer.invalid/callback?code=secret
 Type 'private password'
 ONESA_ACCOUNT_CHECKPOINT admin:warm:https://private.invalid
 """)
         self.assertEqual(result, {
-            "checkpoints": ["member:cold:start", "member:cold:account-screen-ready", "member:cold:consent-tapped", "member:cold:credentials-filled"],
+            "checkpoints": ["member:cold:start", "member:cold:account-screen-ready", "member:cold:consent-tapped", "member:cold:credentials-filled", "member:cold:private-planner-open"],
             "categories": ["test-started", "assertion-failed"],
             "account_test_source_lines": [53],
         })
