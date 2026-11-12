@@ -19,6 +19,7 @@ const nativeFlows = [];
 let unexpectedCredentialRoute = false;
 let fixtureExpirations = 0;
 let expiredAccountResponses = 0;
+let currentExpiryRejected = false;
 let verifiedWarmSubjects = 0;
 let warmSubjectVerificationFailed = false;
 // Separate transport observations from the successful authorization audit.
@@ -109,6 +110,7 @@ for (const [port, target] of [
           return;
         }
         fixtureExpirations++;
+        currentExpiryRejected = false;
         saveNativeAudit();
         res.setHeader("content-type", "application/json");
         res.writeHead(200).end(expiry.stdout);
@@ -244,7 +246,7 @@ for (const [port, target] of [
                 maxBuffer: 4096,
               },
             );
-            if (verified.status === 0) verifiedWarmSubjects++;
+            if (currentExpiryRejected && verified.status === 0) verifiedWarmSubjects++;
             else warmSubjectVerificationFailed = true;
             saveNativeAudit();
           }
@@ -256,6 +258,7 @@ for (const [port, target] of [
             fixtureExpirations > 0
           ) {
             expiredAccountResponses++;
+            currentExpiryRejected = true;
             saveNativeAudit();
           }
           res.writeHead(remote.statusCode, remote.headers);

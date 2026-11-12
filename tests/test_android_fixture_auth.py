@@ -1,9 +1,12 @@
 """Native startup failure reports cannot echo credential-bearing logs or UI."""
 import json
 import unittest
-from unittest.mock import call, patch
+from unittest.mock import MagicMock, call, patch
 
-from scripts.android_fixture_auth import APP_ID, last_exit_reason, main, portal_observations, reset_native_planner, startup_classification
+from scripts.android_fixture_auth import (
+    APP_ID, expire_product_session, last_exit_reason, main, portal_observations,
+    reset_native_planner, startup_classification,
+)
 
 
 class StartupDiagnosticsTests(unittest.TestCase):
@@ -32,6 +35,29 @@ class StartupDiagnosticsTests(unittest.TestCase):
             main()
         reset.assert_called_once_with()
         record.assert_called_once_with(before_credentials=True)
+
+    @patch.dict("os.environ", {"ONESA_FIXTURE_CONTROL": "fixture-key", "FIXTURE_CA": "test-ca"})
+    @patch("scripts.android_fixture_auth.ssl.create_default_context")
+    @patch("scripts.android_fixture_auth.http.client.HTTPSConnection")
+    def test_scoped_expiry_requires_verified_role_subject_and_unchanged_portal(self, connect, context):
+        response = MagicMock(status=200)
+        connect.return_value.getresponse.return_value = response
+        receipt = {"expiredProductSessions": 1, "portalSessionRowsUnchanged": True,
+                   "expectedRoleVerified": True, "expectedProductSubjectVerified": True}
+        response.read.return_value = json.dumps(receipt).encode()
+        expire_product_session("member")
+        context.assert_called_once_with(cafile="test-ca")
+        connect.assert_called_once_with("127.0.0.1", 54844, context=context.return_value, timeout=15)
+        connect.return_value.request.assert_called_once_with("POST", "/__onesa_fixture/expire-product-session",
+            headers={"x-onesa-fixture-control": "fixture-key", "x-onesa-fixture-role": "member"})
+        for key in receipt:
+            with self.subTest(key=key):
+                response.read.return_value = json.dumps(receipt | {key: False}).encode()
+                with self.assertRaisesRegex(ValueError, "scoped expiry"):
+                    expire_product_session("member")
+        response.status = 409
+        with self.assertRaisesRegex(ValueError, "refused"):
+            expire_product_session("member")
 
     def test_exit_reason_allowlist_never_emits_history(self):
         self.assertEqual(last_exit_reason("reason=10 (USER REQUESTED) detail=private"), "user-requested")
