@@ -36,6 +36,11 @@ ONESA_ACCOUNT_CHECKPOINT admin:warm:https://private.invalid
         self.assertEqual(summarize("private unexpected message")["categories"],
                          ["unclassified-failure"])
 
+    def test_keyboard_errors_return_only_the_fixed_category(self):
+        result = summarize("Failed to synthesize event for private-user: Neither element nor any descendant has keyboard focus")
+        self.assertEqual(result["categories"], ["keyboard-focus-missing", "input-event-unavailable"])
+        self.assertNotIn("private-user", json.dumps(result))
+
     def test_browser_state_uses_only_whole_allowlisted_flags(self):
         result = summarize("""
 ONESA_ACCOUNT_CHECKPOINT member:cold:sign-in-tapped
