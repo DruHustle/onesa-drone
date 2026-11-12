@@ -346,7 +346,7 @@ with contextlib.ExitStack() as resources:
             "STATIC": str(drone / "frontend/dist"),
             "ONESA_NATIVE_AUDIT_PATH": str(temp / "native-route-audit.json") if args.native_ui else "",
             "ONESA_NATIVE_START_DIAGNOSTICS_PATH": str(temp / "native-start-diagnostics.json") if args.native_ui else "",
-            "ONESA_NATIVE_CONTROL_KEY": native_control_key if args.native_ui == "ios" else "",
+            "ONESA_NATIVE_CONTROL_KEY": native_control_key if args.native_ui else "",
             "FIXTURE_PYTHON": sys.executable,
             "FIXTURE_EXPIRY_SCRIPT": str(scripts / "expire_native_session.py"),
             "DRONE_FIXTURE_DATABASE_URL": f"postgresql://fixture:{db_password}@127.0.0.1:56882/drone_test",
@@ -376,15 +376,14 @@ with contextlib.ExitStack() as resources:
             "ONESA_FIXTURE_FACTOR": fixture["codes"][0],
             "ONESA_FIXTURE_SECOND_FACTOR": fixture["codes"][1],
         }
-        if args.native_ui == "ios":
-            verify_fixture_control_denials(drone_origin, native_control_key, ca)
+        verify_fixture_control_denials(drone_origin, native_control_key, ca)
         result = subprocess.run([drone / "scripts" / device / "run.sh", "auth"], cwd=drone, env=native_env)
         audit_path = temp / "native-route-audit.json"
         audit = json.loads(audit_path.read_text()) if audit_path.is_file() else {}
         print("ONESA_NATIVE_ROUTE_AUDIT " + json.dumps(audit), flush=True)
         print("ONESA_NATIVE_START_DIAGNOSTICS " + json.dumps(
             read_start_diagnostics(temp / "native-start-diagnostics.json")), flush=True)
-        if result.returncode == 0 and args.native_ui == "ios":
+        if result.returncode == 0:
             try:
                 verify_native_audit(audit)
                 verify_fixture_control_denials(drone_origin, native_control_key, ca, exhausted=True)

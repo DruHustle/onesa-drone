@@ -1,8 +1,10 @@
 """Drive the real Expo debug client on the dedicated loopback identity emulator."""
-import os
+import http.client
 import json
+import os
 from pathlib import Path
 import re
+import ssl
 import subprocess
 import sys
 import time
@@ -97,6 +99,28 @@ def portal_observations(output):
     return ["diagnostic-unavailable"]
 
 
+def expire_product_session(role):
+    # This test control expires one synthetic product session. The app keeps
+    # its SecureStore token and the system browser keeps its Portal session.
+    context = ssl.create_default_context(cafile=os.environ["FIXTURE_CA"])
+    connection = http.client.HTTPSConnection("127.0.0.1", 54844, context=context, timeout=15)
+    try:
+        connection.request("POST", "/__onesa_fixture/expire-product-session", headers={
+            "x-onesa-fixture-control": os.environ["ONESA_FIXTURE_CONTROL"],
+            "x-onesa-fixture-role": role,
+        })
+        response = connection.getresponse()
+        require(response.status == 200, "Disposable product expiry was refused")
+        receipt = json.loads(response.read(4096))
+        require(type(receipt.get("expiredProductSessions")) is int and receipt["expiredProductSessions"] == 1
+                and receipt.get("portalSessionRowsUnchanged") is True
+                and receipt.get("expectedRoleVerified") is True
+                and receipt.get("expectedProductSubjectVerified") is True,
+                "Expected one scoped expiry and the unchanged Portal session")
+    finally:
+        connection.close()
+
+
 def main():
     require(os.environ.get("EXPO_PUBLIC_DRONE_DEV_ORIGIN") == "https://127.0.0.1:54844"
             and adb("emu", "avd", "name").splitlines()[0] == "OnesaIdentityFixture"
@@ -106,16 +130,14 @@ def main():
         # logout is asserted below before this next-role browser reset.
         require(shell("pm", "clear", "com.android.chrome") == "Success",
                 "Could not reset the disposable role's Chrome data")
+        try:
+            reset_native_planner()
+            find("Mission planner", timeout=105)
+        except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
+            record_startup_failure(before_credentials=role == "member")
+            raise
+        tap("Onesa account")
         for state in ("signed-out", "active"):
-            # Clear only the native app. Chrome's Portal cookies survive the
-            # second launch. A warm return must complete without credentials.
-            try:
-                reset_native_planner()
-                find("Mission planner", timeout=105)
-            except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
-                record_startup_failure(before_credentials=role == "member" and state == "signed-out")
-                raise
-            tap("Onesa account")
             tap("Sign in with Onesa")
             helper = Path(__file__).parent / "android-emulator-ui" / "portal.cjs"
             child = subprocess.run(["node", str(helper), role, state], capture_output=True, timeout=125)
@@ -124,8 +146,18 @@ def main():
                 sys.exit(f"Android Chrome Portal form failed for {role} / {state} (stage {child.returncode})")
             find(label, timeout=85)
             find(f"Synthetic {role} · {role}@example.test")
-            find("Open my field planner")
-            print(f"PASS Android 13 Chrome Custom Tab / {role} / {state} / native role")
+            tap("Open my field planner")
+            find("Mission planner")
+            find(f"{role}@example.test")
+            print(f"PASS Android 13 Chrome Custom Tab / {role} / {state} / native role and planner", flush=True)
+            if state == "signed-out":
+                expire_product_session(role)
+                # AccountHome revalidates the foreground planner every 30s.
+                # Its genuine 401 clears the local session and closes the planner.
+                find("Your Onesa session or workspace access has changed. Sign in again.", timeout=85)
+                find("Sign in with Onesa")
+                print(f"PASS Android / {role} / expired product session requires sign-in", flush=True)
+        tap(f"{role}@example.test")
         tap("Sign out of Onesa")
         find("Signed out of Onesa.", timeout=45)
         print(f"PASS Android / {role} / confirmed central sign-out")

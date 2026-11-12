@@ -35,7 +35,7 @@ async function verify() {
     if (!page) await pause(400);
   }
   // A valid active session can redirect straight back to the OS before CDP attaches.
-  // The caller wiped native storage and independently requires the expected role.
+  // The caller observed the expired product session and requires the expected identity after return.
   if (!page && state === "active") return;
   if (!page) throw Error();
   page.setDefaultTimeout(18000);
