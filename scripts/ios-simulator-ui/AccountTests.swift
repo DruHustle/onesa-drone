@@ -14,6 +14,8 @@ final class AccountTests: XCTestCase {
     @MainActor private func browserFailureState() {
         // Only fixed state names leave the private XCTest log. Never print an
         // element label/value, URL, hierarchy, error description or screenshot.
+        // Preserve the failed wait even if a diagnostic OS query also fails.
+        checkpoint("browser-wait-failed")
         func observed(_ name: String, _ present: Bool) {
             if present { print("ONESA_ACCOUNT_STATE \(scenario):\(name)") }
         }

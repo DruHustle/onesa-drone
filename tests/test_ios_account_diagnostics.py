@@ -38,6 +38,7 @@ ONESA_ACCOUNT_CHECKPOINT admin:warm:https://private.invalid
     def test_browser_state_uses_only_whole_allowlisted_flags(self):
         result = summarize("""
 ONESA_ACCOUNT_CHECKPOINT member:cold:sign-in-tapped
+ONESA_ACCOUNT_CHECKPOINT member:cold:browser-wait-failed
 ONESA_ACCOUNT_STATE member:cold:contacting-visible
 ONESA_ACCOUNT_STATE member:cold:contacting-visible
 ONESA_ACCOUNT_STATE member:cold:service-unavailable-visible
@@ -47,7 +48,7 @@ ONESA_ACCOUNT_STATE member:cold:email-field-visible?code=private
 ONESA_ACCOUNT_STATE member:cold:https://issuer.invalid/private
 ONESA_ACCOUNT_STATE person@example.test:cold:app-foreground
 """)
-        self.assertEqual(result["checkpoints"], ["member:cold:sign-in-tapped"])
+        self.assertEqual(result["checkpoints"], ["member:cold:sign-in-tapped", "member:cold:browser-wait-failed"])
         self.assertEqual(result["observed_states"], [
             "member:cold:contacting-visible", "member:cold:service-unavailable-visible",
             "admin:warm:consent-continue-visible",
