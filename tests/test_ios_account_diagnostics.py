@@ -40,6 +40,9 @@ ONESA_ACCOUNT_CHECKPOINT admin:warm:https://private.invalid
         result = summarize("""
 ONESA_ACCOUNT_CHECKPOINT member:cold:sign-in-tapped
 ONESA_ACCOUNT_CHECKPOINT member:cold:browser-wait-failed
+ONESA_ACCOUNT_CHECKPOINT member:cold:interaction-not-observed
+ONESA_ACCOUNT_CHECKPOINT member:cold:unexpected-credential-route
+ONESA_ACCOUNT_CHECKPOINT admin:cold:retry-visible-form-touch
 ONESA_ACCOUNT_STATE member:cold:contacting-visible
 ONESA_ACCOUNT_STATE member:cold:contacting-visible
 ONESA_ACCOUNT_STATE member:cold:service-unavailable-visible
@@ -49,7 +52,10 @@ ONESA_ACCOUNT_STATE member:cold:email-field-visible?code=private
 ONESA_ACCOUNT_STATE member:cold:https://issuer.invalid/private
 ONESA_ACCOUNT_STATE person@example.test:cold:app-foreground
 """)
-        self.assertEqual(result["checkpoints"], ["member:cold:sign-in-tapped", "member:cold:browser-wait-failed"])
+        self.assertEqual(result["checkpoints"], [
+            "member:cold:sign-in-tapped", "member:cold:browser-wait-failed", "member:cold:interaction-not-observed",
+            "member:cold:unexpected-credential-route", "admin:cold:retry-visible-form-touch",
+        ])
         self.assertEqual(result["observed_states"], [
             "member:cold:contacting-visible", "member:cold:service-unavailable-visible",
             "admin:warm:consent-continue-visible",

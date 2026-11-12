@@ -16,6 +16,9 @@ const tls = {
   cert: readFileSync("fixture.crt"),
 };
 const nativeFlows = [];
+// Interaction IDs stay in memory only. Persist and expose only numeric counts.
+const loadedInteractions = new Map();
+let currentInteraction = null;
 let unexpectedCredentialRoute = false;
 let fixtureExpirations = 0;
 let expiredAccountResponses = 0;
@@ -57,14 +60,18 @@ function saveNativeAudit() {
 function recordNativeCredentialRoute(req, url) {
   if (!process.env.ONESA_NATIVE_AUDIT_PATH || req.method !== "POST") return;
   const match =
-    /^\/api\/v1\/account\/interaction\/[A-Za-z0-9_-]+\/(login|continue)$/.exec(
+    /^\/api\/v1\/account\/interaction\/([A-Za-z0-9_-]+)\/(login|continue)$/.exec(
       url.pathname,
     );
-  if (!match) return;
-  const entry = nativeFlows.at(-1);
-  if (entry)
-    entry[match[1] === "login" ? "credentialPosts" : "continuePosts"]++;
-  else unexpectedCredentialRoute = true;
+  if (!match) {
+    if (!url.pathname.startsWith("/api/v1/account/") || !/\/(login|continue)\/?$/.test(url.pathname)) return;
+    unexpectedCredentialRoute = true;
+  } else {
+    const entry = loadedInteractions.get(match[1]);
+    if (!url.search && entry && entry === nativeFlows.at(-1) && match[1] === currentInteraction) {
+      entry[match[2] === "login" ? "credentialPosts" : "continuePosts"]++;
+    } else unexpectedCredentialRoute = true;
+  }
   saveNativeAudit();
 }
 for (const [port, target] of [
@@ -77,6 +84,31 @@ for (const [port, target] of [
       const nativeStart = port === 54844 && req.method === "POST" &&
         url.pathname === "/api/v1/auth/mobile/start";
       if (nativeStart) recordNativeStart("attempts");
+      if (port === 54844 && url.pathname === "/__onesa_fixture/credential-receipt") {
+        // The private native test reads only the current cold flow's count.
+        // The browser and product do not receive the fixture control key.
+        const roles = { 1: "member", 3: "admin" };
+        const role = roles[nativeFlows.length];
+        const key = process.env.ONESA_NATIVE_CONTROL_KEY;
+        if (!process.env.ONESA_NATIVE_AUDIT_PATH || !key || !role ||
+            req.method !== "GET" || req.headers["x-onesa-fixture-control"] !== key ||
+            req.headers["x-onesa-fixture-role"] !== role || url.search ||
+            Number(req.headers["content-length"] || 0) !== 0 || req.headers["transfer-encoding"]) {
+          res.writeHead(404).end();
+          return;
+        }
+        if (unexpectedCredentialRoute) {
+          res.writeHead(409).end();
+          return;
+        }
+        if (!currentInteraction) {
+          res.writeHead(412).end();
+          return;
+        }
+        res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+        res.end(JSON.stringify({ credentialPosts: nativeFlows.at(-1).credentialPosts }));
+        return;
+      }
       if (
         port === 54844 &&
         url.pathname === "/__onesa_fixture/expire-product-session"
@@ -155,6 +187,20 @@ for (const [port, target] of [
             path: nextUrl.pathname.split("/").slice(3),
           }),
         });
+        if (process.env.ONESA_NATIVE_AUDIT_PATH && req.method === "GET" && dest.status === 200) {
+          const interaction = /^\/api\/v1\/account\/interaction\/([A-Za-z0-9_-]+)$/.exec(url.pathname);
+          const flow = nativeFlows.at(-1);
+          if (interaction && flow) {
+            const uid = interaction[1];
+            if (!loadedInteractions.has(uid)) loadedInteractions.set(uid, flow);
+            if (loadedInteractions.get(uid) === flow) {
+              if (currentInteraction && currentInteraction !== uid) {
+                unexpectedCredentialRoute = true;
+                saveNativeAudit();
+              } else currentInteraction = uid;
+            }
+          }
+        }
         for (const [key, value] of dest.headers)
           if (key !== "set-cookie") res.setHeader(key, value);
         const cookies = dest.headers.getSetCookie();
@@ -223,6 +269,7 @@ for (const [port, target] of [
             process.env.ONESA_NATIVE_AUDIT_PATH
           ) {
             nativeFlows.push({ credentialPosts: 0, continuePosts: 0 });
+            currentInteraction = null;
             saveNativeAudit();
           }
           if (

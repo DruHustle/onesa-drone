@@ -125,7 +125,22 @@ final class AccountTests: XCTestCase {
         }, seconds: 10), "Native keyboard dismissed before form action")
     }
 
-    @MainActor private func login(_ role: String, in web: XCUIElement, factor: String, remember: Bool = false) throws {
+    @MainActor private func receivedCredentialPosts(_ role: String) async throws -> Int {
+        var request = URLRequest(url: try XCTUnwrap(URL(string: "https://127.0.0.1:54844/__onesa_fixture/credential-receipt")))
+        request.timeoutInterval = 5
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue(try XCTUnwrap(ProcessInfo.processInfo.environment["ONESA_FIXTURE_CONTROL"]), forHTTPHeaderField: "x-onesa-fixture-control")
+        request.setValue(role, forHTTPHeaderField: "x-onesa-fixture-role")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let status = try XCTUnwrap(response as? HTTPURLResponse).statusCode
+        if status == 409 { checkpoint("unexpected-credential-route") }
+        if status == 412 { checkpoint("interaction-not-observed") }
+        _ = try XCTUnwrap(status == 200 ? true : nil, "Current cold fixture flow is observable")
+        let receipt = try JSONDecoder().decode([String: Int].self, from: data)
+        return try XCTUnwrap(receipt["credentialPosts"], "Issuer returned a credential count")
+    }
+
+    @MainActor private func login(_ role: String, in web: XCUIElement, factor: String, remember: Bool = false) async throws {
         let email = field("Email address", in: web)
         XCTAssertTrue(email.waitForExistence(timeout: 20), "Portal email field")
         email.tap()
@@ -147,21 +162,51 @@ final class AccountTests: XCTestCase {
         }
         let code = field("Authenticator or recovery code", in: web)
         let submit = web.buttons["Continue"].firstMatch
-        @MainActor func submitForm(requireFactor: Bool = false) throws {
+        var submittedCount = 0
+        @MainActor func submitForm(requireFactor: Bool = false) async throws {
             // A tap on a disabled or incomplete web form can leave the browser
             // on the same screen without sending a credential request.
-            let ready = waitFor({
+            @MainActor func formReady() -> Bool {
                 guard submit.exists, submit.isEnabled, submit.isHittable,
                       (email.value as? String) == address,
                       let masked = password.value as? String,
                       !masked.isEmpty, masked != password.placeholderValue else { return false }
                 return !requireFactor || (code.value as? String) == factor
-            }, seconds: 20)
+            }
+            let ready = waitFor(formReady, seconds: 20)
             if !ready { browserFailureState() }
+            let prior = try await receivedCredentialPosts(role)
+            _ = try XCTUnwrap(prior == submittedCount ? true : nil, "Issuer count matches the current form")
             try XCTUnwrap(ready ? submit : nil, "Filled Portal form is ready to submit").tap()
+            let expected = submittedCount + 1
+            @MainActor func observedCount() async throws -> Int {
+                let deadline = Date().addingTimeInterval(8)
+                var count = try await receivedCredentialPosts(role)
+                while count == submittedCount && Date() < deadline {
+                    try await Task.sleep(nanoseconds: 250_000_000)
+                    count = try await receivedCredentialPosts(role)
+                }
+                return count
+            }
+            var observed = try await observedCount()
+            if observed == submittedCount && formReady() {
+                // WebKit can expose a hittable mirrored button whose synthetic
+                // tap never reaches the form. Use one visible browser touch only
+                // after the independent issuer still reports the prior count.
+                let visible = web.frame.intersection(submit.frame)
+                if !visible.isEmpty, try await receivedCredentialPosts(role) == submittedCount {
+                    let offset = CGVector(dx: visible.midX - web.frame.minX, dy: visible.midY - web.frame.minY)
+                    checkpoint("retry-visible-form-touch")
+                    web.coordinate(withNormalizedOffset: .zero).withOffset(offset).tap()
+                    observed = try await observedCount()
+                }
+            }
+            if observed != expected { browserFailureState() }
+            _ = try XCTUnwrap(observed == expected ? true : nil, "Issuer observed exactly one form submission")
+            submittedCount = expected
         }
         if role == "admin" && !code.exists {
-            try submitForm()
+            try await submitForm()
             XCTAssertTrue(code.waitForExistence(timeout: 20), "Portal MFA challenge")
             checkpoint("mfa-visible")
         }
@@ -170,7 +215,7 @@ final class AccountTests: XCTestCase {
             code.typeText(factor)
             try dismissNativeKeyboard()
         }
-        try submitForm(requireFactor: role == "admin")
+        try await submitForm(requireFactor: role == "admin")
         checkpoint("submitted")
     }
 
@@ -226,12 +271,12 @@ final class AccountTests: XCTestCase {
             if !reused { browserFailureState() }
             XCTAssertTrue(reused, "Reused active Portal session without entering credentials")
         } else {
-            let browserReady = awaitBrowser { self.inSheet("Email address", readyForInput: true) != nil }
+            let browserReady = awaitBrowser { self.inSheet("Email address", browserOnly: true, readyForInput: true) != nil }
             if !browserReady { browserFailureState() }
             XCTAssertTrue(browserReady, "Portal login in system browser")
-            let web = try XCTUnwrap(inSheet("Email address", readyForInput: true))
+            let web = try XCTUnwrap(inSheet("Email address", browserOnly: true, readyForInput: true))
             checkpoint("browser-ready")
-            try login(role, in: web, factor: factor, remember: true)
+            try await login(role, in: web, factor: factor, remember: true)
         }
         let identity = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", address)).firstMatch
         let returned = identity.waitForExistence(timeout: 45)

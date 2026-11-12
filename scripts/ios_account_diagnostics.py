@@ -12,6 +12,7 @@ def summarize(text):
     for role, state, phase in re.findall(
         r"ONESA_ACCOUNT_CHECKPOINT (member|admin):(cold|warm):"
         r"(start|account-screen-ready|sign-in-tapped|consent-tapped|browser-wait-failed|browser-ready|credentials-filled|mfa-visible|submitted|"
+        r"unexpected-credential-route|interaction-not-observed|retry-visible-form-touch|"
         r"identity-returned|keychain-restored|central-logout)\b", text
     ):
         value = f"{role}:{state}:{phase}"
