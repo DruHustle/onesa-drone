@@ -7,10 +7,16 @@ final class PlannerTests: XCTestCase {
         let headings = ["Plan": "Mission planner", "Missions": "Encrypted drafts",
                         "Aircraft": "Aircraft & safety", "Video": "Video & evidence"]
         let tab = app.descendants(matching: .any)["planner-tab-" + name]
+        let heading = app.staticTexts[headings[name]!]
         XCTAssertTrue(tab.waitForExistence(timeout: 10))
-        tab.tap()
-        XCTAssertTrue(app.staticTexts[headings[name]!].waitForExistence(timeout: 10),
-                      "Requested planner tab heading")
+        // Selecting a tab is idempotent. A synthesized first tap can leave the
+        // previous tab selected; retry that navigation once, never its actions.
+        for _ in 0..<2 {
+            XCTAssertTrue(tab.isHittable, "Requested planner tab is hittable")
+            tab.tap()
+            if heading.waitForExistence(timeout: 10) { return }
+        }
+        XCTFail("Requested planner tab heading")
     }
 
     @MainActor private func reveal(_ element: XCUIElement) {

@@ -99,15 +99,28 @@ final class AccountTests: XCTestCase {
         scenario = role + (warm ? ":warm" : ":cold")
         checkpoint("start")
         let address = role + "@example.test"
+        let accountHeading = app.staticTexts["Onesa account"]
+        let signInButton = app.buttons["Sign in with Onesa"]
         app.launch()
         if warm {
             XCTAssertTrue(app.staticTexts["Your Onesa session or workspace access has changed. Sign in again."].waitForExistence(timeout: 45), "Expired product session requires real sign-in")
         } else {
             let account = app.buttons["Onesa account"]
             XCTAssertTrue(account.waitForExistence(timeout: 100), "Signed-out Drone planner")
-            account.tap()
+            for attempt in 0..<2 {
+                XCTAssertTrue(waitFor({ account.exists && account.isHittable }, seconds: 10), "Account entry is hittable")
+                account.tap()
+                if waitFor({ accountHeading.exists && signInButton.exists }, seconds: 10) { break }
+                // Only retry idempotent navigation if the original planner is
+                // still visibly active. Never repeat a sign-in request.
+                if attempt == 1 || signInButton.exists || !account.exists || !account.isHittable { break }
+            }
         }
-        app.buttons["Sign in with Onesa"].tap()
+        XCTAssertTrue(waitFor({
+            accountHeading.exists && signInButton.exists && signInButton.isEnabled && signInButton.isHittable
+        }), "Account sign-in is ready")
+        checkpoint("account-screen-ready")
+        signInButton.tap()
         if warm {
             let reuse = "Continue as " + address
             let returned = app.buttons["Open my field planner"]
