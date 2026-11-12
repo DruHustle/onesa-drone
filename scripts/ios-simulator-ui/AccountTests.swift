@@ -83,8 +83,9 @@ final class AccountTests: XCTestCase {
         checkpoint("submitted")
     }
 
-    @MainActor private func inSheet(_ name: String) -> XCUIElement? {
-        for surface in [app, authSheet, safari] where surface.state == .runningForeground {
+    @MainActor private func inSheet(_ name: String, browserOnly: Bool = false) -> XCUIElement? {
+        let owners = browserOnly ? [authSheet, safari] : [app, authSheet, safari]
+        for surface in owners where surface.state == .runningForeground {
             let web = surface.webViews.firstMatch
             guard web.exists else { continue }
             if name == "Email address" {
@@ -111,8 +112,10 @@ final class AccountTests: XCTestCase {
             let reuse = "Continue as " + address
             let returned = app.buttons["Open my field planner"]
             let reused = waitFor {
+                if returned.exists { return true }
                 allowBrowser()
-                if let web = inSheet(reuse) { web.buttons[reuse].tap() }
+                if returned.exists { return true }
+                if let web = inSheet(reuse, browserOnly: true) { web.buttons[reuse].tap() }
                 return returned.exists
             }
             XCTAssertTrue(reused, "Reused active Portal session without entering credentials")
