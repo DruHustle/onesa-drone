@@ -27,3 +27,9 @@ npm run android  # requires Android SDK
 ```
 
 Hardware flight and external video relay are absent, not hidden behind a feature toggle. Physical operation remains blocked by the Onesa Drone simulation-only policy and requires separate authorization, device integration and safety qualification.
+
+After building the web frontend from the repository root, run
+`python -m scripts.check_hosted_favicons` to compare the production home and
+tracking pages with the built favicon files. The read-only check requires no
+account. The frontend release runner performs the same check against the
+verified package on staging and production.

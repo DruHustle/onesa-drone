@@ -281,9 +281,12 @@ class PrivacyTests(unittest.TestCase):
             }
             with (
                 patch.object(d, "private", side_effect=lambda p, **_: Path(p)),
+                patch.object(runner, "frontend_files", return_value=Path(folder)),
+                patch.object(d, "verify_hosted_favicons") as icons,
                 patch.object(runner, "run", return_value=d.canonical(observed)) as run,
             ):
                 runner.browser("staging")
+            icons.assert_called_once_with(d.ORIGINS["staging"][0], Path(folder) / ".vercel/output/static", None)
             args = run.call_args.args[0]
             self.assertIn("XDG_CONFIG_HOME=/tmp/onesa-chromium-config", args)
             self.assertIn("XDG_CACHE_HOME=/tmp/onesa-chromium-cache", args)
