@@ -1,0 +1,35 @@
+name: Resolve locked Drone Expo patch
+on:
+  push:
+    branches: [ci/resolve-drone-expo-lock-20261112]
+permissions:
+  contents: read
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 24.22.1
+      - name: Resolve the patched SDK and recheck the installed dependency contract
+        working-directory: frontend/drone/mobile
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          if npx --no-install expo install --check; then
+            echo "The original Expo check passed on this worker."
+          else
+            echo "The original Expo check detected a compatibility mismatch."
+          fi
+          npm install --package-lock-only --save-exact --ignore-scripts --no-audit --no-fund expo@58.0.25
+          npm ci --ignore-scripts --no-audit --no-fund
+          npx --no-install expo install --check
+          npm test
+          echo ONESA_DEPENDENCY_PATCH_BEGIN
+          git -c color.ui=false diff --no-ext-diff --unified=0 -- package.json package-lock.json
+          echo ONESA_DEPENDENCY_PATCH_END
+          echo "ONESA_MANIFEST_BLOB $(git hash-object package.json)"
+          echo "ONESA_LOCK_BLOB $(git hash-object package-lock.json)"
