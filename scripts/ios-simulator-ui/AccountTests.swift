@@ -11,6 +11,24 @@ final class AccountTests: XCTestCase {
         print("ONESA_ACCOUNT_CHECKPOINT \(scenario):\(phase)")
     }
 
+    @MainActor private func signInGeometry(_ stage: String) {
+        let button = app.buttons["Sign in with Onesa"]
+        guard button.exists else { return }
+        let frame = button.frame
+        let window = app.frame
+        let values: [String: Any] = [
+            "x": frame.origin.x, "y": frame.origin.y,
+            "width": frame.width, "height": frame.height,
+            "exists": button.exists, "enabled": button.isEnabled, "hittable": button.isHittable,
+            "centerInWindow": window.contains(CGPoint(x: frame.midX, y: frame.midY))
+        ]
+        if JSONSerialization.isValidJSONObject(values),
+           let data = try? JSONSerialization.data(withJSONObject: values, options: [.sortedKeys]),
+           let text = String(data: data, encoding: .utf8) {
+            print("ONESA_ACCOUNT_BUTTON \(scenario):\(stage):\(text)")
+        }
+    }
+
     @MainActor private func browserFailureState() {
         // Only fixed state names leave the private XCTest log. Never print an
         // element label/value, URL, hierarchy, error description or screenshot.
@@ -19,6 +37,7 @@ final class AccountTests: XCTestCase {
         func observed(_ name: String, _ present: Bool) {
             if present { print("ONESA_ACCOUNT_STATE \(scenario):\(name)") }
         }
+        signInGeometry("failure")
         observed("app-foreground", app.state == .runningForeground)
         observed("safari-foreground", safari.state == .runningForeground)
         observed("auth-sheet-foreground", authSheet.state == .runningForeground)
@@ -34,7 +53,9 @@ final class AccountTests: XCTestCase {
         observed("session-rejected-visible", app.staticTexts["Your Onesa session or workspace access has changed. Sign in again."].exists)
         observed("cancelled-visible", app.staticTexts["Sign-in was cancelled. You can start again."].exists)
         observed("invalid-start-visible", app.staticTexts["Invalid sign-in response."].exists)
-        observed("network-failure-visible", app.staticTexts["Network request failed"].exists)
+        observed("network-failure-visible", app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "Network request failed")).firstMatch.exists)
+        observed("timeout-failure-visible", app.staticTexts.matching(NSPredicate(format: "label ==[c] %@ OR label CONTAINS[c] %@ OR label CONTAINS[c] %@", "Aborted", "timed out", "timeout")).firstMatch.exists)
+        observed("tls-failure-visible", app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@ OR label CONTAINS[c] %@ OR label CONTAINS[c] %@", "SSL", "certificate", "secure connection")).firstMatch.exists)
         observed("app-webview-visible", app.state == .runningForeground && app.webViews.firstMatch.exists)
         observed("browser-webview-visible", [authSheet, safari].contains {
             $0.state == .runningForeground && $0.webViews.firstMatch.exists
@@ -151,6 +172,7 @@ final class AccountTests: XCTestCase {
             accountHeading.exists && signInButton.exists && signInButton.isEnabled && signInButton.isHittable
         }), "Account sign-in is ready")
         checkpoint("account-screen-ready")
+        signInGeometry("before")
         signInButton.tap()
         checkpoint("sign-in-tapped")
         if warm {

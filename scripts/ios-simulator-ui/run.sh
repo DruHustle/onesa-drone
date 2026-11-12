@@ -77,6 +77,9 @@ for _ in {1..90}; do
 done
 if [[ "$ready" != true ]]; then echo "Metro did not start." >&2; exit 1; fi
 if [[ "$mode" == auth ]]; then
+  python3 "$repo/scripts/verify_native_metro.py" "$work/metro-preflight.json"
+fi
+if [[ "$mode" == auth ]]; then
   selected=AccountTests/testPortalSignInAndSystemCallback
   export TEST_RUNNER_ONESA_FIXTURE_PASSWORD="$ONESA_FIXTURE_PASSWORD"
   export TEST_RUNNER_ONESA_FIXTURE_FACTOR="$ONESA_FIXTURE_FACTOR"

@@ -1,6 +1,7 @@
 """Reduce private XCTest output to fixed account stages and bounded source locations."""
 
 import json
+import math
 import re
 import sys
 from pathlib import Path
@@ -35,7 +36,7 @@ def summarize(text):
         r"ONESA_ACCOUNT_STATE (member|admin):(cold|warm):"
         r"(app-foreground|safari-foreground|auth-sheet-foreground|consent-continue-visible|"
         r"sign-in-enabled|sign-in-disabled|contacting-visible|service-unavailable-visible|"
-        r"session-rejected-visible|cancelled-visible|invalid-start-visible|network-failure-visible|"
+        r"session-rejected-visible|cancelled-visible|invalid-start-visible|network-failure-visible|timeout-failure-visible|tls-failure-visible|"
         r"app-webview-visible|browser-webview-visible|email-field-visible)(?=\r?$)", text, re.MULTILINE
     ):
         value = f"{role}:{state}:{flag}"
@@ -45,6 +46,27 @@ def summarize(text):
               "account_test_source_lines": lines}
     if states:
         result["observed_states"] = states
+    frames = []
+    for role, state, stage, payload in re.findall(
+        r"ONESA_ACCOUNT_BUTTON (member|admin):(cold|warm):(before|failure):(\{[^\r\n]{1,512}\})(?=\r?$)", text, re.MULTILINE
+    ):
+        try:
+            value = json.loads(payload)
+            coordinates = {"x", "y", "width", "height"}
+            booleans = {"exists", "enabled", "hittable", "centerInWindow"}
+            if (not isinstance(value, dict) or set(value) != coordinates | booleans
+                    or any(type(value[k]) not in (int, float) or not math.isfinite(value[k])
+                           or not -10000 <= value[k] <= 10000 for k in coordinates)
+                    or value["width"] < 0 or value["height"] < 0
+                    or any(type(value[k]) is not bool for k in booleans)):
+                continue
+            frame = {"scenario": f"{role}:{state}", "stage": stage, **value}
+            if frame not in frames and len(frames) < 8:
+                frames.append(frame)
+        except (ValueError, TypeError):
+            pass
+    if frames:
+        result["button_geometry"] = frames
     return result
 
 
