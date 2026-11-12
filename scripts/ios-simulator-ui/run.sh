@@ -102,14 +102,18 @@ import sys
 from pathlib import Path
 text = Path(sys.argv[1]).read_text(errors="replace")
 checkpoints = ["Portal email field", "Portal MFA challenge", "Native browser Done control",
+               "Filled Portal form is ready to submit", "Current cold fixture flow is observable",
+               "Issuer returned a credential count", "Issuer observed exactly one form submission",
+               "Issuer count matches the current form",
                "Native keyboard dismissed before form action", "Explicit remembered browser session",
                "Scoped fixture product expiry", "Expired product session requires real sign-in",
                "Active Portal browser session", "Signed-out Drone planner", "Portal login in system browser",
                "Reused active Portal session without entering credentials", "OS callback returned the requested account",
                "Expected account authority", "Keychain session survives relaunch", "Revalidated account authority",
                "Confirmed central sign-out"]
+failures = [line for line in text.splitlines() if "failed" in line and ("XCTAssert" in line or "XCTUnwrap" in line)]
 for name in checkpoints:
-    if name in text and ("failed - " + name in text or "failed: " + name in text):
+    if any(name in line for line in failures):
         print("Failed installed iOS account checkpoint:", name)
 PYCODE
     echo "Installed iOS sign-in did not pass." >&2
