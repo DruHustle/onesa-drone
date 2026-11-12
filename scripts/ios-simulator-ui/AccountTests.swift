@@ -72,11 +72,36 @@ final class AccountTests: XCTestCase {
         return false
     }
 
-    @MainActor private func allowBrowser() {
+    @MainActor private func browserConsent() -> XCUIElement? {
+        let title = NSPredicate(format: "label CONTAINS[c] %@ AND label CONTAINS[c] %@", "localhost", "sign in")
         for owner in [springboard, app] {
-            let button = owner.alerts.buttons["Continue"].firstMatch
-            if button.exists && button.isHittable { button.tap(); return }
+            let alert = owner.alerts.firstMatch
+            guard alert.exists, title.evaluate(with: alert) || alert.staticTexts.matching(title).firstMatch.exists else { continue }
+            let button = alert.buttons["Continue"].firstMatch
+            if button.exists && button.isHittable { return button }
         }
+        return nil
+    }
+
+    @MainActor private func awaitBrowser(_ ready: @escaping () -> Bool) -> Bool {
+        var consent: XCUIElement?
+        let presented = {
+            consent = self.browserConsent()
+            return consent != nil || ready()
+        }
+        // A WebKit/XCTest snapshot can finish after the deadline. Recheck the
+        // live alert once before failing. Rendering Portal gets its own wait
+        // after the OS prompt has actually been accepted.
+        guard waitFor(presented) || presented() else { return false }
+        guard let consent else { return true }
+        consent.tap()
+        checkpoint("consent-tapped")
+        if !consent.waitForNonExistence(timeout: 5), let stillPresented = browserConsent() {
+            // The first tap can coincide with presentation. Retry only the
+            // same local sign-in alert, without repeating the app's request.
+            stillPresented.tap()
+        }
+        return waitFor(ready)
     }
 
     @MainActor private func field(_ label: String, in web: XCUIElement) -> XCUIElement {
@@ -178,20 +203,15 @@ final class AccountTests: XCTestCase {
         if warm {
             let reuse = "Continue as " + address
             let returned = app.buttons["Open my field planner"]
-            let reused = waitFor {
+            let reused = awaitBrowser {
                 if returned.exists { return true }
-                allowBrowser()
-                if returned.exists { return true }
-                if let web = inSheet(reuse, browserOnly: true) { web.buttons[reuse].tap() }
+                if let web = self.inSheet(reuse, browserOnly: true) { web.buttons[reuse].tap() }
                 return returned.exists
             }
             if !reused { browserFailureState() }
             XCTAssertTrue(reused, "Reused active Portal session without entering credentials")
         } else {
-            let browserReady = waitFor {
-                allowBrowser()
-                return inSheet("Email address") != nil
-            }
+            let browserReady = awaitBrowser { self.inSheet("Email address") != nil }
             if !browserReady { browserFailureState() }
             XCTAssertTrue(browserReady, "Portal login in system browser")
             let web = try XCTUnwrap(inSheet("Email address"))

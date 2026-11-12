@@ -5,8 +5,9 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import time
 
-from scripts.android_planner_smoke import adb, find, launch, screenshot, shell, tap
+from scripts.android_planner_smoke import adb, find, screenshot, shell, tap
 from scripts.mobile_native_compile import APP_ID, require
 
 
@@ -28,6 +29,32 @@ def startup_classification(text, process_running):
             "observations": observed or ["no-recognized-signature"]}
 
 
+def reset_native_planner():
+    # The previous OS callback can leave the browser and app in the same task.
+    # End that task before removing native data, retaining the browser's cookies.
+    shell("am", "force-stop", APP_ID)
+    deadline = time.monotonic() + 10
+    while shell("pidof", APP_ID, check=False):
+        require(time.monotonic() < deadline, "Previous disposable Drone process did not stop")
+        time.sleep(0.2)
+    require(shell("pm", "clear", APP_ID) == "Success", "Could not reset disposable Drone client")
+    # FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TASK, as Android intent flags.
+    result = shell("am", "start", "-W", "-a", "android.intent.action.MAIN",
+                   "-c", "android.intent.category.LAUNCHER", "-f", "0x10008000",
+                   "-n", APP_ID + "/.MainActivity", timeout=75)
+    require("Status: ok" in result, "Android did not launch the disposable Drone planner")
+
+
+def last_exit_reason(output):
+    # Never publish the raw ActivityManager history or a post-login screenshot.
+    # A previous intentional clear is distinguishable from a crash or memory kill.
+    latest = re.search(r"\breason=\d+\s*\(([A-Z_ ]+)\)", output)
+    allowed = {"USER REQUESTED", "USER STOPPED", "CRASH", "CRASH NATIVE", "ANR",
+               "LOW MEMORY", "SIGNALED", "EXIT SELF", "PACKAGE STATE CHANGE"}
+    value = latest.group(1).replace("_", " ") if latest else ""
+    return value.lower().replace(" ", "-") if value in allowed else "unknown"
+
+
 def record_startup_failure(*, before_credentials):
     # A fresh AVD has no previous browser account at the first launch. Later
     # launches may expose account state, so only that first failure gets an image.
@@ -41,6 +68,9 @@ def record_startup_failure(*, before_credentials):
         shell("uiautomator", "dump", "/data/local/tmp/onesa-startup.xml", check=False)
         diagnostics += adb("exec-out", "cat", "/data/local/tmp/onesa-startup.xml", check=False)
         result = startup_classification(diagnostics, running)
+        if not running:
+            history = shell("dumpsys", "activity", "exit-info", APP_ID, check=False)
+            result["lastReportedExit"] = last_exit_reason(history)
     except (OSError, subprocess.SubprocessError):
         result = {"stage": "initial-native-planner", "processRunning": running,
                   "observations": ["diagnostic-unavailable"]}
@@ -79,11 +109,10 @@ def main():
         for state in ("signed-out", "active"):
             # Clear only the native app. Chrome's Portal cookies survive the
             # second launch. A warm return must complete without credentials.
-            require(shell("pm", "clear", APP_ID) == "Success", "Could not reset disposable Drone client")
-            launch()
             try:
+                reset_native_planner()
                 find("Mission planner", timeout=105)
-            except (RuntimeError, subprocess.SubprocessError):
+            except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
                 record_startup_failure(before_credentials=role == "member" and state == "signed-out")
                 raise
             tap("Onesa account")

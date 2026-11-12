@@ -79,7 +79,19 @@ jobs:
           npm --prefix frontend/drone/mobile ci --ignore-scripts --no-audit --no-fund
           .venv311/bin/python -m scripts.mobile_native_compile prepare --platform android --output "$RUNNER_TEMP/fixture-android-source"
           cd frontend/drone/mobile
+          # The fixture clears app preferences between roles. Embed its loopback-only
+          # JS in the debug source set so every cold start opens the same planner.
+          export EXPO_PUBLIC_DRONE_DEV_ORIGIN=https://127.0.0.1:54844
+          fixture_assets=android/app/src/debug/assets
+          fixture_res=android/app/src/debug/res
+          mkdir -p "$fixture_assets" "$fixture_res"
+          CI=1 EXPO_NO_TELEMETRY=1 EXPO_OFFLINE=1 node node_modules/expo/bin/cli export:embed \
+            --entry-file node_modules/expo/AppEntry.js --platform android --dev true --minify false \
+            --bundle-output "$fixture_assets/index.android.bundle" --assets-dest "$fixture_res"
+          grep -Fq "$EXPO_PUBLIC_DRONE_DEV_ORIGIN" "$fixture_assets/index.android.bundle"
           ./android/gradlew -p android :app:assembleDebug -PreactNativeArchitectures=x86_64 --no-daemon --console=plain
+          unzip -p android/app/build/outputs/apk/debug/app-debug.apk assets/index.android.bundle \
+            | cmp - "$fixture_assets/index.android.bundle"
       - name: Exercise native Android login with the actual Portal and Drone
         if: matrix.journey == 'android-system-browser'
         working-directory: drone
