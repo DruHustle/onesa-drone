@@ -20,6 +20,7 @@ from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives.asymmetric import rsa
 from loopback_tls import loopback_certificates
 from expire_native_session import verify_native_audit
+from native_start_diagnostics import read_start_diagnostics
 
 scripts = Path(__file__).resolve().parent
 parser = argparse.ArgumentParser(
@@ -344,6 +345,7 @@ with contextlib.ExitStack() as resources:
         {
             "STATIC": str(drone / "frontend/dist"),
             "ONESA_NATIVE_AUDIT_PATH": str(temp / "native-route-audit.json") if args.native_ui else "",
+            "ONESA_NATIVE_START_DIAGNOSTICS_PATH": str(temp / "native-start-diagnostics.json") if args.native_ui else "",
             "ONESA_NATIVE_CONTROL_KEY": native_control_key if args.native_ui == "ios" else "",
             "FIXTURE_PYTHON": sys.executable,
             "FIXTURE_EXPIRY_SCRIPT": str(scripts / "expire_native_session.py"),
@@ -380,6 +382,8 @@ with contextlib.ExitStack() as resources:
         audit_path = temp / "native-route-audit.json"
         audit = json.loads(audit_path.read_text()) if audit_path.is_file() else {}
         print("ONESA_NATIVE_ROUTE_AUDIT " + json.dumps(audit), flush=True)
+        print("ONESA_NATIVE_START_DIAGNOSTICS " + json.dumps(
+            read_start_diagnostics(temp / "native-start-diagnostics.json")), flush=True)
         if result.returncode == 0 and args.native_ui == "ios":
             try:
                 verify_native_audit(audit)

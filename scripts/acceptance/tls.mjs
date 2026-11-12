@@ -21,6 +21,23 @@ let fixtureExpirations = 0;
 let expiredAccountResponses = 0;
 let verifiedWarmSubjects = 0;
 let warmSubjectVerificationFailed = false;
+// Separate transport observations from the successful authorization audit.
+// No URL, request body, header, identity or upstream error is retained.
+const nativeStartDiagnostics = {
+  version: 1, attempts: 0, responses200: 0, responsesOther2xx: 0,
+  responses3xx: 0, responses4xx: 0, responses5xx: 0,
+  responsesOther: 0, proxyErrors: 0,
+};
+function saveNativeStartDiagnostics() {
+  if (!process.env.ONESA_NATIVE_START_DIAGNOSTICS_PATH) return;
+  writeFileSync(process.env.ONESA_NATIVE_START_DIAGNOSTICS_PATH,
+    JSON.stringify(nativeStartDiagnostics), { mode: 0o600 });
+}
+function recordNativeStart(key) {
+  nativeStartDiagnostics[key] = Math.min(999, nativeStartDiagnostics[key] + 1);
+  saveNativeStartDiagnostics();
+}
+saveNativeStartDiagnostics();
 function saveNativeAudit() {
   if (process.env.ONESA_NATIVE_AUDIT_PATH)
     writeFileSync(
@@ -56,6 +73,9 @@ for (const [port, target] of [
   https
     .createServer(tls, async (req, res) => {
       const url = new URL(req.url, "https://localhost");
+      const nativeStart = port === 54844 && req.method === "POST" &&
+        url.pathname === "/api/v1/auth/mobile/start";
+      if (nativeStart) recordNativeStart("attempts");
       if (
         port === 54844 &&
         url.pathname === "/__onesa_fixture/expire-product-session"
@@ -185,6 +205,14 @@ for (const [port, target] of [
           },
         },
         (remote) => {
+          if (nativeStart) {
+            const status = remote.statusCode;
+            recordNativeStart(status === 200 ? "responses200" :
+              status >= 200 && status < 300 ? "responsesOther2xx" :
+              status >= 300 && status < 400 ? "responses3xx" :
+              status >= 400 && status < 500 ? "responses4xx" :
+              status >= 500 && status < 600 ? "responses5xx" : "responsesOther");
+          }
           if (
             port === 54844 &&
             req.method === "POST" &&
@@ -236,6 +264,7 @@ for (const [port, target] of [
         },
       );
       proxy.on("error", () => {
+        if (nativeStart) recordNativeStart("proxyErrors");
         if (!res.headersSent) res.writeHead(502);
         res.end();
       });

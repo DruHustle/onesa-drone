@@ -11,6 +11,35 @@ final class AccountTests: XCTestCase {
         print("ONESA_ACCOUNT_CHECKPOINT \(scenario):\(phase)")
     }
 
+    @MainActor private func browserFailureState() {
+        // Only fixed state names leave the private XCTest log. Never print an
+        // element label/value, URL, hierarchy, error description or screenshot.
+        func observed(_ name: String, _ present: Bool) {
+            if present { print("ONESA_ACCOUNT_STATE \(scenario):\(name)") }
+        }
+        observed("app-foreground", app.state == .runningForeground)
+        observed("safari-foreground", safari.state == .runningForeground)
+        observed("auth-sheet-foreground", authSheet.state == .runningForeground)
+        observed("consent-continue-visible", [springboard, app].contains {
+            let button = $0.alerts.buttons["Continue"].firstMatch
+            return button.exists && button.isHittable
+        })
+        let signIn = app.buttons["Sign in with Onesa"]
+        observed("sign-in-enabled", signIn.exists && signIn.isEnabled)
+        observed("sign-in-disabled", signIn.exists && !signIn.isEnabled)
+        observed("contacting-visible", app.staticTexts["Contacting Onesa…"].exists)
+        observed("service-unavailable-visible", app.staticTexts["Drone account service is unavailable. Try again when connected."].exists)
+        observed("session-rejected-visible", app.staticTexts["Your Onesa session or workspace access has changed. Sign in again."].exists)
+        observed("cancelled-visible", app.staticTexts["Sign-in was cancelled. You can start again."].exists)
+        observed("invalid-start-visible", app.staticTexts["Invalid sign-in response."].exists)
+        observed("network-failure-visible", app.staticTexts["Network request failed"].exists)
+        observed("app-webview-visible", app.state == .runningForeground && app.webViews.firstMatch.exists)
+        observed("browser-webview-visible", [authSheet, safari].contains {
+            $0.state == .runningForeground && $0.webViews.firstMatch.exists
+        })
+        observed("email-field-visible", inSheet("Email address") != nil)
+    }
+
     @MainActor private func waitFor(_ check: () -> Bool, seconds: TimeInterval = 45) -> Bool {
         let deadline = Date().addingTimeInterval(seconds)
         repeat {
@@ -121,6 +150,7 @@ final class AccountTests: XCTestCase {
         }), "Account sign-in is ready")
         checkpoint("account-screen-ready")
         signInButton.tap()
+        checkpoint("sign-in-tapped")
         if warm {
             let reuse = "Continue as " + address
             let returned = app.buttons["Open my field planner"]
@@ -131,12 +161,15 @@ final class AccountTests: XCTestCase {
                 if let web = inSheet(reuse, browserOnly: true) { web.buttons[reuse].tap() }
                 return returned.exists
             }
+            if !reused { browserFailureState() }
             XCTAssertTrue(reused, "Reused active Portal session without entering credentials")
         } else {
-            XCTAssertTrue(waitFor {
+            let browserReady = waitFor {
                 allowBrowser()
                 return inSheet("Email address") != nil
-            }, "Portal login in system browser")
+            }
+            if !browserReady { browserFailureState() }
+            XCTAssertTrue(browserReady, "Portal login in system browser")
             let web = try XCTUnwrap(inSheet("Email address"))
             checkpoint("browser-ready")
             try login(role, in: web, factor: factor, remember: true)
