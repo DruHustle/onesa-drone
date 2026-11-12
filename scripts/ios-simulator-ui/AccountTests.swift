@@ -327,10 +327,24 @@ final class AccountTests: XCTestCase {
         checkpoint("identity-returned")
         let assigned = role == "admin" ? "Portal administrator" : "Fixture workspace · operator"
         XCTAssertTrue(app.staticTexts[assigned].exists, "Expected account authority")
+        // Establish the private planner and its identity before destroying the process.
+        // The profile header can render while the native callback sheet is still dismissing.
+        let openPlanner = app.buttons["Open my field planner"]
+        let privatePlanner = app.buttons[address]
+        let canOpenPlanner = waitFor({ openPlanner.exists && openPlanner.isEnabled && openPlanner.isHittable })
+        if !canOpenPlanner { browserFailureState() }
+        try XCTUnwrap(canOpenPlanner ? openPlanner : nil, "Authenticated planner is ready to open").tap()
+        let enteredPlanner = waitFor({ app.state == .runningForeground && privatePlanner.exists && privatePlanner.isHittable })
+        if !enteredPlanner { browserFailureState() }
+        _ = try XCTUnwrap(enteredPlanner ? privatePlanner : nil, "Original account opens its private planner")
+        checkpoint("private-planner-open")
         app.terminate()
+        _ = try XCTUnwrap(app.wait(for: .notRunning, timeout: 15) ? true : nil, "Original planner process stopped")
         app.launch()
         let restored = app.buttons[address]
-        let restoredAccount = try XCTUnwrap(restored.waitForExistence(timeout: 75) ? restored : nil,
+        let restoredPlanner = restored.waitForExistence(timeout: 75)
+        if !restoredPlanner { browserFailureState() }
+        let restoredAccount = try XCTUnwrap(restoredPlanner ? restored : nil,
                                            "Keychain session survives relaunch")
         checkpoint("keychain-restored")
         restoredAccount.tap()
