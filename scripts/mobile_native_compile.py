@@ -21,8 +21,8 @@ from scripts.ci_manifests import source_binding
 
 ROOT = Path(__file__).resolve().parents[1]
 MOBILE_PATH = Path("frontend/drone/mobile")
-EXPO_VERSION = "58.0.24"
-TEMPLATE_SHA256 = "2f2a42ae5c987161390221d8071a218bd85652284d06207c4a227ffb867b63a5"
+EXPO_VERSION = "58.0.25"
+TEMPLATE_SHA256 = "620af187939324352a6cebd9d5db300613c8426d6e5d9b52afb308f2b070ef7f"
 GRADLE_VERSION = "9.4.1"
 GRADLE_NETWORK_TIMEOUT_MS = 60000
 # https://services.gradle.org/distributions/gradle-9.4.1-bin.zip.sha256
