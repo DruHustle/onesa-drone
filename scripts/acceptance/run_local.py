@@ -11,11 +11,15 @@ import uuid
 import secrets
 import signal
 import tempfile
+import ssl
+import urllib.error
+import urllib.request
 from pathlib import Path
 import psycopg
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives.asymmetric import rsa
 from loopback_tls import loopback_certificates
+from expire_native_session import verify_native_audit
 
 scripts = Path(__file__).resolve().parent
 parser = argparse.ArgumentParser(
@@ -76,6 +80,28 @@ def execute(args, cwd, extra=None):
         result = subprocess.run(args, cwd=cwd, env=env | dict(extra or {}), stdout=log, stderr=log)
     if result.returncode:
         raise RuntimeError(f"Local setup failed in {Path(args[0]).name} (exit {result.returncode})")
+
+
+def verify_fixture_control_denials(origin, key, ca, *, exhausted=False):
+    context = ssl.create_default_context(cafile=str(ca))
+    headers = {"x-onesa-fixture-control": key, "x-onesa-fixture-role": "member"}
+    attempts = [("POST", {"x-onesa-fixture-control": key}, None)] if exhausted else [
+        ("POST", {}, None),
+        ("GET", headers, None),
+        ("POST", headers | {"x-onesa-fixture-role": "admin"}, None),
+        ("POST", headers, b"{}"),
+    ]
+    for method, request_headers, data in attempts:
+        request = urllib.request.Request(origin + "/__onesa_fixture/expire-product-session", method=method,
+                                         headers=request_headers, data=data)
+        try:
+            with urllib.request.urlopen(request, context=context, timeout=5) as response:
+                status = response.status
+        except urllib.error.HTTPError as error:
+            status = error.code
+        if status != 404:
+            raise RuntimeError("Native fixture control scope guard failed")
+    print("PASS native fixture control " + ("refuses third expiry" if exhausted else "rejects missing key, wrong role, GET and bodies"), flush=True)
 
 
 def up(resources, label, args, cwd, extra=None):
@@ -213,6 +239,7 @@ with contextlib.ExitStack() as resources:
     tenant = str(uuid.uuid4())
     other = str(uuid.uuid4())
     password = random_secret()
+    native_control_key = random_secret()
     portal_env = {
         "DATABASE_URL": f"postgresql://fixture:{db_password}@127.0.0.1:56882/portal_test",
         "SESSION_KEY": session,
@@ -316,6 +343,15 @@ with contextlib.ExitStack() as resources:
         temp,
         {
             "STATIC": str(drone / "frontend/dist"),
+            "ONESA_NATIVE_AUDIT_PATH": str(temp / "native-route-audit.json") if args.native_ui else "",
+            "ONESA_NATIVE_CONTROL_KEY": native_control_key if args.native_ui == "ios" else "",
+            "FIXTURE_PYTHON": sys.executable,
+            "FIXTURE_EXPIRY_SCRIPT": str(scripts / "expire_native_session.py"),
+            "DRONE_FIXTURE_DATABASE_URL": f"postgresql://fixture:{db_password}@127.0.0.1:56882/drone_test",
+            "PORTAL_FIXTURE_DATABASE_URL": portal_env["DATABASE_URL"],
+            "FIXTURE_MEMBER_ID": member,
+            "FIXTURE_ADMIN_ID": admin,
+            "FIXTURE_EXPECTED_ISSUER": cfg["issuer"],
             "PROXY_SHARED_KEY": proxy,
             "PUBLIC_ORIGIN": portal_origin,
             "BACKEND_URL": "http://127.0.0.1:58300",
@@ -334,10 +370,22 @@ with contextlib.ExitStack() as resources:
             "FIXTURE_CA": str(ca),
             "EXPO_PUBLIC_DRONE_DEV_ORIGIN": drone_origin,
             "ONESA_FIXTURE_PASSWORD": password,
+            "ONESA_FIXTURE_CONTROL": native_control_key,
             "ONESA_FIXTURE_FACTOR": fixture["codes"][0],
             "ONESA_FIXTURE_SECOND_FACTOR": fixture["codes"][1],
         }
+        if args.native_ui == "ios":
+            verify_fixture_control_denials(drone_origin, native_control_key, ca)
         result = subprocess.run([drone / "scripts" / device / "run.sh", "auth"], cwd=drone, env=native_env)
+        audit_path = temp / "native-route-audit.json"
+        audit = json.loads(audit_path.read_text()) if audit_path.is_file() else {}
+        print("ONESA_NATIVE_ROUTE_AUDIT " + json.dumps(audit), flush=True)
+        if result.returncode == 0 and args.native_ui == "ios":
+            try:
+                verify_native_audit(audit)
+                verify_fixture_control_denials(drone_origin, native_control_key, ca, exhausted=True)
+            except ValueError:
+                sys.exit("Native acceptance requires four real starts, credential-free warm flows, scoped expiry and stable subjects.")
         sys.exit(result.returncode)
     if not args.protocol_only:
         browser_fixture = fixture | {"codes": fixture["codes"][4:]}

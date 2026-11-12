@@ -77,11 +77,11 @@ final class PlannerTests: XCTestCase {
         XCTAssertEqual(name.value as? String, "Example security perimeter")
 
         openTab("Aircraft")
-        reveal(app.staticTexts["Disconnected"])
+        reveal(app.staticTexts["Disconnected"].firstMatch)
         XCTAssertTrue(app.staticTexts["Waypoint dispatch"].exists)
         XCTAssertTrue(app.staticTexts["Disabled"].firstMatch.exists)
         openTab("Video")
-        reveal(app.staticTexts["No live feed"])
+        reveal(app.staticTexts["No live feed"].firstMatch)
         try capture("locked-video.png")
     }
 }

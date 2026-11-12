@@ -3,12 +3,52 @@ import { createRequire } from "node:module";
 const portalProxy = createRequire(import.meta.url)(resolve("portal-proxy.cjs"));
 import { Readable } from "node:stream";
 import http from "node:http";
-import { readFileSync, createReadStream, statSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import {
+  readFileSync,
+  createReadStream,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { resolve, extname, sep } from "node:path";
 const tls = {
   key: readFileSync("fixture.key"),
   cert: readFileSync("fixture.crt"),
 };
+const nativeFlows = [];
+let unexpectedCredentialRoute = false;
+let fixtureExpirations = 0;
+let expiredAccountResponses = 0;
+let verifiedWarmSubjects = 0;
+let warmSubjectVerificationFailed = false;
+function saveNativeAudit() {
+  if (process.env.ONESA_NATIVE_AUDIT_PATH)
+    writeFileSync(
+      process.env.ONESA_NATIVE_AUDIT_PATH,
+      JSON.stringify({
+        flows: nativeFlows,
+        unexpectedCredentialRoute,
+        fixtureExpirations,
+        expiredAccountResponses,
+        verifiedWarmSubjects,
+        warmSubjectVerificationFailed,
+      }),
+      { mode: 0o600 },
+    );
+}
+function recordNativeCredentialRoute(req, url) {
+  if (!process.env.ONESA_NATIVE_AUDIT_PATH || req.method !== "POST") return;
+  const match =
+    /^\/api\/v1\/account\/interaction\/[A-Za-z0-9_-]+\/(login|continue)$/.exec(
+      url.pathname,
+    );
+  if (!match) return;
+  const entry = nativeFlows.at(-1);
+  if (entry)
+    entry[match[1] === "login" ? "credentialPosts" : "continuePosts"]++;
+  else unexpectedCredentialRoute = true;
+  saveNativeAudit();
+}
 for (const [port, target] of [
   [54843, 58300],
   [54844, 58400],
@@ -16,6 +56,45 @@ for (const [port, target] of [
   https
     .createServer(tls, async (req, res) => {
       const url = new URL(req.url, "https://localhost");
+      if (
+        port === 54844 &&
+        url.pathname === "/__onesa_fixture/expire-product-session"
+      ) {
+        const key = process.env.ONESA_NATIVE_CONTROL_KEY;
+        const role = req.headers["x-onesa-fixture-role"];
+        if (
+          !key ||
+          fixtureExpirations >= 2 ||
+          req.method !== "POST" ||
+          req.headers["x-onesa-fixture-control"] !== key ||
+          role !== ["member", "admin"][fixtureExpirations] ||
+          Number(req.headers["content-length"] || 0) !== 0 ||
+          req.headers["transfer-encoding"]
+        ) {
+          res.writeHead(404).end();
+          return;
+        }
+        const expiry = spawnSync(
+          process.env.FIXTURE_PYTHON,
+          [process.env.FIXTURE_EXPIRY_SCRIPT, role, "expire"],
+          {
+            env: process.env,
+            encoding: "utf8",
+            timeout: 10000,
+            maxBuffer: 4096,
+          },
+        );
+        if (expiry.status !== 0) {
+          res.writeHead(409).end('{"error":"fixture-session-expiry-refused"}');
+          return;
+        }
+        fixtureExpirations++;
+        saveNativeAudit();
+        res.setHeader("content-type", "application/json");
+        res.writeHead(200).end(expiry.stdout);
+        return;
+      }
+      if (port === 54843) recordNativeCredentialRoute(req, url);
       if (port === 54843 && !url.pathname.startsWith("/api/")) {
         if (
           url.pathname === "/assets/account.js" ||
@@ -31,7 +110,7 @@ for (const [port, target] of [
         }
         res.setHeader("Content-Type", "text/html");
         res.end(
-          '<!doctype html><html lang="en"><head><meta charset="utf-8"><link rel="stylesheet" href="/assets/account.css"></head><body><main id="root"></main><script src="/assets/account.js"></script></body></html>',
+          '<!doctype html><html lang="en" data-onesa-product="company"><head><meta charset="utf-8"><meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/assets/account.css"></head><body><main id="root"></main><script src="/assets/account.js"></script></body></html>',
         );
         return;
       }
@@ -106,6 +185,51 @@ for (const [port, target] of [
           },
         },
         (remote) => {
+          if (
+            port === 54844 &&
+            req.method === "POST" &&
+            url.pathname === "/api/v1/auth/mobile/start" &&
+            remote.statusCode === 200 &&
+            process.env.ONESA_NATIVE_AUDIT_PATH
+          ) {
+            nativeFlows.push({ credentialPosts: 0, continuePosts: 0 });
+            saveNativeAudit();
+          }
+          if (
+            port === 54844 &&
+            req.method === "POST" &&
+            url.pathname === "/api/v1/auth/mobile/exchange" &&
+            remote.statusCode === 200 &&
+            fixtureExpirations > verifiedWarmSubjects
+          ) {
+            const verified = spawnSync(
+              process.env.FIXTURE_PYTHON,
+              [
+                process.env.FIXTURE_EXPIRY_SCRIPT,
+                ["member", "admin"][fixtureExpirations - 1],
+                "verify",
+              ],
+              {
+                env: process.env,
+                encoding: "utf8",
+                timeout: 10000,
+                maxBuffer: 4096,
+              },
+            );
+            if (verified.status === 0) verifiedWarmSubjects++;
+            else warmSubjectVerificationFailed = true;
+            saveNativeAudit();
+          }
+          if (
+            port === 54844 &&
+            req.method === "GET" &&
+            url.pathname === "/api/v1/auth/mobile/account" &&
+            remote.statusCode === 401 &&
+            fixtureExpirations > 0
+          ) {
+            expiredAccountResponses++;
+            saveNativeAudit();
+          }
           res.writeHead(remote.statusCode, remote.headers);
           remote.pipe(res);
           res.on("close", () => remote.destroy());

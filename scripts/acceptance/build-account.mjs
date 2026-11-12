@@ -9,6 +9,7 @@ await build({
   stdin: {
     contents: `
       import {createRoot} from 'react-dom/client';
+      import './src/styles/globals.css';
       import {OnesaAccount} from './src/features/account/account';
       import {AccountDeletion} from './src/features/account/deletion';
       const view = location.pathname === '/account/delete'
@@ -26,6 +27,7 @@ await build({
   bundle: true,
   minify: true,
   platform: "browser",
+  conditions: ["style"],
   define: { "process.env.NODE_ENV": '"production"' },
 });
 await build({

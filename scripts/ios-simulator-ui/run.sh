@@ -13,7 +13,7 @@ case "${1:-}" in
     ;;
   test) mode=planner ;;
   auth) mode=auth
-    : "${FIXTURE_CA:?Run the paired acceptance harness}" "${ONESA_FIXTURE_PASSWORD:?}" "${ONESA_FIXTURE_FACTOR:?}" "${ONESA_FIXTURE_SECOND_FACTOR:?}"
+    : "${FIXTURE_CA:?Run the paired acceptance harness}" "${ONESA_FIXTURE_PASSWORD:?}" "${ONESA_FIXTURE_FACTOR:?}" "${ONESA_FIXTURE_CONTROL:?}"
     [[ "$EXPO_PUBLIC_DRONE_DEV_ORIGIN" == "https://127.0.0.1:54844" ]]
     ;;
   *) echo "Usage: $0 prepare|test|auth" >&2; exit 2 ;;
@@ -80,7 +80,7 @@ if [[ "$mode" == auth ]]; then
   selected=AccountTests/testPortalSignInAndSystemCallback
   export TEST_RUNNER_ONESA_FIXTURE_PASSWORD="$ONESA_FIXTURE_PASSWORD"
   export TEST_RUNNER_ONESA_FIXTURE_FACTOR="$ONESA_FIXTURE_FACTOR"
-  export TEST_RUNNER_ONESA_FIXTURE_SECOND_FACTOR="$ONESA_FIXTURE_SECOND_FACTOR"
+  export TEST_RUNNER_ONESA_FIXTURE_CONTROL="$ONESA_FIXTURE_CONTROL"
 else
   selected=PlannerTests/testOfflineDraftSurvivesRelaunchAndHardwareStaysLocked
   if [[ -n "${IOS_UI_SCREENSHOTS:-}" ]]; then export TEST_RUNNER_ONESA_PLANNER_IMAGES=1; fi
@@ -98,7 +98,9 @@ if [[ "$mode" == auth ]]; then
 import sys
 from pathlib import Path
 text = Path(sys.argv[1]).read_text(errors="replace")
-checkpoints = ["Standalone Portal browser", "Portal email field", "Portal MFA challenge",
+checkpoints = ["Portal email field", "Portal MFA challenge", "Native browser Done control",
+               "Native keyboard dismissed before form action", "Explicit remembered browser session",
+               "Scoped fixture product expiry", "Expired product session requires real sign-in",
                "Active Portal browser session", "Signed-out Drone planner", "Portal login in system browser",
                "Reused active Portal session without entering credentials", "OS callback returned the requested account",
                "Expected account authority", "Keychain session survives relaunch", "Revalidated account authority",

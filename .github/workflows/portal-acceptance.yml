@@ -36,7 +36,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: DruHustle/onesa-company-portal
-          ref: cb9d84f4a4ef2489e9ca76eb9a7c7b4a69092b5a
+          ref: 464661b2501554dad31697b0ac581dbdd6989917
           path: portal
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
@@ -109,7 +109,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: DruHustle/onesa-company-portal
-          ref: cb9d84f4a4ef2489e9ca76eb9a7c7b4a69092b5a
+          ref: 464661b2501554dad31697b0ac581dbdd6989917
           path: portal
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
