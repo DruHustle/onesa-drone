@@ -300,7 +300,15 @@ final class AccountTests: XCTestCase {
         }), "Account sign-in is ready")
         checkpoint("account-screen-ready")
         signInGeometry("before")
-        signInButton.tap()
+        // A synthesized accessibility activation left this React Native control
+        // enabled on screen with zero starts at the fixture. Deliver one native
+        // touch inside the visible button, as a person would.
+        let visibleButton = signInButton.frame.intersection(app.frame)
+        _ = try XCTUnwrap(!visibleButton.isEmpty && !visibleButton.isNull ? true : nil,
+                          "Sign-in button has a visible touch target")
+        let center = CGVector(dx: visibleButton.midX - app.frame.minX,
+                              dy: visibleButton.midY - app.frame.minY)
+        app.coordinate(withNormalizedOffset: .zero).withOffset(center).tap()
         checkpoint("sign-in-tapped")
         if warm {
             let reuse = "Continue as " + address
