@@ -102,6 +102,7 @@ import sys
 from pathlib import Path
 text = Path(sys.argv[1]).read_text(errors="replace")
 checkpoints = ["Portal email field", "Portal MFA challenge", "Native browser Done control",
+               "Browser input is editable", "Browser keyboard is ready for input", "Named browser input received the fixture value",
                "Filled Portal form is ready to submit", "Current cold fixture flow is observable",
                "Issuer returned a credential count", "Issuer observed exactly one form submission",
                "Issuer count matches the current form",

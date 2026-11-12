@@ -110,6 +110,51 @@ final class AccountTests: XCTestCase {
         return named.exists ? named : fields.matching(NSPredicate(format: "label CONTAINS[c] %@", label)).firstMatch
     }
 
+    @MainActor private func enter(_ value: String, into label: String, in web: XCUIElement) throws {
+        var acceptedTutorial = false
+        @MainActor func keyboardReady() -> Bool {
+            let owners = [authSheet, safari, app, springboard].filter { $0.state == .runningForeground }
+            for surface in owners {
+                let tutorial = surface.descendants(matching: .any)["UIContinuousPathIntroductionView"].firstMatch
+                guard tutorial.exists else { continue }
+                let explanation = surface.staticTexts["Speed up your typing by sliding your finger across the letters to compose a word."].firstMatch
+                if !acceptedTutorial && explanation.exists {
+                    let buttons = surface.buttons.matching(NSPredicate(format: "label == %@", "Continue")).allElementsBoundByIndex
+                    if let button = buttons.first(where: { $0.isHittable && $0.frame.minY >= explanation.frame.maxY &&
+                        tutorial.frame.intersects($0.frame) }) {
+                        button.tap()
+                        acceptedTutorial = true
+                    }
+                }
+                return false
+            }
+            return owners.contains { $0.keyboards.firstMatch.exists }
+        }
+        let input = field(label, in: web)
+        let editable = waitFor({ input.exists && input.isEnabled && input.isHittable }, seconds: 15)
+        try XCTUnwrap(editable ? input : nil, "Browser input is editable").tap()
+        if !waitFor(keyboardReady, seconds: 6), input.exists && input.isEnabled && input.isHittable {
+            // A newly presented WebKit field can appear before its first tap
+            // gives the software keyboard focus. This repeat only focuses it.
+            let visible = web.frame.intersection(input.frame)
+            if !visible.isEmpty {
+                let offset = CGVector(dx: visible.midX - web.frame.minX, dy: visible.midY - web.frame.minY)
+                web.coordinate(withNormalizedOffset: .zero).withOffset(offset).tap()
+            }
+        }
+        let ready = waitFor(keyboardReady, seconds: 10)
+        if !ready { browserFailureState() }
+        // A focused descendant receives real OS typing. Verify privately that
+        // the intended field received it before entering another value.
+        try XCTUnwrap(ready ? web : nil, "Browser keyboard is ready for input").typeText(value)
+        let received = waitFor({
+            let current = self.field(label, in: web)
+            guard let actual = current.value as? String else { return false }
+            return label == "Password" ? !actual.isEmpty && actual != current.placeholderValue : actual == value
+        }, seconds: 5)
+        _ = try XCTUnwrap(received ? true : nil, "Named browser input received the fixture value")
+    }
+
     @MainActor private func dismissNativeKeyboard() throws {
         var doneTyping: XCUIElement?
         XCTAssertTrue(waitFor({
@@ -143,13 +188,11 @@ final class AccountTests: XCTestCase {
     @MainActor private func login(_ role: String, in web: XCUIElement, factor: String, remember: Bool = false) async throws {
         let email = field("Email address", in: web)
         XCTAssertTrue(email.waitForExistence(timeout: 20), "Portal email field")
-        email.tap()
         let address = role + "@example.test"
-        email.typeText(address)
+        try enter(address, into: "Email address", in: web)
         let password = field("Password", in: web)
         try dismissNativeKeyboard()
-        password.tap()
-        password.typeText(try XCTUnwrap(ProcessInfo.processInfo.environment["ONESA_FIXTURE_PASSWORD"]))
+        try enter(XCTUnwrap(ProcessInfo.processInfo.environment["ONESA_FIXTURE_PASSWORD"]), into: "Password", in: web)
         try dismissNativeKeyboard()
         checkpoint("credentials-filled")
         if remember {
@@ -211,8 +254,7 @@ final class AccountTests: XCTestCase {
             checkpoint("mfa-visible")
         }
         if role == "admin" {
-            code.tap()
-            code.typeText(factor)
+            try enter(factor, into: "Authenticator or recovery code", in: web)
             try dismissNativeKeyboard()
         }
         try await submitForm(requireFactor: role == "admin")
