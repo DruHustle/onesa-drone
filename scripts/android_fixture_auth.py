@@ -55,11 +55,27 @@ def record_startup_failure(*, before_credentials):
             print("Pre-account screenshot unavailable.", flush=True)
 
 
+def portal_observations(output):
+    allowed = {"cdp-connected", "cdp-disconnected", "portal-sign-in", "portal-other-page",
+               "browser-error-page", "native-callback", "other-page"}
+    try:
+        observed = json.loads(output[:4096])
+        if isinstance(observed, list):
+            return sorted({value for value in observed if isinstance(value, str) and value in allowed})
+    except (ValueError, UnicodeError):
+        pass
+    return ["diagnostic-unavailable"]
+
+
 def main():
     require(os.environ.get("EXPO_PUBLIC_DRONE_DEV_ORIGIN") == "https://127.0.0.1:54844"
             and adb("emu", "avd", "name").splitlines()[0] == "OnesaIdentityFixture"
             and shell("getprop", "ro.build.version.sdk") == "33", "Expected the disposable identity fixture")
     for role, label in (("member", "Fixture workspace · operator"), ("admin", "Portal administrator")):
+        # Each role's first case is cold. The preceding role's confirmed central
+        # logout is asserted below before this next-role browser reset.
+        require(shell("pm", "clear", "com.android.chrome") == "Success",
+                "Could not reset the disposable role's Chrome data")
         for state in ("signed-out", "active"):
             # Clear only the native app. Chrome's Portal cookies survive the
             # second launch. A warm return must complete without credentials.
@@ -75,8 +91,10 @@ def main():
             helper = Path(__file__).parent / "android-emulator-ui" / "portal.cjs"
             child = subprocess.run(["node", str(helper), role, state], capture_output=True, timeout=125)
             if child.returncode != 0:
+                print("Portal browser checkpoints: " + ", ".join(portal_observations(child.stdout)), flush=True)
                 sys.exit(f"Android Chrome Portal form failed for {role} / {state} (stage {child.returncode})")
             find(label, timeout=85)
+            find(f"Synthetic {role} · {role}@example.test")
             find("Open my field planner")
             print(f"PASS Android 13 Chrome Custom Tab / {role} / {state} / native role")
         tap("Sign out of Onesa")

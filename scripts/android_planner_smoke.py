@@ -125,6 +125,9 @@ def configure_offline():
     shell("settings", "put", "global", "airplane_mode_toggleable_radios", "''")
     shell("svc", "wifi", "disable")
     shell("svc", "data", "disable")
+    # The fresh image can retain the global preference when no default SIM
+    # accepts svc's subscription-scoped request. Set both during fixture setup.
+    shell("settings", "put", "global", "mobile_data", "0")
     shell("cmd", "connectivity", "airplane-mode", "enable")
     return verify_offline()
 

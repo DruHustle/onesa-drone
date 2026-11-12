@@ -2,7 +2,7 @@
 import json
 import unittest
 
-from scripts.android_fixture_auth import startup_classification
+from scripts.android_fixture_auth import portal_observations, startup_classification
 
 
 class StartupDiagnosticsTests(unittest.TestCase):
@@ -25,6 +25,12 @@ class StartupDiagnosticsTests(unittest.TestCase):
     def test_unknown_failure_is_explicit_without_fabricating_cause(self):
         self.assertEqual(startup_classification("unrecognized state", True)["observations"],
                          ["no-recognized-signature"])
+
+    def test_portal_checkpoint_output_cannot_publish_urls_or_account_values(self):
+        output = json.dumps(["cdp-connected", "https://localhost/callback?code=private", "secret", 3])
+        self.assertEqual(portal_observations(output), ["cdp-connected"])
+        self.assertEqual(portal_observations(b"untrusted exception containing private values"),
+                         ["diagnostic-unavailable"])
 
 
 if __name__ == "__main__":

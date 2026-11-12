@@ -4,6 +4,7 @@ const { chromium } = require("../../frontend/node_modules/@playwright/test");
 const [role, state] = process.argv.slice(2);
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 let stage = 1;
+const observations = new Set();
 async function verify() {
   if (!["member", "admin"].includes(role) || !["active", "signed-out"].includes(state)) throw Error();
   const origin = "https://localhost:54843";
@@ -13,11 +14,23 @@ async function verify() {
   let browser, page;
   while (Date.now() < available && !page) {
     try {
+      if (browser && !browser.isConnected()) {
+        observations.add("cdp-disconnected");
+        browser = undefined;
+      }
       browser ||= await chromium.connectOverCDP("http://127.0.0.1:" + port, { timeout: 3500 });
-      page = browser.contexts().flatMap((c) => c.pages()).find((p) => {
-        const url = new URL(p.url());
-        return url.origin === origin && url.pathname.startsWith("/account/sign-in/");
-      });
+      observations.add("cdp-connected");
+      const pages = browser.contexts().flatMap((c) => c.pages()).filter((p) => !p.isClosed());
+      for (const candidate of pages.slice().reverse()) {
+        let url;
+        try { url = new URL(candidate.url()); } catch { observations.add("other-page"); continue; }
+        if (url.origin === origin && url.pathname.startsWith("/account/sign-in/")) {
+          observations.add("portal-sign-in"); page = candidate; break;
+        }
+        observations.add(url.origin === origin ? "portal-other-page" :
+          url.protocol === "chrome-error:" ? "browser-error-page" :
+          url.protocol === "onesadrone:" ? "native-callback" : "other-page");
+      }
     } catch { browser = undefined; }
     if (!page) await pause(400);
   }
@@ -55,4 +68,7 @@ async function verify() {
   if (!result.ok()) throw Error();
 }
 // No raw CDP URL, account value, credential, callback or browser diagnostic is emitted.
-verify().then(() => process.exit(0), () => process.exit(stage));
+verify().then(() => process.exit(0), () => {
+  console.log(JSON.stringify([...observations]));
+  process.exit(stage);
+});

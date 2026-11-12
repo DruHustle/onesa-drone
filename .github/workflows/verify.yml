@@ -249,6 +249,14 @@ jobs:
         env:
           IOS_UI_SCREENSHOTS: ${{ runner.temp }}/store-screenshots
         run: scripts/ios-simulator-ui/run.sh test
+      - name: Retain only the signed-out planner failure image
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: ios-simulator-planner-failure
+          path: ${{ runner.temp }}/store-screenshots/planner-failure.png
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Retain the two signed-out simulator listing candidates
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:

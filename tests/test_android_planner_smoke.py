@@ -51,6 +51,10 @@ class OfflineGateTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '"wifi": "2"'):
             self.run_gate([{**OFFLINE, "wifi": "2"}], timeout=0, stable_for=0)
 
+    def test_disabled_airplane_radios_do_not_excuse_enabled_data_preference(self):
+        with self.assertRaisesRegex(ValueError, '"mobileData": "1"'):
+            self.run_gate([{**OFFLINE, "mobileData": "1"}], timeout=0, stable_for=0)
+
     def test_explicit_airplane_disabled_wifi_is_accepted_with_no_network(self):
         expected = {**OFFLINE, "wifi": "3", "defaultNetwork": "null"}
         result, _ = self.run_gate([expected], timeout=0, stable_for=0)

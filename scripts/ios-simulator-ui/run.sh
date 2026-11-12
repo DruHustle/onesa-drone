@@ -92,6 +92,7 @@ arguments=(test -workspace ios/OnesaDrone.xcworkspace -scheme OnesaDroneSimulato
   ARCHS=arm64 ONLY_ACTIVE_ARCH=YES ENABLE_DEBUG_DYLIB=NO)
 if [[ "$mode" == auth ]]; then
   if ! RCT_NO_LAUNCH_PACKAGER=1 xcodebuild "${arguments[@]}" > "$work/private-xcode.log" 2>&1; then
+    python3 "$repo/scripts/ios_account_diagnostics.py" "$work/private-xcode.log"
     # Only allowlisted test checkpoint names can be published. Never echo account forms, URLs or Xcode's artifact.
     python3 - "$work/private-xcode.log" <<'PYCODE'
 import sys
@@ -110,7 +111,17 @@ PYCODE
     exit 1
   fi
 else
-  RCT_NO_LAUNCH_PACKAGER=1 xcodebuild "${arguments[@]}"
+  if ! RCT_NO_LAUNCH_PACKAGER=1 xcodebuild "${arguments[@]}"; then
+    # Only this signed-out, synthetic planner test may export a failure image.
+    if [[ -n "${IOS_UI_SCREENSHOTS:-}" ]]; then
+      container=$(xcrun simctl get_app_container "$device" eu.onesa.drone.simulator-ui.xctrunner data 2>/dev/null || true)
+      if [[ -n "$container" && -s "$container/Documents/planner-failure.png" ]]; then
+        mkdir -p "$IOS_UI_SCREENSHOTS"
+        cp "$container/Documents/planner-failure.png" "$IOS_UI_SCREENSHOTS/planner-failure.png"
+      fi
+    fi
+    exit 1
+  fi
 fi
 xcrun xcresulttool get test-results summary --path "$results" > "$work/summary.json"
 receipt="$results.summary.json"

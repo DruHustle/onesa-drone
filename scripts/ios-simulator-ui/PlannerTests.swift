@@ -4,9 +4,13 @@ final class PlannerTests: XCTestCase {
     @MainActor private lazy var app = XCUIApplication()
 
     @MainActor private func openTab(_ name: String) {
+        let headings = ["Plan": "Mission planner", "Missions": "Encrypted drafts",
+                        "Aircraft": "Aircraft & safety", "Video": "Video & evidence"]
         let tab = app.descendants(matching: .any)["planner-tab-" + name]
         XCTAssertTrue(tab.waitForExistence(timeout: 10))
         tab.tap()
+        XCTAssertTrue(app.staticTexts[headings[name]!].waitForExistence(timeout: 10),
+                      "Requested planner tab heading")
     }
 
     @MainActor private func reveal(_ element: XCUIElement) {
@@ -28,6 +32,14 @@ final class PlannerTests: XCTestCase {
         guard ProcessInfo.processInfo.environment["ONESA_PLANNER_IMAGES"] == "1" else { return }
         let documents = try XCTUnwrap(FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first)
         try app.screenshot().pngRepresentation.write(to: documents.appendingPathComponent(name), options: .atomic)
+    }
+
+    @MainActor override func tearDownWithError() throws {
+        if testRun?.hasSucceeded == false {
+            // This test never opens an account or enters credentials.
+            try capture("planner-failure.png")
+        }
+        try super.tearDownWithError()
     }
 
     @MainActor func testOfflineDraftSurvivesRelaunchAndHardwareStaysLocked() throws {
