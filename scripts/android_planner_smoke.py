@@ -66,6 +66,7 @@ def tap(label, **options):
 
 
 def receipt(message):
+    verify_offline(timeout=0, stable_for=0)
     print("PASS: " + message, flush=True)
     if os.environ.get("GITHUB_ACTIONS") == "true":
         print("::notice title=Offline Android emulator::" + message, flush=True)
@@ -78,20 +79,54 @@ def launch():
     require("Status: ok" in result, "Android did not launch the release activity")
 
 
-def verify_offline(timeout=30):
-    # Radio disable commands return before ConnectivityService finishes tearing
-    # down its default network. Wait for the same strict readback, never weaken
-    # the offline requirement or accept a missing/unknown network field.
+def offline_readback():
+    # Read only current state, never historical connectivity logs or SSIDs.
+    current = re.findall(r"^\s*Active default network:\s*(\S+)\s*$",
+                         shell("dumpsys", "connectivity"), re.M)
+    network = current[0] if len(current) == 1 else "unknown"
+    if network not in {"none", "null"} and not network.isdecimal():
+        network = "unknown"
+    flags = {}
+    for label, setting in (("airplane", "airplane_mode_on"), ("wifi", "wifi_on"),
+                           ("mobileData", "mobile_data")):
+        value = shell("settings", "get", "global", setting)
+        flags[label] = value if value in {"0", "1", "2", "3"} else "unknown"
+    return {**flags, "defaultNetwork": network}
+
+
+def verify_offline(timeout=30, stable_for=5):
+    # An absent default network can be a temporary radio transition. Require
+    # disabled Wi-Fi plus airplane mode and stable absence before starting.
+    # Later observations only assert the invariant; they never retoggle radios.
     deadline = time.monotonic() + timeout
+    stable_since = None
     while True:
-        airplane = shell("settings", "get", "global", "airplane_mode_on")
-        connectivity = shell("dumpsys", "connectivity")
-        if airplane == "1" and re.search(
-            r"^\s*Active default network:\s*(?:none|null)\s*$", connectivity, re.I | re.M
-        ):
-            return
-        require(time.monotonic() < deadline, "Emulator must be offline for this test")
+        state = offline_readback()
+        now = time.monotonic()
+        if (state["airplane"] == "1" and state["wifi"] in {"0", "3"}
+                and state["mobileData"] == "0" and state["defaultNetwork"] in {"none", "null"}):
+            if stable_since is None:
+                stable_since = now
+            if now - stable_since >= stable_for:
+                return state
+        else:
+            stable_since = None
+        require(now < deadline, "Emulator must be offline for this test: " + json.dumps(state))
         time.sleep(0.5)
+
+
+def configure_offline():
+    # Only the new disposable AVD reaches this setup. Android15 remembers a
+    # user's Wi-Fi-in-airplane choice; remove that override before toggling.
+    # AOSP: packages/modules/Wifi android15-release WifiSettingsStore.java.
+    shell("settings", "put", "secure", "wifi_apm_state", "0")
+    shell("settings", "put", "global", "airplane_mode_radios", "cell,bluetooth,wifi,nfc")
+    # adb shell joins its arguments: preserve an explicit empty remote value.
+    shell("settings", "put", "global", "airplane_mode_toggleable_radios", "''")
+    shell("svc", "wifi", "disable")
+    shell("svc", "data", "disable")
+    shell("cmd", "connectivity", "airplane-mode", "enable")
+    return verify_offline()
 
 
 def screenshot(directory, name):
@@ -162,9 +197,7 @@ def exercise(apk, screenshots=None):
                 shell("wm", "size", "1200x2400")
                 shell("wm", "density", "240")
                 shell("wm", "dismiss-keyguard")
-                shell("cmd", "connectivity", "airplane-mode", "enable")
-                shell("svc", "wifi", "disable")
-                shell("svc", "data", "disable")
+                configure_offline()
                 require("Success" in adb("install", str(apk), timeout=90), "Could not install universal APK")
                 verify_offline()
                 launch()

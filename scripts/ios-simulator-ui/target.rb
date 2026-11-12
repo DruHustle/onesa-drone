@@ -16,6 +16,7 @@ unless project.native_targets.any? { |target| target.name == name }
   target.build_configurations.each do |config|
     config.build_settings.merge!(
       'PRODUCT_BUNDLE_IDENTIFIER' => 'eu.onesa.drone.simulator-ui',
+      'PRODUCT_NAME' => '$(TARGET_NAME)',
       'TEST_TARGET_NAME' => app.name,
       'GENERATE_INFOPLIST_FILE' => 'YES',
       'SWIFT_VERSION' => '5.0',
