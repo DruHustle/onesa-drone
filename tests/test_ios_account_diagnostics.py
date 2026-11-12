@@ -13,6 +13,7 @@ class IOSAccountDiagnosticsTests(unittest.TestCase):
 Test Case '-[AccountTests testPortalSignInAndSystemCallback]' started.
 ONESA_ACCOUNT_CHECKPOINT member:cold:start
 ONESA_ACCOUNT_CHECKPOINT member:cold:account-screen-ready
+ONESA_ACCOUNT_CHECKPOINT member:cold:consent-tapped
 ONESA_ACCOUNT_CHECKPOINT member:cold:credentials-filled
 ONESA_ACCOUNT_CHECKPOINT member:cold:credentials-filled
 /private/secret/AccountTests.swift:53: error: XCTAssertTrue failed - secret@example.test
@@ -21,7 +22,7 @@ Type 'private password'
 ONESA_ACCOUNT_CHECKPOINT admin:warm:https://private.invalid
 """)
         self.assertEqual(result, {
-            "checkpoints": ["member:cold:start", "member:cold:account-screen-ready", "member:cold:credentials-filled"],
+            "checkpoints": ["member:cold:start", "member:cold:account-screen-ready", "member:cold:consent-tapped", "member:cold:credentials-filled"],
             "categories": ["test-started", "assertion-failed"],
             "account_test_source_lines": [53],
         })
