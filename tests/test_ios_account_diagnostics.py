@@ -16,13 +16,14 @@ ONESA_ACCOUNT_CHECKPOINT member:cold:account-screen-ready
 ONESA_ACCOUNT_CHECKPOINT member:cold:consent-tapped
 ONESA_ACCOUNT_CHECKPOINT member:cold:credentials-filled
 ONESA_ACCOUNT_CHECKPOINT member:cold:credentials-filled
+ONESA_ACCOUNT_CHECKPOINT member:cold:private-planner-open
 /private/secret/AccountTests.swift:53: error: XCTAssertTrue failed - secret@example.test
 https://issuer.invalid/callback?code=secret
 Type 'private password'
 ONESA_ACCOUNT_CHECKPOINT admin:warm:https://private.invalid
 """)
         self.assertEqual(result, {
-            "checkpoints": ["member:cold:start", "member:cold:account-screen-ready", "member:cold:consent-tapped", "member:cold:credentials-filled"],
+            "checkpoints": ["member:cold:start", "member:cold:account-screen-ready", "member:cold:consent-tapped", "member:cold:credentials-filled", "member:cold:private-planner-open"],
             "categories": ["test-started", "assertion-failed"],
             "account_test_source_lines": [53],
         })
@@ -35,6 +36,11 @@ ONESA_ACCOUNT_CHECKPOINT admin:warm:https://private.invalid
     def test_unknown_failure_stays_unknown(self):
         self.assertEqual(summarize("private unexpected message")["categories"],
                          ["unclassified-failure"])
+
+    def test_keyboard_errors_return_only_the_fixed_category(self):
+        result = summarize("Failed to synthesize event for private-user: Neither element nor any descendant has keyboard focus")
+        self.assertEqual(result["categories"], ["keyboard-focus-missing", "input-event-unavailable"])
+        self.assertNotIn("private-user", json.dumps(result))
 
     def test_browser_state_uses_only_whole_allowlisted_flags(self):
         result = summarize("""

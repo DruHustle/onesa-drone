@@ -13,7 +13,7 @@ def summarize(text):
         r"ONESA_ACCOUNT_CHECKPOINT (member|admin):(cold|warm):"
         r"(start|account-screen-ready|sign-in-tapped|consent-tapped|browser-wait-failed|browser-ready|credentials-filled|mfa-visible|submitted|"
         r"unexpected-credential-route|interaction-not-observed|retry-visible-form-touch|"
-        r"identity-returned|keychain-restored|central-logout)\b", text
+        r"identity-returned|private-planner-open|keychain-restored|central-logout)\b", text
     ):
         value = f"{role}:{state}:{phase}"
         if value not in checkpoints:
@@ -27,6 +27,8 @@ def summarize(text):
         "simulator-boot-failed": r"(?:Failed to boot|Unable to boot|Data Migration Failed)",
         "runner-launch-failed": r"(?:Failed to launch|Failed to establish communication|Early unexpected exit)",
         "assertion-failed": r"XCTAssert\w* failed|XCTUnwrap failed",
+        "keyboard-focus-missing": r"(?i)neither element nor any descendant has keyboard focus|does not have keyboard focus",
+        "input-event-unavailable": r"(?i)failed to synthesize (?:a |the )?(?:key|event)|failed to send key event",
     }
     categories = [name for name, pattern in patterns.items() if re.search(pattern, text)]
     lines = sorted({int(line) for line in re.findall(
