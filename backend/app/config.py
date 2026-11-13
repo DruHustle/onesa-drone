@@ -44,6 +44,8 @@ class Settings:
                 or self.database_url.startswith("sqlite:")
             ):
                 raise ValueError("Hosted operation requires HTTPS, secure cookies and PostgreSQL")
+            if not self.identity_enabled:
+                raise ValueError("Hosted Drone requires Onesa Company Portal sign-in")
             database = make_url(self.database_url)
             if database.drivername != "postgresql+psycopg" or database.query.get("sslmode") != "verify-full":
                 raise ValueError("Hosted PostgreSQL requires psycopg and sslmode=verify-full")

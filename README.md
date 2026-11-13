@@ -18,7 +18,7 @@ The frontend runs on Vercel and the API and independent PostgreSQL databases run
 on existing Oracle capacity. Staging remains protected. Later source changes are
 not deployed merely because their repository checks pass.
 
-The frontend is organized as [web](frontend/drone/web/) and [iOS/Android mobile](frontend/drone/mobile/). The CHUBORY A77 mobile prototype supports offline mission drafts, route geometry, simulated position and a CHUBORY FLY video handoff; no device commands, verified GPS or remote live video are available. The existing Vercel release path remains compatible. See [frontend setup](frontend/README.md) and [mobile instructions](frontend/drone/mobile/README.md).
+The frontend is organized as [web](frontend/drone/web/) and [iOS/Android mobile](frontend/drone/mobile/). The CHUBORY A77 mobile prototype supports offline mission drafts, route geometry, simulated position, encrypted operator notes, a shareable non-flying bench record and a link to the CHUBORY FLY store listing; no device commands, verified GPS or remote live video are available. The existing Vercel release path remains compatible. See [frontend setup](frontend/README.md) and [mobile instructions](frontend/drone/mobile/README.md).
 
 The architecture combines a React/Three.js console, FastAPI, SQLAlchemy operational
 records, deterministic mission planning and an isolated safety supervisor. Local

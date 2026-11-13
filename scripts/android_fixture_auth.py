@@ -1,0 +1,167 @@
+"""Drive the real Expo debug client on the dedicated loopback identity emulator."""
+import http.client
+import json
+import os
+from pathlib import Path
+import re
+import ssl
+import subprocess
+import sys
+import time
+
+from scripts.android_planner_smoke import adb, find, screenshot, shell, tap
+from scripts.mobile_native_compile import APP_ID, require
+
+
+def startup_classification(text, process_running):
+    # Diagnostics may contain account values. Return fixed vocabulary only;
+    # never publish a log line, UI label, URL, callback or exception message.
+    signatures = {
+        "system-ui-not-responding": ("System UI isn't responding", "System UI is not responding"),
+        "application-not-responding": ("Onesa Drone isn't responding", "Onesa Drone is not responding"),
+        "native-process-crash": ("FATAL EXCEPTION",),
+        "metro-connection-unavailable": ("Unable to load script", "Could not connect to development server",
+                                         "Unable to connect to Metro", "Failed to connect to /10.0.2.2:8081"),
+        "javascript-runtime-error": ("JavascriptException", "TypeError:", "ReferenceError:",
+                                     "Invariant Violation", "Unable to resolve module"),
+        "planner-visible": ('text="Mission planner"', 'content-desc="Mission planner"'),
+    }
+    observed = [label for label, values in signatures.items() if any(value in text for value in values)]
+    return {"stage": "initial-native-planner", "processRunning": bool(process_running),
+            "observations": observed or ["no-recognized-signature"]}
+
+
+def reset_native_planner():
+    # The previous OS callback can leave the browser and app in the same task.
+    # End that task before removing native data, retaining the browser's cookies.
+    shell("am", "force-stop", APP_ID)
+    deadline = time.monotonic() + 10
+    while shell("pidof", APP_ID, check=False):
+        require(time.monotonic() < deadline, "Previous disposable Drone process did not stop")
+        time.sleep(0.2)
+    require(shell("pm", "clear", APP_ID) == "Success", "Could not reset disposable Drone client")
+    # FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TASK, as Android intent flags.
+    result = shell("am", "start", "-W", "-a", "android.intent.action.MAIN",
+                   "-c", "android.intent.category.LAUNCHER", "-f", "0x10008000",
+                   "-n", APP_ID + "/.MainActivity", timeout=75)
+    require("Status: ok" in result, "Android did not launch the disposable Drone planner")
+
+
+def last_exit_reason(output):
+    # Never publish the raw ActivityManager history or a post-login screenshot.
+    # A previous intentional clear is distinguishable from a crash or memory kill.
+    latest = re.search(r"\breason=\d+\s*\(([A-Z_ ]+)\)", output)
+    allowed = {"USER REQUESTED", "USER STOPPED", "CRASH", "CRASH NATIVE", "ANR",
+               "LOW MEMORY", "SIGNALED", "EXIT SELF", "PACKAGE STATE CHANGE"}
+    value = latest.group(1).replace("_", " ") if latest else ""
+    return value.lower().replace(" ", "-") if value in allowed else "unknown"
+
+
+def record_startup_failure(*, before_credentials):
+    # A fresh AVD has no previous browser account at the first launch. Later
+    # launches may expose account state, so only that first failure gets an image.
+    diagnostics = ""
+    running = False
+    try:
+        pid = shell("pidof", APP_ID, check=False)
+        running = bool(re.fullmatch(r"[0-9]+", pid))
+        if running:
+            diagnostics = adb("logcat", "-d", "--pid=" + pid, "-v", "brief", "-t", "400")
+        shell("uiautomator", "dump", "/data/local/tmp/onesa-startup.xml", check=False)
+        diagnostics += adb("exec-out", "cat", "/data/local/tmp/onesa-startup.xml", check=False)
+        result = startup_classification(diagnostics, running)
+        if not running:
+            history = shell("dumpsys", "activity", "exit-info", APP_ID, check=False)
+            result["lastReportedExit"] = last_exit_reason(history)
+    except (OSError, subprocess.SubprocessError):
+        result = {"stage": "initial-native-planner", "processRunning": running,
+                  "observations": ["diagnostic-unavailable"]}
+    print("Android startup failure: " + json.dumps(result), flush=True)
+    if before_credentials:
+        output = Path("frontend/drone/mobile/.validation/android-startup-failure")
+        output.mkdir(parents=True, exist_ok=True)
+        (output / "summary.json").write_text(json.dumps(result, indent=2) + "\n")
+        try:
+            screenshot(output, "before-account.png")
+        except (OSError, ValueError, subprocess.SubprocessError):
+            print("Pre-account screenshot unavailable.", flush=True)
+
+
+def portal_observations(output):
+    allowed = {"cdp-connected", "cdp-disconnected", "portal-sign-in", "portal-other-page",
+               "browser-error-page", "native-callback", "other-page"}
+    try:
+        observed = json.loads(output[:4096])
+        if isinstance(observed, list):
+            return sorted({value for value in observed if isinstance(value, str) and value in allowed})
+    except (ValueError, UnicodeError):
+        pass
+    return ["diagnostic-unavailable"]
+
+
+def expire_product_session(role):
+    # This test control expires one synthetic product session. The app keeps
+    # its SecureStore token and the system browser keeps its Portal session.
+    context = ssl.create_default_context(cafile=os.environ["FIXTURE_CA"])
+    connection = http.client.HTTPSConnection("127.0.0.1", 54844, context=context, timeout=15)
+    try:
+        connection.request("POST", "/__onesa_fixture/expire-product-session", headers={
+            "x-onesa-fixture-control": os.environ["ONESA_FIXTURE_CONTROL"],
+            "x-onesa-fixture-role": role,
+        })
+        response = connection.getresponse()
+        require(response.status == 200, "Disposable product expiry was refused")
+        receipt = json.loads(response.read(4096))
+        require(type(receipt.get("expiredProductSessions")) is int and receipt["expiredProductSessions"] == 1
+                and receipt.get("portalSessionRowsUnchanged") is True
+                and receipt.get("expectedRoleVerified") is True
+                and receipt.get("expectedProductSubjectVerified") is True,
+                "Expected one scoped expiry and the unchanged Portal session")
+    finally:
+        connection.close()
+
+
+def main():
+    require(os.environ.get("EXPO_PUBLIC_DRONE_DEV_ORIGIN") == "https://127.0.0.1:54844"
+            and adb("emu", "avd", "name").splitlines()[0] == "OnesaIdentityFixture"
+            and shell("getprop", "ro.build.version.sdk") == "33", "Expected the disposable identity fixture")
+    for role, label in (("member", "Fixture workspace · operator"), ("admin", "Portal administrator")):
+        # Each role's first case is cold. The preceding role's confirmed central
+        # logout is asserted below before this next-role browser reset.
+        require(shell("pm", "clear", "com.android.chrome") == "Success",
+                "Could not reset the disposable role's Chrome data")
+        try:
+            reset_native_planner()
+            find("Mission planner", timeout=105)
+        except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
+            record_startup_failure(before_credentials=role == "member")
+            raise
+        tap("Onesa account")
+        for state in ("signed-out", "active"):
+            tap("Sign in with Onesa")
+            helper = Path(__file__).parent / "android-emulator-ui" / "portal.cjs"
+            child = subprocess.run(["node", str(helper), role, state], capture_output=True, timeout=125)
+            if child.returncode != 0:
+                print("Portal browser checkpoints: " + ", ".join(portal_observations(child.stdout)), flush=True)
+                sys.exit(f"Android Chrome Portal form failed for {role} / {state} (stage {child.returncode})")
+            find(label, timeout=85)
+            find(f"Synthetic {role} · {role}@example.test")
+            tap("Open my field planner")
+            find("Mission planner")
+            find(f"{role}@example.test")
+            print(f"PASS Android 13 Chrome Custom Tab / {role} / {state} / native role and planner", flush=True)
+            if state == "signed-out":
+                expire_product_session(role)
+                # AccountHome revalidates the foreground planner every 30s.
+                # Its genuine 401 clears the local session and closes the planner.
+                find("Your Onesa session or workspace access has changed. Sign in again.", timeout=85)
+                find("Sign in with Onesa")
+                print(f"PASS Android / {role} / expired product session requires sign-in", flush=True)
+        tap(f"{role}@example.test")
+        tap("Sign out of Onesa")
+        find("Signed out of Onesa.", timeout=45)
+        print(f"PASS Android / {role} / confirmed central sign-out")
+
+
+if __name__ == "__main__":
+    main()

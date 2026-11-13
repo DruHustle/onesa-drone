@@ -1,5 +1,10 @@
 # Changelog
 
+- Hosted Drone requires Company Portal identity at startup. The web sign-in screen keeps local simulation credentials on loopback and offers Portal account creation.
+
+- Add an iPhone Simulator UI check for saving a route, reopening it after relaunch,
+  and reading the locked aircraft and video status screens.
+
 ## Accepted simulation release — 29 October 2026
 
 - Application revision `ff493035cbc11a31312f6fae9364825c761b992a` is accepted at

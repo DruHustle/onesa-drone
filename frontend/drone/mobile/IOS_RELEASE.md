@@ -36,3 +36,14 @@ For TestFlight, wait for processing, assign the build to the external-testing gr
 - https://developer.apple.com/help/app-store-connect/create-an-app-record/add-a-new-app/
 - https://developer.apple.com/help/app-store-connect/manage-builds/upload-builds/
 - https://developer.apple.com/help/app-store-connect/test-a-beta-version/invite-external-testers/
+
+## Prepare the store record
+
+Use the simulation companion as the store product. A suitable description is “Plan and save inspection routes, preview them in simulation, and keep a bench notebook for your aircraft. Sign in with your existing Onesa account to see your workspaces and keep your field records separate on this device.” Use actual iPhone and iPad screenshots of the planner, synthetic route replay and notebook from the release candidate. Use the account screen’s privacy and account-deletion destinations in the corresponding store fields, after verifying them from an unrelated network. Provide a dedicated approved reviewer account with synthetic data and reproducible MFA access if required for that role.
+
+Before upload, confirm the marketing version and build number against the existing store record. Verify the signed archive in Xcode Organizer with the approved team. Review the generated privacy report and all bundled SDK manifests. The account flow sends the sign-in and session requests to the Portal and Drone services. Field drafts, positions entered by the user, notes and bench observations stay in device storage unless the operator opens the OS share sheet. This release has no camera capture, aircraft connection, ad tracking or in-app purchase. Confirm the declarations, support contact, age rating and screenshots against the signed build and the deployed services before submitting.
+
+Install the processed build through TestFlight. On a fresh installation check device-only planning, interrupted sign-in, an existing Portal session, sign-out, account switching, private field record isolation after relaunch, the deletion request and availability of both phone and tablet layouts. Keep the signed build number and actual device/OS with the results.
+
+- https://developer.apple.com/news/upcoming-requirements/?id=04282026a
+- https://developer.apple.com/support/offering-account-deletion-in-your-app/

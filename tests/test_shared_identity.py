@@ -1,8 +1,10 @@
 """Local synthetic contract tests. No production/staging account or flight is used."""
 
 from dataclasses import replace
+from types import SimpleNamespace
 from urllib.parse import urlsplit, parse_qs
 from uuid import uuid4
+import asyncio
 import time
 import os
 
@@ -521,6 +523,43 @@ def test_shared_signout_clears_local_session_even_when_issuer_is_unavailable(sha
         assert db.get(IdentitySession, digest(token)) is None
 
 
+@pytest.mark.parametrize(
+    ("code", "status", "expected"),
+    [
+        ("identity_unavailable", 503, 'event: unavailable\ndata: {"reason":"identity"}\n\n'),
+        ("identity_rejected", 401, "event: expired\ndata: {}\n\n"),
+        ("identity_mfa_required", 403, "event: expired\ndata: {}\n\n"),
+    ],
+)
+def test_shared_stream_distinguishes_outage_from_lost_access(shared, monkeypatch, code, status, expected):
+    complete(shared)
+    account = select_workspace(shared).json()
+    app = shared["app"]
+    route = next(r for r in app.routes if r.path == "/api/v1/stream")
+    request = SimpleNamespace(
+        cookies={"drone_session": shared["client"].cookies.get("drone_session")},
+        is_disconnected=lambda: asyncio.sleep(0, result=False),
+    )
+
+    def fail_validation(*args):
+        raise protocol.IdentityError(code, "Synthetic validation failure", status)
+
+    async def exercise():
+        response = await route.endpoint(request, account)
+        with monkeypatch.context() as patch:
+            patch.setattr(protocol, "validate_session", fail_validation)
+            assert [frame async for frame in response.body_iterator] == [expected]
+        assert app.state.health["streams"] == 0
+        if status == 503:
+            recovered = await route.endpoint(request, account)
+            try:
+                assert (await anext(recovered.body_iterator)).startswith("event: telemetry\n")
+            finally:
+                await recovered.body_iterator.aclose()
+
+    asyncio.run(exercise())
+
+
 def test_expired_central_grant_does_not_claim_everywhere_logout(shared, monkeypatch):
     complete(shared)
     csrf = headers(shared)
@@ -573,3 +612,40 @@ def test_additive_migration_preserves_original_schema_and_requires_explicit_enab
 def test_shared_configuration_rejects_partial_or_unsafe_setup(shared, change):
     with pytest.raises(ValueError):
         replace(shared["cfg"], **change).validate()
+
+
+@pytest.mark.parametrize("admin", [False, True])
+def test_native_system_browser_returns_a_device_bound_session(shared, admin):
+    client, state = shared["client"], shared["state"]
+    if not admin:
+        state["identity"] = replace(
+            state["identity"], roles=(), product_roles={"drone": "operator"},
+            memberships=({"product": "drone", "tenant_id": shared["first"], "role": "operator"},),
+        )
+    start = client.post("/api/v1/auth/mobile/start").json()
+    assert "proof=" not in start["authorization_url"] and "code_challenge_method=S256" in start["authorization_url"]
+    callback = client.get("/api/v1/auth/identity/callback", params={
+        "state": start["state"], "code": "synthetic-authorization-code"
+    }, follow_redirects=False)
+    assert callback.status_code == 303
+    assert callback.headers["location"].startswith("onesadrone://account/callback?")
+    assert "proof" not in callback.headers["location"] and "set-cookie" not in callback.headers
+    payload = {"state": start["state"], "proof": start["proof"], "code": "synthetic-authorization-code"}
+    assert client.post("/api/v1/auth/mobile/exchange", json={**payload, "proof": "x" * 43}).status_code == 401
+    result = client.post("/api/v1/auth/mobile/exchange", json=payload)
+    assert result.status_code == 200
+    assert client.post("/api/v1/auth/mobile/exchange", json=payload).status_code == 401
+    mobile = {"Authorization": "Bearer " + result.json()["session"]}
+    who = client.get("/api/v1/auth/mobile/account", headers=mobile)
+    assert who.status_code == 200
+    profile = who.json()
+    assert profile["global_admin"] is admin and len(profile["storage_scope"]) == 64
+    assert {w["id"] for w in profile["workspaces"]} == ({shared["first"], shared["second"]} if admin else {shared["first"]})
+    assert client.get("/api/v1/auth/me").status_code == 401
+    if not admin:
+        state["identity"] = replace(state["identity"], product_roles={"drone": "viewer"})
+        assert client.get("/api/v1/auth/mobile/account", headers=mobile).json()["workspaces"][0]["role"] == "viewer"
+    state["active"] = False
+    assert client.get("/api/v1/auth/mobile/account", headers=mobile).status_code == 401
+    assert client.post("/api/v1/auth/mobile/logout", headers=mobile).json()["local_signed_out"]
+    assert state["revocations"][0]["all_sessions"]
