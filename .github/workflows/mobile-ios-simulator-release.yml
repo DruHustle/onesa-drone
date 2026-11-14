@@ -1,0 +1,70 @@
+name: Standalone iPhone simulator planner
+on:
+  pull_request:
+    branches: [dev, staging, main]
+    paths:
+      - ".github/workflows/mobile-ios-simulator-release.yml"
+      - "frontend/drone/mobile/**"
+      - "scripts/mobile_native_compile.py"
+      - "scripts/ios-simulator-ui/**"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  installed-release:
+    if: ${{ github.event.repository.private == false || vars.ONESA_PRIVATE_HOSTED_VALIDATION_ENABLED == 'true' }}
+    runs-on: macos-26
+    timeout-minutes: 50
+    env:
+      CI: '1'
+      EXPO_NO_TELEMETRY: '1'
+      RCT_NO_LAUNCH_PACKAGER: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24.22.1'
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Prepare the locked application and existing planner UI suite
+        run: |
+          npm --prefix frontend/drone/mobile ci --include=dev --ignore-scripts --no-audit --no-fund
+          python -m scripts.mobile_native_compile prepare --platform ios --output "$RUNNER_TEMP/ios-source"
+          scripts/ios-simulator-ui/run.sh prepare
+      - name: Install and qualify the standalone Release planner on a fresh iPhone
+        working-directory: frontend/drone/mobile
+        run: |
+          set -euo pipefail
+          if curl --noproxy '*' -fsS --max-time 2 http://127.0.0.1:8081/status >/dev/null; then
+            echo 'Unexpected Metro server on simulator runner'
+            exit 1
+          fi
+          read -r runtime model < <(xcrun simctl list devices available -j | python3 -c 'import json,sys; print(next(runtime+" "+d["deviceTypeIdentifier"] for runtime,ds in json.load(sys.stdin)["devices"].items() if ".iOS-" in runtime for d in ds if d.get("isAvailable") and d["name"].startswith("iPhone")))')
+          device=$(xcrun simctl create OnesaStandalonePlanner "$model" "$runtime")
+          trap 'xcrun simctl shutdown "$device" >/dev/null 2>&1 || true; xcrun simctl delete "$device" >/dev/null 2>&1 || true' EXIT
+          xcrun simctl boot "$device"
+          xcrun simctl bootstatus "$device" -b
+          result="$RUNNER_TEMP/ReleasePlanner.xcresult"
+          xcodebuild test -workspace ios/OnesaDrone.xcworkspace -scheme OnesaDroneSimulatorUI \
+            -configuration Release -destination "platform=iOS Simulator,id=$device" -parallel-testing-enabled NO \
+            -derivedDataPath "$RUNNER_TEMP/ios-release-build" -resultBundlePath "$result" \
+            '-only-testing:OnesaDroneSimulatorUI/PlannerTests/testOfflineDraftSurvivesRelaunchAndHardwareStaysLocked' \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES
+          xcrun xcresulttool get test-results summary --path "$result" | python3 -c 'import json,sys; r=json.load(sys.stdin); assert r["passedTests"]==1 and r["failedTests"]==0 and r.get("skippedTests",0)==0'
+          installed=$(xcrun simctl get_app_container "$device" eu.onesa.drone app)
+          test -s "$installed/main.jsbundle"
+          if curl --noproxy '*' -fsS --max-time 2 http://127.0.0.1:8081/status >/dev/null; then exit 1; fi
+          out="$RUNNER_TEMP/ios-planner-artifact"
+          mkdir -p "$out"
+          ditto -c -k --keepParent "$installed" "$out/iphone-simulator.zip"
+          cd "$out"
+          shasum -a 256 iphone-simulator.zip > SHA256SUMS
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: ios-standalone-planner-${{ github.sha }}
+          path: ${{ runner.temp }}/ios-planner-artifact/
+          if-no-files-found: error
+          retention-days: 3

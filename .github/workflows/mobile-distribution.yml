@@ -101,6 +101,20 @@ jobs:
           apk="$RUNNER_TEMP/offline-planner-fixture.apk"
           trap 'rm -f -- "$apk"' EXIT
           timeout 15m python -u -m scripts.android_planner_smoke "$apk" --screenshots "$RUNNER_TEMP/offline-planner-images"
+          # Retain the exact universal APK only after successful offline installation,
+          # encrypted draft recovery and replay on Android. The signing key is discarded.
+          review="$RUNNER_TEMP/offline-planner-review"
+          mkdir -p "$review"
+          cp "$apk" "$review/OnesaDrone-internal-universal.apk"
+          cd "$review"
+          sha256sum OnesaDrone-internal-universal.apk > SHA256SUMS
+      - name: Retain installed offline planner for supervised software qualification
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: android-offline-planner-apk-${{ github.sha }}
+          path: ${{ runner.temp }}/offline-planner-review/
+          if-no-files-found: error
+          retention-days: 3
       - name: Preserve only signed-out synthetic planner images
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
