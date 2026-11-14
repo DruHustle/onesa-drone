@@ -13,6 +13,16 @@ from .models import Tenant
 from .security import digest
 
 IdentityBase = declarative_base()
+ManagedMembershipBase = declarative_base()
+
+
+class ManagedMembership(ManagedMembershipBase):
+    __tablename__ = "managed_identity_memberships"
+    subject = Column(String, primary_key=True)
+    tenant_id = Column(String, primary_key=True)
+    role = Column(String, nullable=False)
+
+
 TRANSACTION_SECONDS = 300
 TRANSACTION_COOKIE = "drone_identity_transaction"
 TRANSACTION_COOKIE_PATH = "/api/v1/auth/identity"
@@ -61,8 +71,20 @@ class IdentityService:
             client_secret=cfg.identity_client_secret,
             redirect_uri=cfg.identity_callback,
             product="drone",
+            audience=cfg.identity_audience,
+            public_jwks=cfg.identity_public_jwks,
+            mapping_issuer=cfg.identity_mapping_issuer,
+            account_url=cfg.identity_account_url,
             allow_local_http=cfg.origin.startswith(("http://127.0.0.1:", "http://localhost:")),
         )
+
+    def exchange(self, code, pending):
+        verifier = self.decrypt(pending.encrypted_verifier)
+        if self.config.audience:
+            from .managed_oidc import exchange
+
+            return exchange(self.config, code, verifier, pending.nonce)
+        return protocol.exchange_code(self.config, code, verifier)
 
     def encrypt(self, value):
         return self.cipher.encrypt(value.encode("utf-8")).decode("ascii")
@@ -233,18 +255,23 @@ class IdentityService:
             "identity_subject": identity.subject,
             "global_admin": identity.global_admin,
             "identity_managed": True,
-            "account_url": self.config.issuer.removesuffix("/api/v1/identity") + "/account",
-            "access_url": self.config.issuer.removesuffix("/api/v1/identity") + "/account?tab=access",
+            "account_url": (self.config.account_url or self.config.issuer.removesuffix("/api/v1/identity") + "/account"),
+            "access_url": (self.config.account_url or self.config.issuer.removesuffix("/api/v1/identity") + "/account") + "?tab=access",
             "_identity": identity,
             "_session_hash": row.token_hash,
         }
 
-    @staticmethod
-    def membership_roles(identity):
+    def membership_roles(self, identity):
         result = {}
         ranks = {"viewer": 0, "operator": 1, "admin": 2}
         ceiling = identity.product_roles.get("drone", "viewer")
-        for item in identity.memberships:
+        memberships = identity.memberships
+        if self.config.audience:
+            # Product access bounds the role; recorded local workspace membership is also mandatory.
+            with self.store.session() as db:
+                rows = db.scalars(select(ManagedMembership).where(ManagedMembership.subject == identity.subject))
+                memberships = tuple({"product": "drone", "tenant_id": row.tenant_id, "role": row.role} for row in rows)
+        for item in memberships:
             if item["product"] == "drone":
                 if item["tenant_id"] in result:
                     raise protocol.IdentityError(

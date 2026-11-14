@@ -1,7 +1,7 @@
 # Onesa Drone engineering policy
 
 This product lives in the standalone `DruHustle/onesa-drone` repository. Preserve
-independent builds, releases, authentication, data and runtime dependencies; do not
+independent builds, releases, API authorization, data and runtime dependencies; do not
 create nested Git repositories or sibling submodules. Run product commands from
 this repository root. Its root workflows execute all product and native compile
 checks. Use dev → staging → main with PRs and exact-source checks.
@@ -29,8 +29,11 @@ Keep extra checkouts under `local-tools/worktrees`, provider receipts under
 `local-tools/release-verification`, and migration records under
 `local-tools/migrations`. Do not create workspace-root evidence directories.
 Inspect current open PRs and remote refs before implementing overlapping work.
-The shared-identity/native qualification candidate includes real Portal acceptance
-and synthetic simulation recovery tests; source does not establish deployment.
+Portal acceptance covers the legacy issuer during migration. The managed pilot uses
+Onesa Identity at `auth.onesa.eu` for human sign-in and product grants. Verify the
+Drone API audience and signed stable Onesa ID. Drone owns workspace memberships,
+resource permissions and device authentication. Qualify managed web/native sign-in
+and simulation recovery separately; source does not establish deployment.
 Use locked Python 3.11 requirements and the Node 24 frontend lockfile. Local
 socket/browser tests require loopback access. SQLite results do not replace the
 separate PostgreSQL run, native compilation, signed release or device evidence.
