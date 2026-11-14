@@ -418,9 +418,7 @@ def create_app(settings=None):
             pending = identity_service.consume(state, request.cookies.get(TRANSACTION_COOKIE, ""))
             if error:
                 raise identity_protocol.IdentityError("identity_cancelled", "Sign-in was cancelled")
-            central_token = identity_protocol.exchange_code(
-                identity_service.config, code, identity_service.decrypt(pending.encrypted_verifier)
-            )
+            central_token = identity_service.exchange(code, pending)
             account = identity_protocol.validate_session(identity_service.config, central_token)
             if pending.subject and account.subject != pending.subject:
                 raise identity_protocol.IdentityError(
