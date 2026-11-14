@@ -66,7 +66,7 @@ def install_mobile_identity(app, service, limiter):
     def mobile_exchange(data: MobileExchange):
         enabled()
         pending = service.consume(data.state, data.proof)
-        grant = protocol.exchange_code(service.config, data.code, service.decrypt(pending.encrypted_verifier))
+        grant = service.exchange(data.code, pending)
         try:
             identity = protocol.validate_session(service.config, grant)
             credential, _ = service.create_session(identity, grant, pending, mobile=True)
@@ -86,7 +86,7 @@ def install_mobile_identity(app, service, limiter):
         return {
             "name": identity.name,
             "email": identity.email,
-            "storage_scope": digest(identity.issuer + "\x00" + identity.subject),
+            "storage_scope": digest((service.config.mapping_issuer or identity.issuer) + "\x00" + identity.subject),
             "global_admin": identity.global_admin,
             "workspaces": service.workspaces(identity),
         }

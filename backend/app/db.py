@@ -50,9 +50,10 @@ class Store:
                     "Schema source differs from applied migration; explicit migration required"
                 )
             if self.identity_enabled:
-                from .identity import IdentityBase
+                from .identity import IdentityBase, ManagedMembershipBase
 
                 IdentityBase.metadata.create_all(conn)
+                ManagedMembershipBase.metadata.create_all(conn)
                 checksum = self.identity_checksum()
                 applied = conn.execute(
                     select(SchemaRevision.checksum).where(SchemaRevision.version == "0002-identity")
