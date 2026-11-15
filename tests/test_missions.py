@@ -105,7 +105,7 @@ def test_conflicting_aircraft_assignments(stack, aircraft):
     assert cmd(stack, b, "plan").status_code == 422
 
 
-@pytest.mark.parametrize("action", ["launch", "authorize", "validate", "recover", "reschedule"])
+@pytest.mark.parametrize("action", ["launch", "authorize", "validate", "recover", "abort", "reschedule"])
 def test_invalid_state_transitions(stack, aircraft, action):
     m = delivery(stack)["mission"]
     assert cmd(stack, m, action).status_code == 422
@@ -177,6 +177,49 @@ def test_active_cancellation_returns_home(stack, aircraft):
     assert m["state"] == "returning"
     m = tick(stack, m["id"], 100)
     assert m["state"] == "cancelled" and not m["delivered"]
+
+
+def test_operator_abort_returns_active_mission_home_without_delivery(stack, aircraft):
+    m, _ = launch(stack)
+    m = tick(stack, m["id"], 6)
+    assert m["state"] in {"outbound", "delivering"}
+    aborted = cmd(stack, m, "abort").json()
+    assert aborted["state"] == "returning"
+    assert aborted["outcome"] == "aborted"
+    assert not aborted["delivered"]
+    history = stack["client"].get(f"/api/v1/missions/{m['id']}/history").json()
+    assert history["events"][-1]["detail"]["reason"] == "Operator abort; virtual return"
+    terminal = tick(stack, m["id"], 100)
+    assert terminal["state"] == "aborted" and not terminal["delivered"]
+    assert terminal["last_telemetry"]["position"] == terminal["origin"]
+    assert terminal["last_telemetry"]["altitude_m"] == 0
+    with stack["store"].session() as db:
+        row = db.get(Aircraft, aircraft["id"])
+        assert row.active_mission_id is None and row.status == "available"
+
+
+@pytest.mark.parametrize("state", ["returning", "landing"])
+def test_abort_during_return_or_landing_preserves_phase_progress(stack, aircraft, state):
+    m, _ = launch(stack)
+    for _ in range(150):
+        if m["state"] == state:
+            break
+        m = tick(stack, m["id"])
+    assert m["state"] == state
+    before = m["last_telemetry"]
+    aborted = cmd(stack, m, "abort").json()
+    assert aborted["state"] == state
+    assert aborted["outcome"] == "aborted"
+    resumed = tick(stack, m["id"])
+    assert resumed["state"] == state
+    if state == "returning":
+        assert distance(xy(resumed["last_telemetry"]["position"], m["origin"]), (0, 0)) <= distance(
+            xy(before["position"], m["origin"]), (0, 0)
+        )
+    terminal = tick(stack, m["id"], 100)
+    assert terminal["state"] == "aborted"
+    assert terminal["last_telemetry"]["position"] == terminal["origin"]
+    assert terminal["last_telemetry"]["altitude_m"] == 0
 
 
 @pytest.mark.parametrize(
@@ -265,7 +308,7 @@ def test_invalid_battery_holds_every_active_phase_and_keeps_replay_truthful(stac
 
 
 @pytest.mark.parametrize(("state", "phase_ticks"), [("returning", 4), ("landing", 1)])
-@pytest.mark.parametrize("action", ["recover", "cancel"])
+@pytest.mark.parametrize("action", ["recover", "cancel", "abort"])
 def test_held_return_or_landing_preserves_progress_after_operator_action(
     stack, aircraft, state, phase_ticks, action
 ):
