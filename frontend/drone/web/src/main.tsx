@@ -691,7 +691,7 @@ function App() {
         >
           <DroneScene
             mission={page === "Digital twins" ? undefined : flight}
-            sample={replay !== null ? history?.telemetry[replay] : undefined}
+            sample={page === "Digital twins" ? undefined : replay !== null ? history?.telemetry[replay] : undefined}
             lowPower={lowPower}
             night={night}
             weather={weather}
@@ -705,9 +705,19 @@ function App() {
         </Suspense>
         <div className="visual-top">
           <Badge
-            state={replay !== null ? "replay" : flight?.state || "standby"}
+            state={
+              page === "Digital twins"
+                ? inspectedAircraft?.status || "inspection"
+                : replay !== null
+                  ? "replay"
+                  : flight?.state || "standby"
+            }
           />
-          <span>VIRTUAL AIRSPACE / {prefs.region.toUpperCase()}</span>
+          <span>
+            {page === "Digital twins"
+              ? `AIRCRAFT / ${inspectedAircraft?.name || "REFERENCE MODEL"} · STATIC 3D MODEL · NO LIVE CAMERA OR GPS`
+              : `VIRTUAL AIRSPACE / ${prefs.region.toUpperCase()}`}
+          </span>
         </div>
       </div>
     </div>
@@ -1200,6 +1210,8 @@ function App() {
                           <button
                             onClick={() => {
                               setInspectedAircraft(a);
+                              setReplay(null);
+                              setPlaying(false);
                               setView("inspect");
                               navigate("Digital twins");
                             }}
