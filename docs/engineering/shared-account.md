@@ -146,7 +146,7 @@ again on a later qualified cutover. Do not drop the additive tables to roll back
 
 ## Verification
 
-`tests/test_shared_identity.py` exercises browser-bound single-use callbacks,
+`tests/test_managed_memberships.py` covers additive-only import, issuer- and digest-bound fresh complete snapshots, atomic grants, role downgrades and revocations, dry-run counts, explicit empty-snapshot confirmation, and fail-closed behavior for malformed, duplicate or unknown-tenant records.\n\n`tests/test_shared_identity.py` exercises browser-bound single-use callbacks,
 no-email/no-password projections, tenant selection and CSRF rotation, ordinary
 membership isolation, live role downgrade, concurrent workspace changes,
 reauthentication and account-switch session retirement, encrypted custody,
