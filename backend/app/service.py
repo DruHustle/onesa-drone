@@ -12,6 +12,52 @@ from autonomy.decision_engine.states import check_transition, ACTIVE, TERMINAL
 from simulation.physics.kinematic import STEP_SECONDS, sample
 
 
+TENANT_CHECKPOINT_BATCH = 100
+MISSION_CHECKPOINT_BATCH = 32
+
+
+def checkpoint_active_missions(store, telemetry_limit):
+    """Advance every active simulation without starving rows beyond a fixed page."""
+    active_count = 0
+    tenant_cursor = ""
+    while True:
+        with store.session() as db:
+            tenant_ids = list(
+                db.scalars(
+                    select(Tenant.id)
+                    .where(Tenant.id > tenant_cursor)
+                    .order_by(Tenant.id)
+                    .limit(TENANT_CHECKPOINT_BATCH)
+                )
+            )
+        if not tenant_ids:
+            break
+        for tenant_id in tenant_ids:
+            mission_cursor = ""
+            while True:
+                with store.transaction(tenant_id) as db:
+                    missions = list(
+                        db.scalars(
+                            select(Mission)
+                            .where(
+                                Mission.tenant_id == tenant_id,
+                                Mission.state.in_(ACTIVE),
+                                Mission.id > mission_cursor,
+                            )
+                            .order_by(Mission.id)
+                            .limit(MISSION_CHECKPOINT_BATCH)
+                        )
+                    )
+                    for mission in missions:
+                        advance(db, mission, telemetry_limit)
+                if not missions:
+                    break
+                active_count += len(missions)
+                mission_cursor = missions[-1].id
+        tenant_cursor = tenant_ids[-1]
+    return active_count
+
+
 def j(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
 
