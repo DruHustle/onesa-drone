@@ -13,7 +13,7 @@ Sources: https://apps.apple.com/app/id6467178101 ; https://play.google.com/store
 
 ## Delivered software boundary
 
-The mobile app supports route draft/edit, scenario selection (security, conservancy, farm, medical/e-commerce), encrypted local storage, route distance estimate, synthetic marker playback, operator-labelled bench and simulation notes held in-session or saved to encrypted device storage, manual safety checklist and explicit vendor-app video handoff. An A77 has no live position or live video inside Onesa until the hardware interface is qualified. Backends and edge integrations remain **simulation-only** under `AGENTS.md`.
+The mobile app supports route draft/edit, scenario selection (security, conservancy, farm, medical/e-commerce), encrypted local storage, route distance estimate, synthetic marker playback, operator-labelled bench and simulation notes held in-session or saved to encrypted device storage, and a manual safety checklist. The camera panel explicitly withholds live video and any manufacturer-app handoff. The A77 has no live position or live video inside Onesa until a hardware interface is qualified and accepted. Backends and edge integrations remain **simulation-only** under `AGENTS.md`.
 
 **Never automatically launch a physical flight, operate payload releases, initiate a patrol, or infer a person's identity or location.** Do not substitute the smartphone GPS for aircraft GPS or simulate a "live" feed. Drone location telemetry, battery and camera must show unavailable if no authenticated hardware sample exists.
 
@@ -21,7 +21,7 @@ The mobile app supports route draft/edit, scenario selection (security, conserva
 
 With the aircraft stationary and its motors off, open **Aircraft → A77 ground bench record**. Enter the aircraft's local asset label. Enter the firmware and CHUBORY FLY version if known. Unavailable versions appear as **Unknown** in the report.
 
-The four checks cover what CHUBORY FLY displays for connection, loss and restoration of the local link, and what Onesa displays for actual aircraft position. Record **Observed** or **Issue** for each check you perform. Leave **Untested** for anything you did not check. Each result records the phone's UTC time. These entries are operator observations.
+The four checks are an operator-owned worksheet for any separately approved, stationary, motors-off qualification. They may record a manufacturer's connection, link-loss or recovery observation, and whether Onesa correctly reports actual aircraft position as unavailable. Record **Observed** or **Issue** only for checks actually performed; leave **Untested** otherwise. Each result records the phone's UTC time. These entries are operator observations, not an accepted Onesa integration or a customer-facing workflow.
 
 Reopen Onesa to resume the record. **Share bench record** opens the phone's share sheet with the asset, versions, timestamps and individual findings. The app holds one encrypted worksheet per device. Share any record you need to keep before confirming its deletion to start the next one. Under **Monitor → Human observations**, you can also keep free-text bench notes separate from simulation review notes.
 
@@ -36,7 +36,7 @@ Reopen Onesa to resume the record. **Share bench record** opens the phone's shar
 | 5. Disconnect | While stationary, disconnect the phone from the aircraft Wi-Fi. Observe connection indication, last image/status and elapsed time. | Record UTC times and whether values cleared, froze or were marked stale. Mark **Issue** if stale information looks current. |
 | 6. Reconnect | Rejoin the same network and confirm the vendor status has resumed or the camera shows a new scene. Close the app and power down according to the manual. | Record time to recovery and any unexpected action. Save each actual outcome under **Aircraft → A77 ground bench record**. |
 
-The supported interface documented here is first-party Wi-Fi access through the vendor app. For third-party telemetry, request a manufacturer-supported read-only SDK or interface for the aircraft/controller revision and firmware, including identity, timestamp, units, disconnect behavior and which data fields can be read. Only the operator with the aircraft can complete the observations above.
+No Onesa-supported third-party interface is established. The vendor app's local Wi-Fi behavior is only a subject for a separately approved, operator-led, motors-off bench observation; it is not a supported Onesa integration or a service offered to customers. For any future telemetry integration, require a manufacturer-supported read-only SDK or interface for the exact aircraft/controller revision and firmware, including identity, timestamp, units, disconnect behavior and readable data fields. Only the operator with the aircraft can complete the observations above.
 
 [CHUBORY A77 beginner guide](https://chubory.com/pages/a77-beginner-guide) · [Operating manual, printed pages 15–17](https://cdn-files.myshopline.com/file/store/1685936101621/A77-USER-MANUAL.pdf)
 
@@ -50,7 +50,7 @@ The supported interface documented here is first-party Wi-Fi access through the 
 | Validate, authorize, launch, cancel, replan, reschedule or recover | Web mission controls → mission command endpoint → state machine and launch safety supervisor → simulation worker | The API acknowledges a committed command. Worker progress arrives in operations snapshots and recorded mission events and samples. |
 | Inspect telemetry or replay | Web telemetry → operations snapshot/stream or mission history → selected tenant's records | Stream silence and stale mission samples are shown separately. Historical playback does not submit commands. |
 | Prepare a mobile route or play a marker | Mobile Plan and Monitor → encrypted draft or local interpolation | Local UI only. No upload, aircraft telemetry or command confirmation. |
-| Check camera or ground connection | Mobile Video/Aircraft → manufacturer listing / bench worksheet → operator opens CHUBORY FLY | Operator's vendor-app observation. No Onesa camera recording, command transport or A77 acknowledgement exists. |
+| Check camera or ground connection | No Onesa customer workflow or provider handoff is exposed. Any separately approved bench observation is operator-led, stationary and motors-off, outside Onesa. | No Onesa camera recording, command transport, provider acceptance or A77 acknowledgement exists. |
 | Pair, arm or command A77 through Onesa | No operator path. The physical edge adapter rejects connect and send. | No hardware acknowledgement possible in this release. |
 
 Web simulation commands reference the displayed server snapshot with a 25-second deadline. A command that first reaches the server after expiry is refused. A duplicate of a committed request can return its stored acknowledgement without executing again. If the browser cannot establish whether a request committed, inspect the refreshed state or mission history before issuing another action. Reconnecting to the telemetry stream performs reads only.
