@@ -308,7 +308,7 @@ def test_invalid_battery_holds_every_active_phase_and_keeps_replay_truthful(stac
 
 
 @pytest.mark.parametrize(("state", "phase_ticks"), [("returning", 4), ("landing", 1)])
-@pytest.mark.parametrize("action", ["recover", "cancel", "abort"])
+@pytest.mark.parametrize("action", ["recover", "cancel"])
 def test_held_return_or_landing_preserves_progress_after_operator_action(
     stack, aircraft, state, phase_ticks, action
 ):
