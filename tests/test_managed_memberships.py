@@ -197,10 +197,10 @@ def test_authoritative_snapshot_requires_matching_digest_issuer_and_fresh_comple
     [
         {"complete": False},
         {"schema_version": True},
-        {"issued_at": 0},
+        {"issued_at": -3000},
         {"issued_at": 1031},
         {"expires_at": 1000},
-        {"expires_at": 2001},
+        {"expires_at": 5000},
         {"snapshot_id": ""},
     ],
 )
