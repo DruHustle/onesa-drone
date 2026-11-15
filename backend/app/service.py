@@ -17,7 +17,7 @@ TENANT_CHECKPOINT_BATCH = 100
 MISSION_CHECKPOINT_BATCH = 32
 
 
-def checkpoint_active_missions(store, telemetry_limit, on_error=None):
+def checkpoint_active_missions(store, telemetry_limit, on_error=None, tenant_ids=None):
     """Advance every active simulation, isolating corrupt missions from healthy work.
 
     Storage failures abort the pass so the worker can back off. A non-storage
@@ -25,20 +25,26 @@ def checkpoint_active_missions(store, telemetry_limit, on_error=None):
     does not prevent later missions or tenants from receiving their checkpoint.
     """
     active_count = 0
+    # Optional tenant scoping keeps integration tests isolated in the shared
+    # disposable PostgreSQL database. Production leaves this unset and scans
+    # every tenant in deterministic bounded pages.
+    scoped_tenants = tuple(sorted(set(tenant_ids))) if tenant_ids is not None else None
+    if scoped_tenants == ():
+        return 0
     tenant_cursor = ""
     while True:
         with store.session() as db:
-            tenant_ids = list(
+            tenant_query = select(Tenant.id).where(Tenant.id > tenant_cursor)
+            if scoped_tenants is not None:
+                tenant_query = tenant_query.where(Tenant.id.in_(scoped_tenants))
+            tenant_page = list(
                 db.scalars(
-                    select(Tenant.id)
-                    .where(Tenant.id > tenant_cursor)
-                    .order_by(Tenant.id)
-                    .limit(TENANT_CHECKPOINT_BATCH)
+                    tenant_query.order_by(Tenant.id).limit(TENANT_CHECKPOINT_BATCH)
                 )
             )
-        if not tenant_ids:
+        if not tenant_page:
             break
-        for tenant_id in tenant_ids:
+        for tenant_id in tenant_page:
             mission_cursor = ""
             while True:
                 with store.session() as db:
@@ -71,7 +77,7 @@ def checkpoint_active_missions(store, telemetry_limit, on_error=None):
                             raise
                         on_error(tenant_id, mission_id, error)
                 mission_cursor = mission_ids[-1]
-        tenant_cursor = tenant_ids[-1]
+        tenant_cursor = tenant_page[-1]
     return active_count
 
 
