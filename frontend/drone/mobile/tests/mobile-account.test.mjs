@@ -18,7 +18,7 @@ function provider() {
 test("the system browser returns to a proof-bound native exchange", async () => {
   const { request, requests } = provider();
   const browser = async (url, callback) => {
-    assert.equal(url, "https://portal.onesa.eu/authorize");
+    assert.equal(url, "https://portal.onesa.eu/api/v1/identity/auth");
     assert.equal(callback, CALLBACK);
     return {
       type: "success",
