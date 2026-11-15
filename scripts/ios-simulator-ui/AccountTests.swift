@@ -171,12 +171,22 @@ final class AccountTests: XCTestCase {
     }
 
     @MainActor private func receivedCredentialPosts(_ role: String) async throws -> Int {
+        // This receipt is served by the disposable simulator fixture on the
+        // Mac host. Do not inherit a system proxy: some CI macOS images route
+        // loopback URLSession traffic through the corporate HTTP proxy even
+        // though the app's local API requests correctly bypass it.
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 5
+        configuration.timeoutIntervalForResource = 8
+        configuration.connectionProxyDictionary = [:]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
         var request = URLRequest(url: try XCTUnwrap(URL(string: "https://127.0.0.1:54844/__onesa_fixture/credential-receipt")))
         request.timeoutInterval = 5
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.setValue(try XCTUnwrap(ProcessInfo.processInfo.environment["ONESA_FIXTURE_CONTROL"]), forHTTPHeaderField: "x-onesa-fixture-control")
         request.setValue(role, forHTTPHeaderField: "x-onesa-fixture-role")
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await session.data(for: request)
         let status = try XCTUnwrap(response as? HTTPURLResponse).statusCode
         if status == 409 { checkpoint("unexpected-credential-route") }
         if status == 412 { checkpoint("interaction-not-observed") }
