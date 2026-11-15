@@ -39,9 +39,13 @@ DUMMY_HASH = password_hash("unusable-internal-account-placeholder")
 
 
 class Limiter:
-    """Fixed-window, in-process limiter that never evicts active lockouts."""
+    """Bounded fixed-window limiter with isolated budgets for high-cardinality routes."""
 
     MAX_ENTRIES = 4096
+    NAMESPACES = frozenset({
+        "login", "login-peer", "login-account", "identity-login",
+        "stream", "dispatch", "flight-plan", "assistant",
+    })
 
     def __init__(self):
         self.entries, self.lock, self.bucket = {}, Lock(), None
@@ -52,15 +56,18 @@ class Limiter:
             # monotonic() advances independently of civil time adjustments.
             bucket = int(time.monotonic() // 60)
             if self.bucket != bucket:
-                # Every entry belongs to one fixed-minute bucket. Clearing only
-                # on minute rollover avoids unbounded memory and stale limits.
+                # Every namespace belongs to one fixed-minute bucket. Clearing
+                # only on rollover keeps memory bounded and lockouts stable.
                 self.entries.clear()
                 self.bucket = bucket
-            if key not in self.entries and len(self.entries) >= self.MAX_ENTRIES:
-                # Evicting a current-minute account key lets a distributed
-                # spray reset its login limit. Fail closed until rollover.
+            prefix = key.partition(":")[0]
+            namespace = prefix if prefix in self.NAMESPACES else "request"
+            entries = self.entries.setdefault(namespace, {})
+            if key not in entries and len(entries) >= self.MAX_ENTRIES:
+                # Do not evict a live lockout. Saturation in one namespace must
+                # not deny unrelated API traffic or another limiter's keys.
                 raise HTTPException(429, "Request limit reached; retry after one minute")
-            count = self.entries.get(key, 0) + 1
-            self.entries[key] = count
+            count = entries.get(key, 0) + 1
+            entries[key] = count
             if count > limit:
                 raise HTTPException(429, "Request limit reached; retry after one minute")
