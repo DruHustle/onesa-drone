@@ -128,7 +128,7 @@ test("real delivery, telemetry, replay, assistant and tracking", async ({
   );
   expect(errors).toEqual([]);
 });
-test("fleet maintenance, delivery cancellation, incident resolution and report persist", async ({
+test("fleet maintenance, delivery cancellation and abort, incident resolution and report persist", async ({
   page,
 }) => {
   await login(page, "fleet-review");
@@ -174,6 +174,20 @@ test("fleet maintenance, delivery cancellation, incident resolution and report p
   await button("Reschedule +5 min").click();
   await button("Cancel mission").click();
   await expect(page.locator(".mission-detail .badge")).toHaveText(/cancelled/);
+
+  await button("+ New delivery").click();
+  await page.getByLabel("Delivery reference").fill("Aborted review parcel");
+  await button("Register delivery").click();
+  await button("Continue to mission").click();
+  await button("Plan & assign").click();
+  await button("Validate preflight").click();
+  await button("Authorize simulation").click();
+  await button("Launch simulation").click();
+  await button("Abort to virtual home").click();
+  await expect(page.locator(".mission-detail .badge")).toHaveText(/aborted/, {
+    timeout: 45000,
+  });
+
   await button("Cybersecurity").click();
   await page
     .getByLabel("Title", { exact: true })
@@ -202,8 +216,9 @@ test("fleet maintenance, delivery cancellation, incident resolution and report p
   expect(report.mode).toBe("simulation");
   expect(
     report.missions.map((mission: { state: string }) => mission.state),
-  ).toEqual(["cancelled"]);
+  ).toEqual(["cancelled", "aborted"]);
   expect(JSON.stringify(report)).not.toContain("Cancelled review parcel");
+  expect(JSON.stringify(report)).not.toContain("Aborted review parcel");
 });
 
 for (const colorScheme of ["light", "dark"] as const)
