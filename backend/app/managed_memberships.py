@@ -15,6 +15,8 @@ from .db import Store
 from .identity import ManagedMembership
 from .models import Tenant
 
+MAX_SNAPSHOT_BYTES = 16 * 1024 * 1024
+
 
 def _records(records):
     if not isinstance(records, list):
@@ -40,6 +42,7 @@ def load_authoritative_snapshot(raw, expected_sha256, mapping_issuer, *, now=Non
     """Validate a complete, fresh snapshot before any destructive reconciliation."""
     if (
         not isinstance(raw, bytes)
+        or len(raw) > MAX_SNAPSHOT_BYTES
         or not isinstance(expected_sha256, str)
         or not re.fullmatch(r"[a-fA-F0-9]{64}", expected_sha256)
         or not isinstance(mapping_issuer, str)
@@ -51,7 +54,7 @@ def load_authoritative_snapshot(raw, expected_sha256, mapping_issuer, *, now=Non
         raise ValueError("Authoritative snapshot SHA-256 does not match")
     try:
         payload = json.loads(raw)
-    except (ValueError, UnicodeError, TypeError):
+    except (ValueError, UnicodeError, TypeError, RecursionError):
         raise ValueError("Authoritative snapshot is not valid JSON") from None
     if (
         not isinstance(payload, dict)
@@ -163,7 +166,9 @@ def main():
     store = Store(os.environ["DATABASE_URL"], identity_enabled=True)
     store.verify()
     with open(args.snapshot_file, "rb") as source:
-        raw = source.read()
+        raw = source.read(MAX_SNAPSHOT_BYTES + 1)
+    if len(raw) > MAX_SNAPSHOT_BYTES:
+        parser.error("Membership snapshot exceeds the 16 MiB limit")
     if args.replace:
         mapping_issuer = os.environ.get("ONESA_IDENTITY_MAPPING_ISSUER", "")
         try:
@@ -190,7 +195,7 @@ def main():
             payload = json.loads(raw)
             records = payload["drone_memberships"]
             inserted = import_memberships(store, records)
-        except (ValueError, KeyError, TypeError, UnicodeError) as error:
+        except (ValueError, KeyError, TypeError, UnicodeError, RecursionError) as error:
             parser.error(f"Invalid additive membership snapshot: {error}")
         print(f"Inserted {inserted} verified workspace memberships")
 
