@@ -210,6 +210,10 @@ def test_abort_during_return_or_landing_preserves_phase_progress(stack, aircraft
     aborted = cmd(stack, m, "abort").json()
     assert aborted["state"] == state
     assert aborted["outcome"] == "aborted"
+    history = stack["client"].get(f"/api/v1/missions/{m['id']}/history").json()
+    assert history["events"][-1]["detail"]["reason"] == (
+        "Operator abort requested; existing virtual return preserved"
+    )
     resumed = tick(stack, m["id"])
     assert resumed["state"] == state
     if state == "returning":
