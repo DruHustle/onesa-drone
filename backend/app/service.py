@@ -312,6 +312,21 @@ def command(db, tenant, actor, identifier, c, correlation):
                 # An abort during an existing return/descent changes only the
                 # terminal outcome. It must not restart or teleport the phase.
                 m.revision += 1
+                db.add(
+                    MissionEvent(
+                        tenant_id=m.tenant_id,
+                        mission_id=m.id,
+                        state=m.state,
+                        actor=actor,
+                        correlation_id=correlation,
+                        detail=j(
+                            {
+                                "from": m.state,
+                                "reason": "Operator abort requested; existing virtual return preserved",
+                            }
+                        ),
+                    )
+                )
                 audit(db, tenant, actor, "mission.abort_requested", {"mission_id": m.id}, correlation)
         elif c.action == "recover":
             if m.state != "paused":
