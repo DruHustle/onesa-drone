@@ -81,6 +81,37 @@ def test_malformed_route_is_refused_without_crashing(waypoints):
     assert validate_launch(candidate, AIRCRAFT, 100)
 
 
+@pytest.mark.parametrize("invalid", [None, [], "invalid"])
+def test_non_mapping_safety_records_are_refused(invalid):
+    assert validate_launch(invalid, AIRCRAFT, 100)
+    assert validate_launch(mission(), invalid, 100)
+
+
+def test_missing_plan_is_refused_without_crashing():
+    candidate = mission()
+    del candidate["plan"]
+    assert validate_launch(candidate, AIRCRAFT, 100) == ["A simulation plan is required"]
+
+
+@pytest.mark.parametrize("field", ["status", "connectivity"])
+def test_missing_aircraft_state_is_refused(field):
+    aircraft = AIRCRAFT.copy()
+    del aircraft[field]
+    assert validate_launch(mission(), aircraft, 100)
+
+
+@pytest.mark.parametrize("constraints", [None, [], "invalid"])
+def test_malformed_plan_constraints_are_refused(constraints):
+    candidate = deepcopy(mission())
+    candidate["plan"]["constraints"] = constraints
+    assert validate_launch(candidate, AIRCRAFT, 100, {"wind_mps": 5})
+
+
+@pytest.mark.parametrize("policy", [[], "invalid"])
+def test_malformed_current_policy_is_refused(policy):
+    assert validate_launch(mission(), AIRCRAFT, 100, policy)
+
+
 @pytest.mark.parametrize("battery", [float("nan"), float("inf"), float("-inf"), None, True, "75", -1, 101])
 def test_invalid_battery_holds_simulation(battery):
     decision = supervision("nominal", 5, battery, 35)
