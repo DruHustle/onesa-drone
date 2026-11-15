@@ -1548,6 +1548,20 @@ function App() {
                               Cancel mission
                             </button>
                           )}
+                          {[
+                            "taking_off",
+                            "outbound",
+                            "delivering",
+                            "returning",
+                            "landing",
+                          ].includes(flight.state) && (
+                            <button
+                              disabled={busy}
+                              onClick={() => void act(flight, "abort")}
+                            >
+                              Abort to virtual home
+                            </button>
+                          )}
                           {["planned", "validated", "authorized"].includes(
                             flight.state,
                           ) && (
