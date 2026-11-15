@@ -10,7 +10,6 @@ export const MAX_WAYPOINTS = 12;
 export const A77 = Object.freeze({
   manufacturer: "CHUBORY",
   model: "A77 brushless",
-  vendorApp: "CHUBORY FLY",
   gps: "unverified",
   video: "unverified",
   commandBridge: false,
