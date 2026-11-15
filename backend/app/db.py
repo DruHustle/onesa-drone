@@ -66,11 +66,18 @@ class Store:
                     raise RuntimeError("Shared identity schema differs from applied migration")
 
     def identity_checksum(self):
-        from .identity import IdentityBase
+        from .identity import IdentityBase, ManagedMembershipBase
 
+        # Both product-local identity tables and the separately declared
+        # workspace-membership table are created by the same 0002 migration.
+        # Include both metadata registries so drift in either is detected.
+        tables = [
+            *IdentityBase.metadata.tables.values(),
+            *ManagedMembershipBase.metadata.tables.values(),
+        ]
         ddl = "\n".join(
             str(CreateTable(table).compile(dialect=self.engine.dialect))
-            for table in sorted(IdentityBase.metadata.tables.values(), key=lambda t: t.name)
+            for table in sorted(tables, key=lambda t: t.name)
         )
         return hashlib.sha256(ddl.encode()).hexdigest()
 
