@@ -215,7 +215,7 @@ def test_authoritative_snapshot_rejects_incomplete_stale_or_ambiguous_envelopes(
 
 
 def test_authoritative_snapshot_is_size_bounded_before_json_parsing():
-    with pytest.raises(ValueError, match="verification inputs"):
+    with pytest.raises(ValueError, match="16 MiB"):
         load_authoritative_snapshot(
             b"x" * (MAX_SNAPSHOT_BYTES + 1), "0" * 64,
             "https://portal.onesa.eu/api/v1/identity", now=1000
