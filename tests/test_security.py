@@ -220,3 +220,27 @@ def test_logout_handles_session_revoked_after_authentication(stack, monkeypatch)
     assert stack["client"].get("/api/v1/operations").status_code == 401
     with store.session() as db:
         assert db.get(Session, token_hash) is None
+
+def test_rate_limiter_saturation_preserves_active_account_lockout(monkeypatch):
+    import pytest
+    from fastapi import HTTPException
+    import backend.app.security as security
+
+    monkeypatch.setattr(security.time, "time", lambda: 120.0)
+    limiter = security.Limiter()
+    limiter.check("login-account:synthetic-victim", limit=1)
+    # Saturate the unique-key budget in the same minute. A live account
+    # lockout must not disappear when unrelated peers create new keys.
+    for number in range(limiter.MAX_ENTRIES - 1):
+        limiter.check(f"peer:{number}")
+    with pytest.raises(HTTPException) as overflow:
+        limiter.check("peer:overflow")
+    assert overflow.value.status_code == 429
+    with pytest.raises(HTTPException) as locked:
+        limiter.check("login-account:synthetic-victim", limit=1)
+    assert locked.value.status_code == 429
+
+    # A minute rollover releases the bounded cache and restores capacity.
+    monkeypatch.setattr(security.time, "time", lambda: 180.0)
+    limiter.check("peer:overflow")
+    limiter.check("login-account:synthetic-victim", limit=1)
