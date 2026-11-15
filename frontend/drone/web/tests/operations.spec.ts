@@ -107,6 +107,16 @@ test("real delivery, telemetry, replay, assistant and tracking", async ({
     page.getByRole("heading", { name: "Historical replay" }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Pause replay" }).click();
+  await page.getByRole("button", { name: "Maintenance", exact: true }).click();
+  await page
+    .getByRole("article")
+    .first()
+    .getByRole("button", { name: "View 3D", exact: true })
+    .click();
+  await expect(page.locator(".visual-top")).toContainText("STATIC 3D MODEL");
+  await expect(page.locator(".visual-top")).toContainText("NO LIVE CAMERA OR GPS");
+  await expect(page.locator(".visual-top .badge")).toHaveText(/available/);
+  await expect(page.locator(".visual-top")).not.toContainText("replay");
   const track = await context.newPage();
   await track.goto(link);
   await expect(
