@@ -48,7 +48,9 @@ class Limiter:
 
     def check(self, key, limit=120):
         with self.lock:
-            bucket = int(time.time() // 60)
+            # Rate-limit windows must not be reset by NTP/manual wall-clock changes.
+            # monotonic() advances independently of civil time adjustments.
+            bucket = int(time.monotonic() // 60)
             if self.bucket != bucket:
                 # Every entry belongs to one fixed-minute bucket. Clearing only
                 # on minute rollover avoids unbounded memory and stale limits.
