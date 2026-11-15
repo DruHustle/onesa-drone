@@ -71,6 +71,21 @@ tenant UUID and viewer/operator/admin role. Their effective workspace role is
 the lower of the application role and that membership role: application access
 sets the maximum permission, and membership can narrow it for each tenant.
 A central application-role downgrade takes effect on the next request.
+
+For the managed OIDC profile, the signed access assertion currently carries the
+live Drone product role but not the per-tenant membership list. Drone reads those
+workspace grants from its local `managed_identity_memberships` snapshot. A
+central workspace removal or membership-role change therefore does not take
+effect until a fresh, complete, independently hash-verified snapshot is
+reconciled. **Both additive and replacement imports require** the exact configured
+mapping issuer and an out-of-band SHA-256 from the owner-controlled Identity
+export channel before the database is opened. The default mode remains
+additive-only; explicit atomic `--replace` applies role changes and revocations.
+Until the Identity owner provides a trusted complete export and a monitored
+refresh procedure, production shared identity must remain disabled or be
+treated as an explicitly operated, bounded snapshot process. This is not an
+automatic live revocation claim.
+
 No customer tenant is selected from an environment default or inferred from an
 email domain. Global administrators need the central `global_admin` role and MFA
 evidence. Product administrator sessions also require MFA. Administrator writes and
@@ -134,7 +149,7 @@ again on a later qualified cutover. Do not drop the additive tables to roll back
 
 ## Verification
 
-`tests/test_shared_identity.py` exercises browser-bound single-use callbacks,
+`tests/test_managed_memberships.py` covers additive-only import, issuer- and digest-bound fresh complete snapshots, atomic grants, role downgrades and revocations, dry-run counts, explicit empty-snapshot confirmation, and fail-closed behavior for malformed, duplicate or unknown-tenant records.\n\n`tests/test_shared_identity.py` exercises browser-bound single-use callbacks,
 no-email/no-password projections, tenant selection and CSRF rotation, ordinary
 membership isolation, live role downgrade, concurrent workspace changes,
 reauthentication and account-switch session retirement, encrypted custody,
