@@ -232,17 +232,23 @@ def test_rate_limiter_saturation_preserves_active_account_lockout(monkeypatch):
     # Saturate the unique-key budget in the same minute. A live account
     # lockout must not disappear when unrelated peers create new keys.
     for number in range(limiter.MAX_ENTRIES - 1):
-        limiter.check(f"peer:{number}")
+        limiter.check(f"login-account:peer:{number}")
     with pytest.raises(HTTPException) as overflow:
-        limiter.check("peer:overflow")
+        limiter.check("login-account:overflow")
     assert overflow.value.status_code == 429
     with pytest.raises(HTTPException) as locked:
         limiter.check("login-account:synthetic-victim", limit=1)
     assert locked.value.status_code == 429
 
-    # A minute rollover releases the bounded cache and restores capacity.
+    # Saturating account-specific keys cannot deny unrelated request, stream,
+    # or dispatch namespaces in the same process.
+    limiter.check("192.0.2.10", limit=300)
+    limiter.check("stream:synthetic-operator", limit=12)
+    limiter.check("dispatch:synthetic-tenant:synthetic-operator", limit=6)
+
+    # A minute rollover releases each bounded namespace and restores capacity.
     monkeypatch.setattr(security.time, "monotonic", lambda: 180.0)
-    limiter.check("peer:overflow")
+    limiter.check("login-account:overflow")
     limiter.check("login-account:synthetic-victim", limit=1)
 
 
