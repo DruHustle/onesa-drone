@@ -38,7 +38,13 @@ def test_browser_fixture_signin_limits(tmp_path, monkeypatch, accounts, statuses
     seed_browser_accounts(app.state.store)
     # Freeze only the limiter clock, so this regression cannot accidentally pass
     # because a slow runner crossed a wall-clock minute during the sign-ins.
-    monkeypatch.setattr("backend.app.security.time", SimpleNamespace(time=lambda: 1800000000, monotonic=lambda: 1800000000))
+    monkeypatch.setattr(
+        "backend.app.security.time",
+        SimpleNamespace(
+            time=lambda: 1800000000,
+            monotonic=lambda: 1800000000,
+        ),
+    )
     with TestClient(app) as client:
         responses = [
             client.post(
