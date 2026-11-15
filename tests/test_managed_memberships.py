@@ -1,6 +1,7 @@
 import hashlib
 import json
 import sys
+import time
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -246,8 +247,12 @@ def test_cli_additive_import_accepts_only_hash_verified_complete_snapshot(databa
     store, (first, _) = database
     issuer = "https://portal.onesa.eu/api/v1/identity"
     subject = str(uuid4())
+    issued_at = int(time.time())
     raw = json.dumps(
-        snapshot_payload(issuer, [record(subject, first, "operator")]),
+        snapshot_payload(
+            issuer, [record(subject, first, "operator")],
+            issued_at=issued_at, expires_at=issued_at + 1800,
+        ),
         sort_keys=True,
     ).encode()
     path = tmp_path / "snapshot.json"
