@@ -205,3 +205,31 @@ test("a queued expiry from the closed old stream cannot sign out the next accoun
   );
   await expect(page.getByRole("button", { name: /^Sign in/ })).toHaveCount(0);
 });
+
+test("private tracking recovers from a temporary error without starting an operator session", async ({
+  page,
+}) => {
+  let reads = 0;
+  const operatorRequests: string[] = [];
+  await page.clock.install();
+  await page.route("**/api/v1/**", async (route) => {
+    const { pathname } = new URL(route.request().url());
+    if (pathname === "/api/v1/tracking/synthetic-tracking-token") {
+      reads++;
+      await route.fulfill(
+        reads === 1
+          ? { status: 503, json: { detail: "Tracking is temporarily unavailable" } }
+          : { json: { state: "completed", progress_percent: 100, delivered: true } },
+      );
+      return;
+    }
+    operatorRequests.push(pathname);
+    await route.fulfill({ status: 401, json: { detail: "Operator session required" } });
+  });
+  await page.goto("/track/synthetic-tracking-token");
+  await expect(page.getByRole("alert")).toHaveText("Tracking is temporarily unavailable");
+  await page.clock.fastForward(10_000);
+  await expect(page.getByText("Simulated delivery confirmed.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  expect(operatorRequests).toEqual([]);
+});

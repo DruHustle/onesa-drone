@@ -496,8 +496,6 @@ function App() {
     }
   }
   const canOperate = !!user && user.role !== "viewer";
-  if (location.pathname.startsWith("/track/"))
-    return <Tracking token={location.pathname.split("/")[2]} />;
   if (boot)
     return (
       <div className="initial">
@@ -2728,19 +2726,24 @@ function Tracking({ token }: { token: string }) {
     [error, setError] = useState("");
   useEffect(() => {
     let stopped = false;
+    let timer: ReturnType<typeof setTimeout>;
     const read = () =>
       api("/tracking/" + encodeURIComponent(token))
         .then((d) => {
-          if (!stopped) setData(d);
+          if (stopped) return;
+          setData(d);
+          setError("");
         })
         .catch((e) => {
           if (!stopped) setError(e.message);
+        })
+        .finally(() => {
+          if (!stopped) timer = setTimeout(read, 10000);
         });
     void read();
-    const id = setInterval(() => void read(), 10000);
     return () => {
       stopped = true;
-      clearInterval(id);
+      clearTimeout(timer);
     };
   }, [token]);
   return (
@@ -2805,4 +2808,10 @@ const subtitles: Record<string, string> = {
   Administration:
     "Manage scoped access and international operating preferences.",
 };
-createRoot(document.getElementById("root")!).render(<App />);
+createRoot(document.getElementById("root")!).render(
+  location.pathname.startsWith("/track/") ? (
+    <Tracking token={location.pathname.split("/")[2]} />
+  ) : (
+    <App />
+  ),
+);
