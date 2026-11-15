@@ -11,6 +11,7 @@ test("A77 is not silently treated as a GPS or video-bridge aircraft", () => {
   assert.equal(A77.flightEnabled, false);
   assert.equal(A77.gps, "unverified");
   assert.equal(A77.video, "unverified");
+  assert.equal(Object.hasOwn(A77, "vendorApp"), false);
   assert.match(HARDWARE_HANDOFF_REASON, /operator-led, motors-off/);
   assert.equal(aircraftLocation().position, null);
   assert.equal(physicalDispatchStatus().allowed, false);
