@@ -214,9 +214,11 @@ test("fleet maintenance, delivery cancellation and abort, incident resolution an
   for await (const chunk of stream!) chunks.push(chunk);
   const report = JSON.parse(Buffer.concat(chunks).toString("utf8"));
   expect(report.mode).toBe("simulation");
+  // The report is newest-first (created_at DESC); assert the set of outcomes,
+  // not an incidental ordering between independently created missions.
   expect(
-    report.missions.map((mission: { state: string }) => mission.state),
-  ).toEqual(["cancelled", "aborted"]);
+    report.missions.map((mission: { state: string }) => mission.state).sort(),
+  ).toEqual(["aborted", "cancelled"]);
   expect(JSON.stringify(report)).not.toContain("Cancelled review parcel");
   expect(JSON.stringify(report)).not.toContain("Aborted review parcel");
 });
