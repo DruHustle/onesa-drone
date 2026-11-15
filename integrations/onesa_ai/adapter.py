@@ -3,6 +3,7 @@
 import asyncio
 import json
 from dataclasses import asdict
+from math import isfinite
 
 import httpx
 
@@ -99,13 +100,25 @@ async def advise(question, context, cfg, tenant_id):
     counts, aircraft, missions = context["counts"], context["aircraft"], context["missions"]
     base = f"Simulation scope: {len(aircraft)} aircraft; {sum(counts.values())} deliveries. "
     base += "; ".join(f"{state}: {count}" for state, count in sorted(counts.items())) + ". "
-    low = [a["name"] for a in aircraft if a["battery"] < 30]
+    low = []
+    unavailable_battery = 0
+    for item in aircraft:
+        battery = item.get("battery")
+        if type(battery) not in (int, float) or not isfinite(battery) or not 0 <= battery <= 100:
+            unavailable_battery += 1
+        elif battery < 30:
+            name = item.get("name")
+            low.append(name if isinstance(name, str) and name.strip() else "Unidentified aircraft")
     held = [m for m in missions if m["state"] == "paused"]
-    base += (
-        ("Inspect low battery aircraft: " + ", ".join(low) + ". ")
-        if low
-        else "No aircraft below the 30% advisory threshold. "
-    )
+    if low:
+        base += "Inspect low battery aircraft: " + ", ".join(low) + ". "
+    if unavailable_battery:
+        base += (
+            f"Battery observation unavailable for {unavailable_battery} aircraft; "
+            "verify battery state before planning or operation. "
+        )
+    if not low and not unavailable_battery:
+        base += "No aircraft below the 30% advisory threshold. "
     if held:
         base += (
             f"{len(held)} simulation(s) held: inspect mission events before an operator requests recovery. "
@@ -124,7 +137,17 @@ async def advise(question, context, cfg, tenant_id):
     safe = {
         "counts": counts,
         "aircraft": [
-            {"category": a["category"], "battery": a["battery"], "status": a["status"]}
+            {
+                "category": a.get("category"),
+                "battery": (
+                    a.get("battery")
+                    if type(a.get("battery")) in (int, float)
+                    and isfinite(a["battery"])
+                    and 0 <= a["battery"] <= 100
+                    else None
+                ),
+                "status": a.get("status"),
+            }
             for a in aircraft[:200]
         ],
         "missions": [
