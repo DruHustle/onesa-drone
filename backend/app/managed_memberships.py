@@ -40,10 +40,12 @@ def _records(records):
 
 def load_authoritative_snapshot(raw, expected_sha256, mapping_issuer, *, now=None):
     """Validate a complete, fresh snapshot before any destructive reconciliation."""
+    if not isinstance(raw, bytes):
+        raise ValueError("Authoritative snapshot bytes are required")
+    if len(raw) > MAX_SNAPSHOT_BYTES:
+        raise ValueError("Authoritative snapshot exceeds the 16 MiB limit")
     if (
-        not isinstance(raw, bytes)
-        or len(raw) > MAX_SNAPSHOT_BYTES
-        or not isinstance(expected_sha256, str)
+        not isinstance(expected_sha256, str)
         or not re.fullmatch(r"[a-fA-F0-9]{64}", expected_sha256)
         or not isinstance(mapping_issuer, str)
         or not mapping_issuer
