@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  Linking, Platform, Pressable, ScrollView, StatusBar,
+  Platform, Pressable, ScrollView, StatusBar,
   Text, View, useColorScheme,
 } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
@@ -9,6 +9,7 @@ import * as SecureStore from "expo-secure-store";
 import {
   A77, PURPOSES, DEMO_ROUTE, MAX_WAYPOINTS, aircraftLocation,
   waypoint, inspectRoute, makeDraft, simulationPosition, physicalDispatchStatus,
+  HARDWARE_HANDOFF_REASON,
 } from "./src/mission-core.mjs";
 import { saveDraft, loadDrafts, deleteDraft } from "./src/mission-store.mjs";
 
@@ -129,12 +130,7 @@ function Screen({account, colors, openAccount}) {
     setPoints(DEMO_ROUTE.map(p=>({...p})));setProgress(0);setSimulating(false);
     setNotice("Illustrative points loaded, not your farm or actual aircraft GPS.");
   }
-  async function vendorApp(){
-    const url=Platform.OS==="ios"
-      ?"https://apps.apple.com/app/id6467178101"
-      :"https://play.google.com/store/apps/details?id=com.h8.chubory";
-    try{await Linking.openURL(url);}catch{setNotice("Open CHUBORY FLY in your device's app store.");}
-  }
+
   const title={Plan:"Mission planner",Monitor:"Aircraft position",Video:"Video & evidence",Missions:"Encrypted drafts",Aircraft:"Aircraft & safety"}[tab];
   const hardware=aircraftLocation(),dispatch=physicalDispatchStatus();
   const planningChecks=[
@@ -241,13 +237,13 @@ function Screen({account, colors, openAccount}) {
 
       {tab==="Video" && <>
         <Panel colors={colors}>
-          <Text style={[styles.h3,{color:colors.text}]}>Inspection camera</Text>
+          <Text style={[styles.h3,{color:colors.text}]}>Camera integration unavailable</Text>
           <View style={[styles.media,{backgroundColor:colors.rail}]}>
             <Text style={[styles.title,{color:colors.text}]}>No live feed</Text>
-            <Body colors={colors} muted style={{textAlign:"center"}}>A77 video is available through its own Wi-Fi companion app. An authenticated stream bridge is not verified.</Body>
+            <Body colors={colors} muted style={{textAlign:"center"}}>A77 camera/video capability and pairing are unverified. Onesa has no live camera feed.</Body>
           </View>
-          <Button colors={colors} onPress={vendorApp}>View CHUBORY FLY in the store</Button>
-          <Body colors={colors} muted small>Use the manufacturer's control app while flying. This screen does not mirror, relay, record or stream camera footage.</Body>
+          <Body colors={colors} muted small>{HARDWARE_HANDOFF_REASON}</Body>
+          <Body colors={colors} muted small>This screen does not mirror, relay, record or stream camera footage, and it cannot authorize flight.</Body>
         </Panel>
         <Panel colors={colors}>
           <Text style={[styles.h3,{color:colors.text}]}>Future video integration gates</Text>
@@ -287,7 +283,7 @@ function Screen({account, colors, openAccount}) {
             <Body colors={colors} muted small>{a}</Body>
             <Body colors={colors} small style={{textAlign:"right",maxWidth:"60%"}}>{b}</Body>
           </View>)}
-          <Button colors={colors} secondary onPress={vendorApp}>View CHUBORY FLY in the store</Button>
+          <Body colors={colors} muted small>{HARDWARE_HANDOFF_REASON}</Body>
           <Body colors={colors} muted small>{dispatch.reason}</Body>
         </Panel>
         <Panel colors={colors}>
