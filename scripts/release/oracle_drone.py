@@ -1019,7 +1019,7 @@ class Runner:
             if self.plan.get("qualification_profile") == shared_identity.PROFILE:
                 # The additive migration is owned by the existing migrator. Only
                 # its two new session tables gain the established runtime role.
-                sql = b"BEGIN; GRANT SELECT,INSERT,UPDATE,DELETE ON public.identity_transactions,public.identity_sessions TO drone_runtime; COMMIT;"
+                sql = b"BEGIN; GRANT SELECT,INSERT,UPDATE,DELETE ON public.identity_transactions,public.identity_sessions TO drone_runtime; GRANT SELECT ON public.managed_identity_memberships TO drone_runtime; COMMIT;"
                 self.compose(
                     slot,
                     "exec",
