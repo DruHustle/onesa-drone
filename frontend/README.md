@@ -26,6 +26,8 @@ npm run ios      # requires macOS + Xcode
 npm run android  # requires Android SDK
 ```
 
+The Digital twins page renders a static, illustrative aircraft model only. Opening an aircraft inspection clears any historical mission replay selection and labels the view as having no live camera or GPS; it must never inherit a prior mission's telemetry or state badge.
+
 Hardware flight and external video relay are absent, not hidden behind a feature toggle. Physical operation remains blocked by the Onesa Drone simulation-only policy and requires separate authorization, device integration and safety qualification.
 
 After building the web frontend from the repository root, run
