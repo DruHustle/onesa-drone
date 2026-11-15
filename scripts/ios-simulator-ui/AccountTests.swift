@@ -248,9 +248,14 @@ final class AccountTests: XCTestCase {
             _ = try XCTUnwrap(observed == expected ? true : nil, "Issuer observed exactly one form submission")
             submittedCount = expected
         }
-        if role == "admin" && !code.exists {
+        // WebKit can expose the conditional MFA input in its accessibility
+        // tree before the Portal has issued the challenge. Presence alone is
+        // not proof that the MFA form is visible; submit the password form
+        // unless the factor input is actually enabled and hittable.
+        if role == "admin" && !(code.exists && code.isEnabled && code.isHittable) {
             try await submitForm()
-            XCTAssertTrue(code.waitForExistence(timeout: 20), "Portal MFA challenge")
+            XCTAssertTrue(waitFor({ code.exists && code.isEnabled && code.isHittable }, seconds: 20),
+                          "Portal MFA challenge is visible and ready")
             checkpoint("mfa-visible")
         }
         if role == "admin" {
