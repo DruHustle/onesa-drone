@@ -140,6 +140,30 @@ def test_failure_injection_and_recovery(stack, aircraft, scenario):
         assert db.get(Aircraft, aircraft["id"]).active_mission_id is None
 
 
+def test_communication_loss_records_link_loss_and_safe_virtual_return(stack, aircraft):
+    m, _ = launch(stack, "communication_loss")
+    lost = tick(stack, m["id"], 10)
+
+    assert lost["state"] == "returning"
+    assert not lost["delivered"]
+    sample = lost["last_telemetry"]
+    assert sample["seq"] == 10
+    assert sample["flight_mode"] == "returning"
+    assert sample["connectivity"] == "simulated-link-lost"
+    assert sample["return_path"]
+    assert sample["return_path"][0] == sample["position"]
+
+    history = stack["client"].get(f"/api/v1/missions/{m['id']}/history").json()
+    assert history["telemetry"][-1] == sample
+
+    recovered = tick(stack, m["id"], 100)
+    assert recovered["state"] == "aborted"
+    assert not recovered["delivered"]
+    assert recovered["last_telemetry"]["connectivity"] == "simulated-link-lost"
+    with stack["store"].session() as db:
+        assert db.get(Aircraft, aircraft["id"]).active_mission_id is None
+
+
 @pytest.mark.parametrize("scenario", ["gps_degradation", "obstruction", "aircraft_fault"])
 def test_held_sample_is_persisted_and_replayable(stack, aircraft, scenario):
     m, _ = launch(stack, scenario)
