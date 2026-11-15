@@ -59,3 +59,31 @@ def test_existing_platform_conversation_and_csrf_contract(monkeypatch):
     calls.clear()
     result = asyncio.run(advise("Explain", context, cfg, "other"))
     assert result["provider_status"] == "not-configured" and not calls
+
+def test_advisory_reports_unavailable_battery_without_claiming_fleet_clear():
+    cfg = SimpleNamespace(
+        ai_provider="onesa-legacy",
+        ai_url="",
+        ai_tenant="",
+        ai_session="",
+        ai_csrf="",
+        ai_origin="",
+        ai_cookie="onesa_session",
+    )
+    context = {
+        "counts": {},
+        "aircraft": [
+            {"name": "Low-battery synthetic aircraft", "battery": 12},
+            {"name": "Unknown synthetic aircraft", "battery": None},
+            {"name": "Malformed synthetic aircraft", "battery": float("nan")},
+            {"name": "Missing synthetic aircraft observation"},
+        ],
+        "missions": [],
+    }
+
+    result = asyncio.run(advise("Summarize the fleet", context, cfg, "tenant"))
+
+    assert result["provider_status"] == "not-configured"
+    assert "Inspect low battery aircraft: Low-battery synthetic aircraft." in result["answer"]
+    assert "Battery observation unavailable for 3 aircraft" in result["answer"]
+    assert "No aircraft below the 30% advisory threshold" not in result["answer"]
