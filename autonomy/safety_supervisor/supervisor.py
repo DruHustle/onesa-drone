@@ -20,10 +20,19 @@ def finite_point(value):
 
 def validate_launch(mission, aircraft, current_time, policy=None):
     issues = []
-    p = mission["plan"]
+    if not isinstance(mission, dict):
+        return ["Mission safety data is unavailable"]
+    if not isinstance(aircraft, dict):
+        return ["Aircraft safety data is unavailable"]
+    p = mission.get("plan")
     if not isinstance(p, dict) or not p or p.get("mode") != "simulation":
         issues.append("A simulation plan is required")
         return issues
+    constraints = p.get("constraints", {})
+    if not isinstance(constraints, dict):
+        return ["Mission safety policy data is invalid"]
+    if policy is not None and not isinstance(policy, dict):
+        return ["Current safety policy data is invalid"]
     values = [
         current_time,
         mission.get("package_weight"),
@@ -46,9 +55,9 @@ def validate_launch(mission, aircraft, current_time, policy=None):
         not positive_number(aircraft[key]) for key in ("capacity", "endurance")
     ):
         return ["Aircraft battery, capacity or endurance observation is unavailable"]
-    if aircraft["status"] != "available":
+    if aircraft.get("status") != "available":
         issues.append("Aircraft is unavailable")
-    if aircraft["connectivity"] != "simulated":
+    if aircraft.get("connectivity") != "simulated":
         issues.append("Simulation device identity required")
     if mission["package_weight"] > aircraft["capacity"]:
         issues.append("Payload exceeds capacity")
@@ -57,7 +66,7 @@ def validate_launch(mission, aircraft, current_time, policy=None):
     if mission.get("scheduled_at") and mission["scheduled_at"] > current_time:
         issues.append("Scheduled launch time has not arrived")
     if p:
-        if policy and any(p.get("constraints", {}).get(k) != v for k, v in policy.items()):
+        if policy and any(constraints.get(k) != v for k, v in policy.items()):
             issues.append("Safety policy changed; release and replan the mission")
         points = [xy(w, mission["origin"]) for w in p.get("waypoints", [])]
         if len(points) < 2 or any(not segment_clear(a, b, DEFAULT_ZONES) for a, b in zip(points, points[1:])):
