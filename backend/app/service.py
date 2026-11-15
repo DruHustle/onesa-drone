@@ -2,6 +2,7 @@ import json
 import time
 import secrets
 from sqlalchemy import select, delete
+from sqlalchemy.exc import SQLAlchemyError
 from fastapi import HTTPException
 from .models import Aircraft, Mission, MissionEvent, Audit, Tenant, Receipt, Telemetry, Incident, uid
 from .security import digest
@@ -16,8 +17,13 @@ TENANT_CHECKPOINT_BATCH = 100
 MISSION_CHECKPOINT_BATCH = 32
 
 
-def checkpoint_active_missions(store, telemetry_limit):
-    """Advance every active simulation without starving rows beyond a fixed page."""
+def checkpoint_active_missions(store, telemetry_limit, on_error=None):
+    """Advance every active simulation, isolating corrupt missions from healthy work.
+
+    Storage failures abort the pass so the worker can back off. A non-storage
+    failure is rolled back for that mission, reported through on_error, and
+    does not prevent later missions or tenants from receiving their checkpoint.
+    """
     active_count = 0
     tenant_cursor = ""
     while True:
@@ -35,10 +41,10 @@ def checkpoint_active_missions(store, telemetry_limit):
         for tenant_id in tenant_ids:
             mission_cursor = ""
             while True:
-                with store.transaction(tenant_id) as db:
-                    missions = list(
+                with store.session() as db:
+                    mission_ids = list(
                         db.scalars(
-                            select(Mission)
+                            select(Mission.id)
                             .where(
                                 Mission.tenant_id == tenant_id,
                                 Mission.state.in_(ACTIVE),
@@ -48,12 +54,22 @@ def checkpoint_active_missions(store, telemetry_limit):
                             .limit(MISSION_CHECKPOINT_BATCH)
                         )
                     )
-                    for mission in missions:
-                        advance(db, mission, telemetry_limit)
-                if not missions:
+                if not mission_ids:
                     break
-                active_count += len(missions)
-                mission_cursor = missions[-1].id
+                for mission_id in mission_ids:
+                    try:
+                        with store.transaction(tenant_id) as db:
+                            mission = db.get(Mission, mission_id)
+                            if mission is None or mission.tenant_id != tenant_id or mission.state not in ACTIVE:
+                                continue
+                            advance(db, mission, telemetry_limit)
+                        active_count += 1
+                    except SQLAlchemyError:
+                        raise
+                    except Exception as error:
+                        if on_error is not None:
+                            on_error(tenant_id, mission_id, error)
+                mission_cursor = mission_ids[-1]
         tenant_cursor = tenant_ids[-1]
     return active_count
 

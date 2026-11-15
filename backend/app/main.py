@@ -78,6 +78,7 @@ def create_app(settings=None):
     health = {
         "worker_last_tick": None,
         "worker_failures": 0,
+        "worker_mission_errors": 0,
         "started": time.time(),
         "requests": 0,
         "streams": 0,
@@ -86,23 +87,62 @@ def create_app(settings=None):
     }
 
     def checkpoint_pass():
-        return checkpoint_active_missions(store, cfg.telemetry_limit)
+        mission_errors = 0
+
+        def report_mission_error(tenant_id, mission_id, error):
+            nonlocal mission_errors
+            mission_errors += 1
+            log.error(
+                j(
+                    {
+                        "event": "simulation_mission_checkpoint_failed",
+                        "mode": "simulation",
+                        "tenant_id": tenant_id,
+                        "mission_id": mission_id,
+                        "error_type": type(error).__name__,
+                    }
+                )
+            )
+
+        active_count = checkpoint_active_missions(
+            store, cfg.telemetry_limit, on_error=report_mission_error
+        )
+        return active_count, mission_errors
 
     async def worker():
         while True:
             wake.clear()
             try:
-                active_count = await asyncio.to_thread(checkpoint_pass)
-                health["worker_idle"] = active_count == 0
+                active_count, mission_errors = await asyncio.to_thread(checkpoint_pass)
+                health["worker_idle"] = active_count == 0 and mission_errors == 0
                 health["worker_last_tick"] = time.time()
                 health["worker_failures"] = 0
-                worker_monitor.observe(True)
+                health["worker_mission_errors"] = mission_errors
+                worker_monitor.observe(mission_errors == 0)
             except SQLAlchemyError:
                 health["worker_failures"] += 1
                 changed = worker_monitor.observe(False)
                 if changed:
                     log.error(j({"event": "simulation_storage_degraded", "mode": "simulation"}))
-            if not health["worker_failures"] and health["worker_idle"]:
+            except Exception as error:
+                # A programming/data error outside an individual mission must
+                # not silently terminate the long-lived worker task.
+                health["worker_failures"] += 1
+                health["last_error"] = type(error).__name__
+                changed = worker_monitor.observe(False)
+                if changed:
+                    log.error(
+                        j(
+                            {
+                                "event": "simulation_worker_unexpected_failure",
+                                "mode": "simulation",
+                                "error_type": type(error).__name__,
+                            }
+                        )
+                    )
+            if health["worker_mission_errors"]:
+                await asyncio.sleep(min(30, 2 ** min(health["worker_mission_errors"], 5)))
+            elif not health["worker_failures"] and health["worker_idle"]:
                 # No keepalive polling that would pin a scale-to-zero database awake.
                 store.engine.dispose()
                 await wake.wait()

@@ -193,3 +193,59 @@ def test_worker_checkpoint_paginates_all_active_missions(stack, monkeypatch):
 
     assert processed == len(expected)
     assert advanced == expected
+
+def test_worker_checkpoint_isolates_a_bad_mission_and_advances_healthy_missions(stack, monkeypatch):
+    import backend.app.service as service
+
+    with stack["store"].transaction(stack["tenant"]) as db:
+        for number in range(3):
+            db.add(
+                Mission(
+                    tenant_id=stack["tenant"],
+                    label=f"Isolation fixture {number}",
+                    package_weight=1,
+                    package_kind="parcel",
+                    destination="{}",
+                    origin="{}",
+                    state="outbound",
+                    plan="{}",
+                    scenario="nominal",
+                    tick=0,
+                    phase_tick=0,
+                    revision=1,
+                    track_hash=f"isolation-fixture-{number}",
+                    track_expires=time.time() + 3600,
+                )
+            )
+        db.flush()
+        expected = sorted(
+            db.scalars(
+                select(Mission.id).where(
+                    Mission.tenant_id == stack["tenant"],
+                    Mission.label.like("Isolation fixture %"),
+                )
+            )
+        )
+
+    advanced = []
+    failures = []
+
+    def advance_one(_db, mission, _telemetry_limit):
+        if mission.id == expected[0]:
+            raise ValueError("synthetic malformed mission")
+        advanced.append(mission.id)
+
+    monkeypatch.setattr(service, "advance", advance_one)
+    processed = service.checkpoint_active_missions(
+        stack["store"],
+        600,
+        on_error=lambda tenant, mission, error: failures.append(
+            (tenant, mission, type(error).__name__)
+        ),
+    )
+
+    assert processed == 2
+    assert advanced == expected[1:]
+    assert failures == [(stack["tenant"], expected[0], "ValueError")]
+    with stack["store"].session() as db:
+        assert db.get(Mission, expected[0]).state == "outbound"
