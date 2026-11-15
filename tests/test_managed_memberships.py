@@ -9,6 +9,7 @@ from sqlalchemy import select
 from backend.app.db import Store
 from backend.app.identity import IdentityService, ManagedMembership
 from backend.app.managed_memberships import (
+    MAX_SNAPSHOT_BYTES,
     import_memberships,
     load_authoritative_snapshot,
     reconcile_memberships,
@@ -210,4 +211,12 @@ def test_authoritative_snapshot_rejects_incomplete_stale_or_ambiguous_envelopes(
     with pytest.raises(ValueError):
         load_authoritative_snapshot(
             raw, hashlib.sha256(raw).hexdigest(), issuer, now=1000
+        )
+
+
+def test_authoritative_snapshot_is_size_bounded_before_json_parsing():
+    with pytest.raises(ValueError, match="verification inputs"):
+        load_authoritative_snapshot(
+            b"x" * (MAX_SNAPSHOT_BYTES + 1), "0" * 64,
+            "https://portal.onesa.eu/api/v1/identity", now=1000
         )
