@@ -112,6 +112,7 @@ def create_app(settings=None):
     async def worker():
         while True:
             wake.clear()
+            health["worker_mission_errors"] = 0
             try:
                 active_count, mission_errors = await asyncio.to_thread(checkpoint_pass)
                 health["worker_idle"] = active_count == 0 and mission_errors == 0

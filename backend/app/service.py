@@ -67,8 +67,9 @@ def checkpoint_active_missions(store, telemetry_limit, on_error=None):
                     except SQLAlchemyError:
                         raise
                     except Exception as error:
-                        if on_error is not None:
-                            on_error(tenant_id, mission_id, error)
+                        if on_error is None:
+                            raise
+                        on_error(tenant_id, mission_id, error)
                 mission_cursor = mission_ids[-1]
         tenant_cursor = tenant_ids[-1]
     return active_count

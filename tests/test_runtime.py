@@ -249,3 +249,8 @@ def test_worker_checkpoint_isolates_a_bad_mission_and_advances_healthy_missions(
     assert failures == [(stack["tenant"], expected[0], "ValueError")]
     with stack["store"].session() as db:
         assert db.get(Mission, expected[0]).state == "outbound"
+
+    # Without an explicit reporting callback, do not silently hide a failed
+    # mission from callers that cannot surface worker health.
+    with pytest.raises(ValueError, match="synthetic malformed mission"):
+        service.checkpoint_active_missions(stack["store"], 600)
