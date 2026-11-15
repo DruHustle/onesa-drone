@@ -300,6 +300,19 @@ def command(db, tenant, actor, identifier, c, correlation):
             else:
                 transition(db, m, "cancelled", actor, correlation, "Cancelled before simulation launch")
                 release(a)
+        elif c.action == "abort":
+            if m.state not in ACTIVE:
+                raise ValueError("Abort requires an active simulation")
+            if a is None or not valid_battery(a.battery) or not positive_number(a.endurance):
+                raise ValueError("Abort requires valid battery and endurance observations")
+            m.outcome = "aborted"
+            if m.state not in {"returning", "landing"}:
+                return_home(db, m, actor, correlation, "Operator abort; virtual return")
+            else:
+                # An abort during an existing return/descent changes only the
+                # terminal outcome. It must not restart or teleport the phase.
+                m.revision += 1
+                audit(db, tenant, actor, "mission.abort_requested", {"mission_id": m.id}, correlation)
         elif c.action == "recover":
             if m.state != "paused":
                 raise ValueError("Recovery requires a held simulation")
