@@ -91,9 +91,9 @@ class OfflineGateTests(unittest.TestCase):
             events.append(("verify",))
             return OFFLINE
 
-        with patch.object(smoke, "shell", side_effect=shell), \\
-                patch.object(smoke, "verify_offline", side_effect=verify):
-            self.assertEqual(smoke.configure_offline(), OFFLINE)
+        with patch.object(smoke, "shell", side_effect=shell):
+            with patch.object(smoke, "verify_offline", side_effect=verify):
+                self.assertEqual(smoke.configure_offline(), OFFLINE)
 
         data_disable = events.index(("shell", ("svc", "data", "disable"), {"check": False}))
         mobile_data = events.index(("shell", ("settings", "put", "global", "mobile_data", "0"), {}))
