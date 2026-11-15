@@ -77,11 +77,14 @@ live Drone product role but not the per-tenant membership list. Drone reads thos
 workspace grants from its local `managed_identity_memberships` snapshot. A
 central workspace removal or membership-role change therefore does not take
 effect until a fresh, complete, independently hash-verified snapshot is
-reconciled. The importer supports an explicit atomic `--replace` operation for
-that purpose; the default mode remains additive-only. Until the Identity owner
-provides a trusted complete export and a monitored refresh procedure, production
-shared identity must remain disabled or be treated as an explicitly operated,
-bounded snapshot process. This is not an automatic live revocation claim.
+reconciled. **Both additive and replacement imports require** the exact configured
+mapping issuer and an out-of-band SHA-256 from the owner-controlled Identity
+export channel before the database is opened. The default mode remains
+additive-only; explicit atomic `--replace` applies role changes and revocations.
+Until the Identity owner provides a trusted complete export and a monitored
+refresh procedure, production shared identity must remain disabled or be
+treated as an explicitly operated, bounded snapshot process. This is not an
+automatic live revocation claim.
 
 No customer tenant is selected from an environment default or inferred from an
 email domain. Global administrators need the central `global_admin` role and MFA
