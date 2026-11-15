@@ -30,7 +30,7 @@ def _records(records):
             subject, tenant = str(UUID(user_id)), str(UUID(tenant_id))
         except (ValueError, AttributeError, TypeError):
             raise ValueError("Invalid membership identity") from None
-        if role not in {"viewer", "operator", "admin"} or (subject, tenant) in expected:
+        if not isinstance(role, str) or role not in {"viewer", "operator", "admin"} or (subject, tenant) in expected:
             raise ValueError("Invalid or duplicate membership")
         expected[subject, tenant] = role
     return expected
