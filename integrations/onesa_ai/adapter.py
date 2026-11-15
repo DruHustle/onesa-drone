@@ -3,11 +3,14 @@
 import asyncio
 import json
 from dataclasses import asdict
-from math import isfinite
 
 import httpx
 
 from integrations.ai.consumer import CompletionError, Connection, Message, complete, json_response
+
+
+def _valid_battery(value):
+    return type(value) in (int, float) and 0 <= value <= 100
 
 
 def configured(cfg):
@@ -104,7 +107,7 @@ async def advise(question, context, cfg, tenant_id):
     unavailable_battery = 0
     for item in aircraft:
         battery = item.get("battery")
-        if type(battery) not in (int, float) or not isfinite(battery) or not 0 <= battery <= 100:
+        if not _valid_battery(battery):
             unavailable_battery += 1
         elif battery < 30:
             name = item.get("name")
@@ -141,9 +144,7 @@ async def advise(question, context, cfg, tenant_id):
                 "category": a.get("category"),
                 "battery": (
                     a.get("battery")
-                    if type(a.get("battery")) in (int, float)
-                    and isfinite(a["battery"])
-                    and 0 <= a["battery"] <= 100
+                    if _valid_battery(a.get("battery"))
                     else None
                 ),
                 "status": a.get("status"),
