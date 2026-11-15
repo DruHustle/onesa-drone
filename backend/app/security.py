@@ -2,7 +2,6 @@ import hashlib
 import secrets
 import hmac
 import time
-from collections import OrderedDict
 from threading import Lock
 from fastapi import HTTPException
 
@@ -40,16 +39,26 @@ DUMMY_HASH = password_hash("unusable-internal-account-placeholder")
 
 
 class Limiter:
+    """Fixed-window, in-process limiter that never evicts active lockouts."""
+
+    MAX_ENTRIES = 4096
+
     def __init__(self):
-        self.entries, self.lock = OrderedDict(), Lock()
+        self.entries, self.lock, self.bucket = {}, Lock(), None
 
     def check(self, key, limit=120):
         with self.lock:
-            bucket = int(time.time() / 60)
-            old, count = self.entries.pop(key, (bucket, 0))
-            count = count + 1 if old == bucket else 1
-            self.entries[key] = (bucket, count)
-            while len(self.entries) > 4096:
-                self.entries.popitem(last=False)
+            bucket = int(time.time() // 60)
+            if self.bucket != bucket:
+                # Every entry belongs to one fixed-minute bucket. Clearing only
+                # on minute rollover avoids unbounded memory and stale limits.
+                self.entries.clear()
+                self.bucket = bucket
+            if key not in self.entries and len(self.entries) >= self.MAX_ENTRIES:
+                # Evicting a current-minute account key lets a distributed
+                # spray reset its login limit. Fail closed until rollover.
+                raise HTTPException(429, "Request limit reached; retry after one minute")
+            count = self.entries.get(key, 0) + 1
+            self.entries[key] = count
             if count > limit:
                 raise HTTPException(429, "Request limit reached; retry after one minute")
