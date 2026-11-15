@@ -71,6 +71,31 @@ test("malformed stored records are not trusted", async () => {
   storage.values.set("onesa.drone.draft.draft_abc12345",
     JSON.stringify({ id: "draft_abc12345", title: "Bad", purpose: "conservancy",
       status: "draft", execution_enabled: true, waypoints: DEMO_ROUTE }));
+  assert.deepEqual(await loadDrafts(storage), [{ id: "draft_abc12345", unreadable: true }]);
+  await deleteDraft(storage, "draft_abc12345");
+  assert.deepEqual(await loadDrafts(storage), []);
+});
+
+test("stored drafts reopen with numeric coordinates and recalculated distance", async () => {
+  const storage = fakeStore();
+  const draft = numberedDraft(1);
+  await saveDraft(storage, draft);
+  const key = "onesa.drone.draft." + draft.id;
+  storage.values.set(key, JSON.stringify({
+    ...draft, distance_m: {}, waypoints: draft.waypoints.map(p => ({lat: String(p.lat), lon: String(p.lon)})),
+  }));
+  assert.deepEqual(await loadDrafts(storage), [draft]);
+});
+
+test("missing payloads free slots while damaged payloads remain removable", async () => {
+  const storage = fakeStore();
+  const draft = numberedDraft(2);
+  await saveDraft(storage, draft);
+  const key = "onesa.drone.draft." + draft.id;
+  storage.values.set(key, "{");
+  assert.deepEqual(await loadDrafts(storage), [{id: draft.id, unreadable: true}]);
+  assert.equal(storage.values.get(key), "{");
+  storage.values.delete(key);
   assert.deepEqual(await loadDrafts(storage), []);
 });
 test("secure index-write failure leaves no private record", async () => {

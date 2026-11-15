@@ -262,10 +262,11 @@ function Screen({account, colors, openAccount}) {
           <Body colors={colors} muted small>Drafts use iOS Keychain or Android Keystore. They are not synced to Onesa servers or sent to your aircraft.</Body>
           {!drafts.length && <Body colors={colors}>No saved routes yet. Create one under Plan.</Body>}
           {drafts.map(d=><View key={d.id} style={[styles.item,{borderColor:colors.border}]}>
-            <Text style={[styles.h3,{color:colors.text}]}>{d.title}</Text>
-            <Body colors={colors} muted small>{PURPOSES.find(p=>p.id===d.purpose)?.label} · {d.waypoints.length} points · {d.distance_m} m · DRAFT</Body>
+            <Text style={[styles.h3,{color:colors.text}]}>{d.unreadable ? "Unreadable draft" : d.title}</Text>
+            {d.unreadable ? <Body colors={colors} muted small>The saved data is still on this device. Delete it to free this slot.</Body> :
+              <Body colors={colors} muted small>{PURPOSES.find(p=>p.id===d.purpose)?.label} · {d.waypoints.length} points · {d.distance_m} m · DRAFT</Body>}
             <View style={styles.wrap}>
-              <Button colors={colors} secondary onPress={()=>load(d)}>Open route</Button>
+              {!d.unreadable && <Button colors={colors} secondary onPress={()=>load(d)}>Open route</Button>}
               <Button colors={colors} secondary disabled={busy} onPress={()=>remove(d.id)}>Delete</Button>
             </View>
           </View>)}
