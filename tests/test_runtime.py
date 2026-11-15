@@ -189,7 +189,9 @@ def test_worker_checkpoint_paginates_all_active_missions(stack, monkeypatch):
         advanced.append(mission.id)
 
     monkeypatch.setattr(service, "advance", record_advance)
-    processed = service.checkpoint_active_missions(stack["store"], 600)
+    processed = service.checkpoint_active_missions(
+        stack["store"], 600, tenant_ids=[stack["tenant"]]
+    )
 
     assert processed == len(expected)
     assert advanced == expected
@@ -242,6 +244,7 @@ def test_worker_checkpoint_isolates_a_bad_mission_and_advances_healthy_missions(
         on_error=lambda tenant, mission, error: failures.append(
             (tenant, mission, type(error).__name__)
         ),
+        tenant_ids=[stack["tenant"]],
     )
 
     assert processed == 2
@@ -253,4 +256,6 @@ def test_worker_checkpoint_isolates_a_bad_mission_and_advances_healthy_missions(
     # Without an explicit reporting callback, do not silently hide a failed
     # mission from callers that cannot surface worker health.
     with pytest.raises(ValueError, match="synthetic malformed mission"):
-        service.checkpoint_active_missions(stack["store"], 600)
+        service.checkpoint_active_missions(
+            stack["store"], 600, tenant_ids=[stack["tenant"]]
+        )
