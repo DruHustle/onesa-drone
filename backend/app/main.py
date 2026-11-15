@@ -53,11 +53,9 @@ from .service import (
     idempotent,
     create_mission,
     command,
-    advance,
     checkpoint_active_missions,
     policy,
 )
-from autonomy.decision_engine.states import ACTIVE
 from autonomy.mission_planning.dispatch import sequence_deliveries, MAX_DELIVERIES, MAX_AIRCRAFT
 from integrations.onesa_ai.adapter import configured as ai_configured
 from integrations.mavlink.plan import PlanError, preview_plan
