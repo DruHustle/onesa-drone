@@ -226,7 +226,7 @@ def test_rate_limiter_saturation_preserves_active_account_lockout(monkeypatch):
     from fastapi import HTTPException
     import backend.app.security as security
 
-    monkeypatch.setattr(security.time, "time", lambda: 120.0)
+    monkeypatch.setattr(security.time, "monotonic", lambda: 120.0)
     limiter = security.Limiter()
     limiter.check("login-account:synthetic-victim", limit=1)
     # Saturate the unique-key budget in the same minute. A live account
@@ -241,6 +241,31 @@ def test_rate_limiter_saturation_preserves_active_account_lockout(monkeypatch):
     assert locked.value.status_code == 429
 
     # A minute rollover releases the bounded cache and restores capacity.
-    monkeypatch.setattr(security.time, "time", lambda: 180.0)
+    monkeypatch.setattr(security.time, "monotonic", lambda: 180.0)
     limiter.check("peer:overflow")
     limiter.check("login-account:synthetic-victim", limit=1)
+
+
+def test_rate_limiter_window_ignores_wall_clock_rollback(monkeypatch):
+    import pytest
+    from fastapi import HTTPException
+    import backend.app.security as security
+
+    clock = {"monotonic": 120.0, "wall": 120.0}
+    monkeypatch.setattr(security.time, "monotonic", lambda: clock["monotonic"])
+    monkeypatch.setattr(security.time, "time", lambda: clock["wall"])
+    limiter = security.Limiter()
+    limiter.check("login-account:clock-test", limit=1)
+    with pytest.raises(HTTPException) as first_lockout:
+        limiter.check("login-account:clock-test", limit=1)
+    assert first_lockout.value.status_code == 429
+
+    # A backwards civil-time correction must not erase the active lockout.
+    clock["wall"] = 0.0
+    with pytest.raises(HTTPException) as after_rollback:
+        limiter.check("login-account:clock-test", limit=1)
+    assert after_rollback.value.status_code == 429
+
+    # The next monotonic minute is the only event that clears the window.
+    clock["monotonic"] = 180.0
+    limiter.check("login-account:clock-test", limit=1)
