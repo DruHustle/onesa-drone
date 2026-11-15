@@ -64,9 +64,18 @@ export async function signIn(openBrowser, request = requestAccount) {
     issuer.protocol === "https:" &&
     issuer.port === "" &&
     ["auth.onesa.eu", "portal.onesa.eu"].includes(issuer.hostname);
+  // The Portal's protocol endpoint is /api/v1/identity/auth; the
+  // managed OIDC issuer uses /authorize. Match each production host to its
+  // exact endpoint rather than accepting arbitrary paths on a trusted origin.
+  const trustedProductionPath =
+    (issuer.hostname === "auth.onesa.eu" && issuer.pathname === "/authorize") ||
+    (issuer.hostname === "portal.onesa.eu" && issuer.pathname === "/api/v1/identity/auth");
+  const trustedLocalPath =
+    localIssuer &&
+    ["/authorize", "/api/v1/identity/auth"].includes(issuer.pathname);
   if (
-    (!localIssuer && !trustedProductionIssuer) ||
-    !issuer.pathname.endsWith("/authorize") ||
+    (!trustedProductionIssuer && !localIssuer) ||
+    (!trustedProductionPath && !trustedLocalPath) ||
     issuer.username ||
     issuer.password ||
     issuer.hash ||
