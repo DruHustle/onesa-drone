@@ -54,6 +54,7 @@ from .service import (
     create_mission,
     command,
     advance,
+    checkpoint_active_missions,
     policy,
 )
 from autonomy.decision_engine.states import ACTIVE
@@ -85,22 +86,7 @@ def create_app(settings=None):
     }
 
     def checkpoint_pass():
-        with store.session() as db:
-            tenants = list(db.scalars(select(Tenant.id).limit(1000)))
-        active_count = 0
-        for tenant in tenants:
-            with store.transaction(tenant) as db:
-                missions = list(
-                    db.scalars(
-                        select(Mission)
-                        .where(Mission.tenant_id == tenant, Mission.state.in_(ACTIVE))
-                        .limit(32)
-                    )
-                )
-                active_count += len(missions)
-                for m in missions:
-                    advance(db, m, cfg.telemetry_limit)
-        return active_count
+        return checkpoint_active_missions(store, cfg.telemetry_limit)
 
     async def worker():
         while True:
