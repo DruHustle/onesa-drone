@@ -678,3 +678,12 @@ class HardwareHandoffTests(unittest.TestCase):
         self.assertNotIn("vendorApp", app)
         self.assertNotIn("View CHUBORY FLY", app)
         self.assertNotIn("while flying", app)
+        root = Path(__file__).resolve().parents[1]
+        readme = (root / "frontend/drone/mobile/README.md").read_text(encoding="utf-8")
+        self.assertIn("no manufacturer-app handoff", readme)
+        self.assertNotIn("offering an external handoff", readme)
+        assessment = (root / "docs/engineering/chubory-a77-prototype.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("not a supported Onesa integration", assessment)
+        self.assertNotIn("explicit vendor-app video handoff", assessment)
