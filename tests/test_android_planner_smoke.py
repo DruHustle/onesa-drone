@@ -75,5 +75,34 @@ class OfflineGateTests(unittest.TestCase):
             self.assertEqual(set(smoke.offline_readback().values()), {"unknown"})
 
 
+    def test_missing_emulator_subscription_is_checked_by_final_offline_readback(self):
+        events = []
+
+        def shell(*args, **kwargs):
+            events.append(("shell", args, kwargs))
+            if args == ("svc", "data", "disable"):
+                # Android 15's disposable no-SIM emulator can return exit 20
+                # for this subscription-scoped command. It must not abort
+                # before the independent settings/network safety checks.
+                self.assertIs(kwargs.get("check"), False)
+            return ""
+
+        def verify():
+            events.append(("verify",))
+            return OFFLINE
+
+        with patch.object(smoke, "shell", side_effect=shell), \\
+                patch.object(smoke, "verify_offline", side_effect=verify):
+            self.assertEqual(smoke.configure_offline(), OFFLINE)
+
+        data_disable = events.index(("shell", ("svc", "data", "disable"), {"check": False}))
+        mobile_data = events.index(("shell", ("settings", "put", "global", "mobile_data", "0"), {}))
+        airplane = events.index(("shell", ("cmd", "connectivity", "airplane-mode", "enable"), {}))
+        verified = events.index(("verify",))
+        self.assertLess(data_disable, mobile_data)
+        self.assertLess(mobile_data, airplane)
+        self.assertLess(airplane, verified)
+
+
 if __name__ == "__main__":
     unittest.main()
