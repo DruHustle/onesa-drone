@@ -161,31 +161,37 @@ def main():
     parser.add_argument("--confirm-empty", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
-    if not args.replace and (args.expected_sha256 or args.confirm_empty or args.dry_run):
-        parser.error("--expected-sha256, --confirm-empty and --dry-run require --replace")
-    if args.replace and not args.expected_sha256:
-        parser.error("--replace requires an out-of-band --expected-sha256")
-    store = Store(os.environ["DATABASE_URL"], identity_enabled=True)
-    store.verify()
+    if args.confirm_empty and not args.replace:
+        parser.error("--confirm-empty requires --replace")
+    if args.dry_run and not args.replace:
+        parser.error("--dry-run requires --replace")
+    if not args.expected_sha256:
+        parser.error("Every membership import requires an out-of-band --expected-sha256")
     with open(args.snapshot_file, "rb") as source:
         raw = source.read(MAX_SNAPSHOT_BYTES + 1)
     if len(raw) > MAX_SNAPSHOT_BYTES:
         parser.error("Membership snapshot exceeds the 16 MiB limit")
+    mapping_issuer = os.environ.get("ONESA_IDENTITY_MAPPING_ISSUER", "")
+    try:
+        snapshot_id, records = load_authoritative_snapshot(
+            raw, args.expected_sha256, mapping_issuer
+        )
+    except ValueError as error:
+        parser.error(str(error))
+
+    # Verify the complete, fresh, issuer-bound snapshot before opening the
+    # product database. Even additive migration grants must come from the
+    # independently hash-verified Identity owner export.
+    store = Store(os.environ["DATABASE_URL"], identity_enabled=True)
+    store.verify()
     if args.replace:
-        mapping_issuer = os.environ.get("ONESA_IDENTITY_MAPPING_ISSUER", "")
-        try:
-            snapshot_id, records = load_authoritative_snapshot(
-                raw, args.expected_sha256, mapping_issuer
-            )
-            result = reconcile_memberships(
-                store,
-                records,
-                complete_snapshot=True,
-                allow_empty=args.confirm_empty,
-                dry_run=args.dry_run,
-            )
-        except ValueError as error:
-            parser.error(str(error))
+        result = reconcile_memberships(
+            store,
+            records,
+            complete_snapshot=True,
+            allow_empty=args.confirm_empty,
+            dry_run=args.dry_run,
+        )
         action = "Would reconcile" if args.dry_run else "Reconciled"
         print(
             f"{action} snapshot {snapshot_id}: inserted={result['inserted']} "
@@ -193,13 +199,8 @@ def main():
             f"unchanged={result['unchanged']}"
         )
     else:
-        try:
-            payload = json.loads(raw)
-            records = payload["drone_memberships"]
-            inserted = import_memberships(store, records)
-        except (ValueError, KeyError, TypeError, UnicodeError, RecursionError) as error:
-            parser.error(f"Invalid additive membership snapshot: {error}")
-        print(f"Inserted {inserted} verified workspace memberships")
+        inserted = import_memberships(store, records)
+        print(f"Imported verified snapshot {snapshot_id}: inserted={inserted}")
 
 
 if __name__ == "__main__":
