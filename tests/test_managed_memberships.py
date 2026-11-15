@@ -1,5 +1,6 @@
 import hashlib
 import json
+import sys
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -8,6 +9,7 @@ from sqlalchemy import select
 
 from backend.app.db import Store
 from backend.app.identity import IdentityService, ManagedMembership
+from backend.app import managed_memberships as importer
 from backend.app.managed_memberships import (
     MAX_SNAPSHOT_BYTES,
     import_memberships,
@@ -212,6 +214,56 @@ def test_authoritative_snapshot_rejects_incomplete_stale_or_ambiguous_envelopes(
         load_authoritative_snapshot(
             raw, hashlib.sha256(raw).hexdigest(), issuer, now=1000
         )
+
+
+
+def test_cli_additive_import_requires_out_of_band_digest_before_database(monkeypatch, tmp_path):
+    issuer = "https://portal.onesa.eu/api/v1/identity"
+    path = tmp_path / "snapshot.json"
+    raw = json.dumps(snapshot_payload(issuer, []), sort_keys=True).encode()
+    path.write_bytes(raw)
+    monkeypatch.setenv("ONESA_IDENTITY_MAPPING_ISSUER", issuer)
+
+    def database_must_not_open(*_args, **_kwargs):
+        pytest.fail("Unverified membership input must be rejected before opening the database")
+
+    monkeypatch.setattr(importer, "Store", database_must_not_open)
+    monkeypatch.setattr(sys, "argv", ["managed_memberships", str(path)])
+    with pytest.raises(SystemExit) as missing:
+        importer.main()
+    assert missing.value.code == 2
+
+    monkeypatch.setattr(
+        sys, "argv",
+        ["managed_memberships", str(path), "--expected-sha256", "0" * 64],
+    )
+    with pytest.raises(SystemExit) as mismatched:
+        importer.main()
+    assert mismatched.value.code == 2
+
+
+def test_cli_additive_import_accepts_only_hash_verified_complete_snapshot(database, monkeypatch, tmp_path):
+    store, (first, _) = database
+    issuer = "https://portal.onesa.eu/api/v1/identity"
+    subject = str(uuid4())
+    raw = json.dumps(
+        snapshot_payload(issuer, [record(subject, first, "operator")]),
+        sort_keys=True,
+    ).encode()
+    path = tmp_path / "snapshot.json"
+    path.write_bytes(raw)
+
+    monkeypatch.setenv("ONESA_IDENTITY_MAPPING_ISSUER", issuer)
+    monkeypatch.setenv("DATABASE_URL", str(store.engine.url))
+    monkeypatch.setattr(
+        sys, "argv",
+        [
+            "managed_memberships", str(path), "--expected-sha256",
+            hashlib.sha256(raw).hexdigest(),
+        ],
+    )
+    importer.main()
+    assert saved(store) == {(subject, first): "operator"}
 
 
 def test_authoritative_snapshot_is_size_bounded_before_json_parsing():
