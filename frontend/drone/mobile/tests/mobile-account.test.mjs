@@ -10,7 +10,7 @@ function provider() {
   const request = async (path, options) => {
     requests.push([path, options]);
     return path === "/start"
-      ? { state, proof, authorization_url: "https://portal.onesa.eu/authorize" }
+      ? { state, proof, authorization_url: "https://portal.onesa.eu/api/v1/identity/auth" }
       : { session };
   };
   return { requests, request };
@@ -31,7 +31,7 @@ test("the system browser returns to a proof-bound native exchange", async () => 
 test("production sign-in accepts only the current Onesa identity issuers", async () => {
   for (const authorization_url of [
     "https://auth.onesa.eu/authorize",
-    "https://portal.onesa.eu/authorize",
+    "https://portal.onesa.eu/api/v1/identity/auth",
   ]) {
     const { requests } = provider();
     const request = async (path, options) => {
@@ -57,7 +57,9 @@ test("untrusted, lookalike, nonstandard-port and non-HTTPS issuers never open th
     "https://auth.onesa.eu.attacker.example/authorize",
     "https://auth.onesa.eu:444/authorize",
     "http://auth.onesa.eu/authorize",
-    "https://auth.onesa.eu/not-authorize",
+    "https://auth.onesa.eu/api/v1/identity/auth",
+    "https://portal.onesa.eu/authorize",
+    "https://portal.onesa.eu/api/v1/identity/auth/evil",
   ]) {
     const { requests } = provider();
     const request = async (path, options) => {
