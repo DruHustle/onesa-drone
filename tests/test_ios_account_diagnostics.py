@@ -39,6 +39,13 @@ ONESA_ACCOUNT_CHECKPOINT admin:warm:https://private.invalid
         self.assertEqual(summarize("private unexpected message")["categories"],
                          ["unclassified-failure"])
 
+    def test_disk_exhaustion_is_reported_without_private_build_paths(self):
+        result = summarize("error: error opening /private/account-secret/cache.d: No space left on device\n"
+                           "Command CompileC failed with a nonzero exit code\n** TEST FAILED **")
+        self.assertEqual(result["categories"], ["test-run-failed", "disk-space-exhausted"])
+        self.assertEqual(result["checkpoints"], [])
+        self.assertNotIn("account-secret", json.dumps(result))
+
     def test_keyboard_errors_return_only_the_fixed_category(self):
         result = summarize("Failed to synthesize event for private-user: Neither element nor any descendant has keyboard focus")
         self.assertEqual(result["categories"], ["keyboard-focus-missing", "input-event-unavailable"])

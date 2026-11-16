@@ -24,6 +24,7 @@ def summarize(text):
         "test-run-failed": r"\*\* TEST FAILED \*\*",
         "test-build-failed": r"\*\* TEST BUILD FAILED \*\*",
         "compiler-error": r"(?m)^.*\.(?:swift|m|mm|h):\d+:\d+: error:",
+        "disk-space-exhausted": r"No space left on device",
         "simulator-boot-failed": r"(?:Failed to boot|Unable to boot|Data Migration Failed)",
         "runner-launch-failed": r"(?:Failed to launch|Failed to establish communication|Early unexpected exit)",
         "assertion-failed": r"XCTAssert\w* failed|XCTUnwrap failed",
