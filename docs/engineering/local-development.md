@@ -63,12 +63,12 @@ python3.11 -m venv .venv311
 .venv311/bin/python -m pip install -r backend/requirements.lock
 npm --prefix frontend ci --ignore-scripts
 npm --prefix frontend run build
-npm --prefix ../onesa-company-portal/onesa-company-portal-backend ci --ignore-scripts
-npm --prefix ../onesa-company-portal/onesa-company-portal-backend run build
-npm --prefix ../onesa-company-portal/onesa-company-portal-frontend ci --ignore-scripts
+npm --prefix ../onesa-portal/onesa-company-portal-backend ci --ignore-scripts
+npm --prefix ../onesa-portal/onesa-company-portal-backend run build
+npm --prefix ../onesa-portal/onesa-company-portal-frontend ci --ignore-scripts
 (cd frontend && npx playwright install chromium)
 .venv311/bin/python scripts/acceptance/run_local.py \
-  --portal ../onesa-company-portal --pg-bin "${PG_BIN:-$(pg_config --bindir)}"
+  --portal ../onesa-portal --pg-bin "${PG_BIN:-$(pg_config --bindir)}"
 ```
 
 The loopback ports are 54843 (Portal HTTPS), 54844 (Drone HTTPS), 58300
