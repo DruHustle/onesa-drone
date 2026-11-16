@@ -105,7 +105,7 @@ def test_conflicting_aircraft_assignments(stack, aircraft):
     assert cmd(stack, b, "plan").status_code == 422
 
 
-@pytest.mark.parametrize("action", ["launch", "authorize", "validate", "recover", "reschedule"])
+@pytest.mark.parametrize("action", ["launch", "authorize", "validate", "recover", "abort", "reschedule"])
 def test_invalid_state_transitions(stack, aircraft, action):
     m = delivery(stack)["mission"]
     assert cmd(stack, m, action).status_code == 422
@@ -136,6 +136,30 @@ def test_failure_injection_and_recovery(stack, aircraft, scenario):
         m = cmd(stack, m, "recover").json()
     m = tick(stack, m["id"], 100)
     assert m["state"] == "aborted" and not m["delivered"]
+    with stack["store"].session() as db:
+        assert db.get(Aircraft, aircraft["id"]).active_mission_id is None
+
+
+def test_communication_loss_records_link_loss_and_safe_virtual_return(stack, aircraft):
+    m, _ = launch(stack, "communication_loss")
+    lost = tick(stack, m["id"], 10)
+
+    assert lost["state"] == "returning"
+    assert not lost["delivered"]
+    sample = lost["last_telemetry"]
+    assert sample["seq"] == 10
+    assert sample["flight_mode"] == "returning"
+    assert sample["connectivity"] == "simulated-link-lost"
+    assert sample["return_path"]
+    assert sample["return_path"][0] == sample["position"]
+
+    history = stack["client"].get(f"/api/v1/missions/{m['id']}/history").json()
+    assert history["telemetry"][-1] == sample
+
+    recovered = tick(stack, m["id"], 100)
+    assert recovered["state"] == "aborted"
+    assert not recovered["delivered"]
+    assert recovered["last_telemetry"]["connectivity"] == "simulated-link-lost"
     with stack["store"].session() as db:
         assert db.get(Aircraft, aircraft["id"]).active_mission_id is None
 
@@ -177,6 +201,53 @@ def test_active_cancellation_returns_home(stack, aircraft):
     assert m["state"] == "returning"
     m = tick(stack, m["id"], 100)
     assert m["state"] == "cancelled" and not m["delivered"]
+
+
+def test_operator_abort_returns_active_mission_home_without_delivery(stack, aircraft):
+    m, _ = launch(stack)
+    m = tick(stack, m["id"], 6)
+    assert m["state"] in {"outbound", "delivering"}
+    aborted = cmd(stack, m, "abort").json()
+    assert aborted["state"] == "returning"
+    assert aborted["outcome"] == "aborted"
+    assert not aborted["delivered"]
+    history = stack["client"].get(f"/api/v1/missions/{m['id']}/history").json()
+    assert history["events"][-1]["detail"]["reason"] == "Operator abort; virtual return"
+    terminal = tick(stack, m["id"], 100)
+    assert terminal["state"] == "aborted" and not terminal["delivered"]
+    assert terminal["last_telemetry"]["position"] == terminal["origin"]
+    assert terminal["last_telemetry"]["altitude_m"] == 0
+    with stack["store"].session() as db:
+        row = db.get(Aircraft, aircraft["id"])
+        assert row.active_mission_id is None and row.status == "available"
+
+
+@pytest.mark.parametrize("state", ["returning", "landing"])
+def test_abort_during_return_or_landing_preserves_phase_progress(stack, aircraft, state):
+    m, _ = launch(stack)
+    for _ in range(150):
+        if m["state"] == state:
+            break
+        m = tick(stack, m["id"])
+    assert m["state"] == state
+    before = m["last_telemetry"]
+    aborted = cmd(stack, m, "abort").json()
+    assert aborted["state"] == state
+    assert aborted["outcome"] == "aborted"
+    history = stack["client"].get(f"/api/v1/missions/{m['id']}/history").json()
+    assert history["events"][-1]["detail"]["reason"] == (
+        "Operator abort requested; existing virtual return preserved"
+    )
+    resumed = tick(stack, m["id"])
+    assert resumed["state"] == state
+    if state == "returning":
+        assert distance(xy(resumed["last_telemetry"]["position"], m["origin"]), (0, 0)) <= distance(
+            xy(before["position"], m["origin"]), (0, 0)
+        )
+    terminal = tick(stack, m["id"], 100)
+    assert terminal["state"] == "aborted"
+    assert terminal["last_telemetry"]["position"] == terminal["origin"]
+    assert terminal["last_telemetry"]["altitude_m"] == 0
 
 
 @pytest.mark.parametrize(
