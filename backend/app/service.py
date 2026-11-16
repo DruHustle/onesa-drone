@@ -2,6 +2,7 @@ import json
 import time
 import secrets
 from sqlalchemy import select, delete
+from sqlalchemy.exc import SQLAlchemyError
 from fastapi import HTTPException
 from .models import Aircraft, Mission, MissionEvent, Audit, Tenant, Receipt, Telemetry, Incident, uid
 from .security import digest
@@ -10,6 +11,74 @@ from autonomy.safety_supervisor.supervisor import validate_launch, supervision
 from autonomy.observations import positive_number, valid_battery
 from autonomy.decision_engine.states import check_transition, ACTIVE, TERMINAL
 from simulation.physics.kinematic import STEP_SECONDS, sample
+
+
+TENANT_CHECKPOINT_BATCH = 100
+MISSION_CHECKPOINT_BATCH = 32
+
+
+def checkpoint_active_missions(store, telemetry_limit, on_error=None, tenant_ids=None):
+    """Advance every active simulation, isolating corrupt missions from healthy work.
+
+    Storage failures abort the pass so the worker can back off. A non-storage
+    failure is rolled back for that mission, reported through on_error, and
+    does not prevent later missions or tenants from receiving their checkpoint.
+    """
+    active_count = 0
+    # Optional tenant scoping keeps integration tests isolated in the shared
+    # disposable PostgreSQL database. Production leaves this unset and scans
+    # every tenant in deterministic bounded pages.
+    scoped_tenants = tuple(sorted(set(tenant_ids))) if tenant_ids is not None else None
+    if scoped_tenants == ():
+        return 0
+    tenant_cursor = ""
+    while True:
+        with store.session() as db:
+            tenant_query = select(Tenant.id).where(Tenant.id > tenant_cursor)
+            if scoped_tenants is not None:
+                tenant_query = tenant_query.where(Tenant.id.in_(scoped_tenants))
+            tenant_page = list(
+                db.scalars(
+                    tenant_query.order_by(Tenant.id).limit(TENANT_CHECKPOINT_BATCH)
+                )
+            )
+        if not tenant_page:
+            break
+        for tenant_id in tenant_page:
+            mission_cursor = ""
+            while True:
+                with store.session() as db:
+                    mission_ids = list(
+                        db.scalars(
+                            select(Mission.id)
+                            .where(
+                                Mission.tenant_id == tenant_id,
+                                Mission.state.in_(ACTIVE),
+                                Mission.id > mission_cursor,
+                            )
+                            .order_by(Mission.id)
+                            .limit(MISSION_CHECKPOINT_BATCH)
+                        )
+                    )
+                if not mission_ids:
+                    break
+                for mission_id in mission_ids:
+                    try:
+                        with store.transaction(tenant_id) as db:
+                            mission = db.get(Mission, mission_id)
+                            if mission is None or mission.tenant_id != tenant_id or mission.state not in ACTIVE:
+                                continue
+                            advance(db, mission, telemetry_limit)
+                        active_count += 1
+                    except SQLAlchemyError:
+                        raise
+                    except Exception as error:
+                        if on_error is None:
+                            raise
+                        on_error(tenant_id, mission_id, error)
+                mission_cursor = mission_ids[-1]
+        tenant_cursor = tenant_page[-1]
+    return active_count
 
 
 def j(value):

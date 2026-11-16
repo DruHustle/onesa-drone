@@ -10,7 +10,7 @@ function provider() {
   const request = async (path, options) => {
     requests.push([path, options]);
     return path === "/start"
-      ? { state, proof, authorization_url: "https://portal.onesa.eu/authorize" }
+      ? { state, proof, authorization_url: "https://portal.onesa.eu/api/v1/identity/auth" }
       : { session };
   };
   return { requests, request };
@@ -18,7 +18,7 @@ function provider() {
 test("the system browser returns to a proof-bound native exchange", async () => {
   const { request, requests } = provider();
   const browser = async (url, callback) => {
-    assert.equal(url, "https://portal.onesa.eu/authorize");
+    assert.equal(url, "https://portal.onesa.eu/api/v1/identity/auth");
     assert.equal(callback, CALLBACK);
     return {
       type: "success",
@@ -28,6 +28,61 @@ test("the system browser returns to a proof-bound native exchange", async () => 
   assert.equal(await signIn(browser, request), session);
   assert.deepEqual(requests[1][1].body, { state, proof, code: "one-use" });
 });
+test("production sign-in accepts only the current Onesa identity issuers", async () => {
+  for (const authorization_url of [
+    "https://auth.onesa.eu/authorize",
+    "https://portal.onesa.eu/api/v1/identity/auth",
+  ]) {
+    const { requests } = provider();
+    const request = async (path, options) => {
+      requests.push([path, options]);
+      return path === "/start"
+        ? { state, proof, authorization_url }
+        : { session };
+    };
+    const result = await signIn(
+      async (_url, callback) => ({
+        type: "success",
+        url: callback + "?state=" + state + "&code=one-use",
+      }),
+      request,
+    );
+    assert.equal(result, session);
+  }
+});
+
+test("untrusted, lookalike, nonstandard-port and non-HTTPS issuers never open the browser", async () => {
+  for (const authorization_url of [
+    "https://attacker.example/authorize",
+    "https://auth.onesa.eu.attacker.example/authorize",
+    "https://auth.onesa.eu:444/authorize",
+    "http://auth.onesa.eu/authorize",
+    "https://auth.onesa.eu/api/v1/identity/auth",
+    "https://portal.onesa.eu/authorize",
+    "https://portal.onesa.eu/api/v1/identity/auth/evil",
+  ]) {
+    const { requests } = provider();
+    const request = async (path, options) => {
+      requests.push([path, options]);
+      return {
+        state,
+        proof,
+        authorization_url,
+      };
+    };
+    let opened = false;
+    await assert.rejects(
+      signIn(async () => {
+        opened = true;
+        return { type: "cancel" };
+      }, request),
+      /Invalid sign-in response/,
+    );
+    assert.equal(opened, false);
+    assert.equal(requests.length, 1);
+  }
+});
+
 test("interruption, wrong callback, duplicate code and changed state discard the exchange", async () => {
   for (const result of [
     { type: "cancel" },

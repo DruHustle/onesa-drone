@@ -106,6 +106,13 @@ def test_mismatch_or_privilege_denied(signed, changes, profile):
         validate(config, json.dumps(pair(changes, profile)))
 
 
+@pytest.mark.parametrize("additional", [[], ["https://other-product.example"]])
+def test_resource_token_audience_must_be_one_exact_string(signed, additional):
+    config, _, pair = signed
+    with pytest.raises(IdentityError):
+        validate(config, json.dumps(pair({"aud": [config.audience, *additional]})))
+
+
 def test_web_and_native_callbacks_preserve_local_workspace_when_issuer_is_unavailable(
     tmp_path, monkeypatch, signed
 ):
