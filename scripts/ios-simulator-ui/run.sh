@@ -39,24 +39,8 @@ trap cleanup EXIT
 # Choose an installed iPhone/runtime pairing, then create an entirely fresh
 # simulator so the first-launch Keychain and subsequent persistence are observable.
 xcrun simctl list devices available -j > "$work/devices.json"
-read -r runtime model < <(python3 - "$work/devices.json" <<'PY'
-import json, re, sys
-with open(sys.argv[1]) as data:
-    devices = json.load(data)["devices"]
-choices = []
-for runtime, installed in devices.items():
-    version = re.fullmatch(r"com\.apple\.CoreSimulator\.SimRuntime\.iOS-(\d+(?:-\d+)*)", runtime)
-    if version:
-        for item in installed:
-            model = item.get("deviceTypeIdentifier", "")
-            if item.get("isAvailable") and ".iPhone-" in model:
-                choices.append((tuple(map(int, version[1].split("-"))), runtime, model))
-if not choices:
-    raise SystemExit("Install an iOS Simulator runtime and an iPhone simulator in Xcode.")
-_, runtime, model = max(choices)
-print(runtime, model)
-PY
-)
+xcrun simctl list runtimes -j > "$work/runtimes.json"
+read -r runtime model < <(python3 "$repo/scripts/ios-simulator-ui/select_simulator.py" "$work/devices.json" "$work/runtimes.json")
 booted=false
 for attempt in 1 2; do
   device=$(xcrun simctl create "Onesa Drone UI $$ $attempt" "$model" "$runtime")
