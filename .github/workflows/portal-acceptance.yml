@@ -35,7 +35,7 @@ jobs:
       - name: Check out the Portal issuer qualified with this consumer
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          repository: DruHustle/onesa-company-portal
+          repository: DruHustle/onesa-portal
           ref: 464661b2501554dad31697b0ac581dbdd6989917
           path: portal
           persist-credentials: false
@@ -120,7 +120,7 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          repository: DruHustle/onesa-company-portal
+          repository: DruHustle/onesa-portal
           ref: 464661b2501554dad31697b0ac581dbdd6989917
           path: portal
           persist-credentials: false
