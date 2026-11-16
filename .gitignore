@@ -10,6 +10,7 @@ __pycache__/
 *.db
 *.db-*
 frontend/dist/
+frontend/drone/web/dist/
 test-results/
 playwright-report/
 artifacts/
@@ -17,6 +18,7 @@ artifacts/
 .DS_Store
 .venv311/
 frontend/*.tsbuildinfo
+frontend/drone/web/*.tsbuildinfo
 
 # Generated working tools are private or host-specific; keep reusable source in scripts/.
 local-tools/
