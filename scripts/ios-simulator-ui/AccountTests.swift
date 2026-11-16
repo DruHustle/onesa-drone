@@ -7,6 +7,25 @@ final class AccountTests: XCTestCase {
     @MainActor private lazy var springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
     private var scenario = ""
 
+    @MainActor private var browserOwners: [XCUIApplication] {
+        var owners: [XCUIApplication] = []
+        // The authentication service can remain embedded in the foreground
+        // product while XCTest reports its own process in the background.
+        if [.runningForeground, .runningBackground].contains(authSheet.state) { owners.append(authSheet) }
+        if safari.state == .runningForeground { owners.append(safari) }
+        if app.state == .runningForeground { owners.append(app) }
+        return owners
+    }
+
+    @MainActor private func issuerFormContext(_ surface: XCUIElement) -> Bool {
+        guard [.runningForeground, .runningBackground].contains(authSheet.state) ||
+                safari.state == .runningForeground, surface.webViews.count > 0 else { return false }
+        let nodes = surface.descendants(matching: .any)
+        return nodes["Sign in to Onesa"].firstMatch.exists &&
+            nodes["Remember this browser"].firstMatch.exists &&
+            (surface.buttons["Cancel sign-in"].firstMatch.exists || surface.links["Cancel sign-in"].firstMatch.exists)
+    }
+
     private func checkpoint(_ phase: String) {
         print("ONESA_ACCOUNT_CHECKPOINT \(scenario):\(phase)")
     }
@@ -65,6 +84,19 @@ final class AccountTests: XCTestCase {
             $0.state == .runningForeground && $0.webViews.firstMatch.exists
         })
         observed("email-field-visible", inSheet("Email address") != nil)
+        observed("issuer-form-context-visible", browserOwners.contains { issuerFormContext($0) })
+        observed("browser-text-field-visible", browserOwners.contains { $0.textFields.firstMatch.exists })
+        observed("portal-loading-visible", browserOwners.contains { $0.staticTexts["Please wait…"].exists })
+        observed("portal-sign-in-visible", browserOwners.contains { $0.descendants(matching: .any)["Sign in to Onesa"].firstMatch.exists })
+        observed("portal-unavailable-visible", browserOwners.contains { $0.staticTexts["Shared sign-in is being prepared"].exists })
+        observed("browser-trust-error-visible", browserOwners.contains {
+            $0.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@ OR label CONTAINS[c] %@",
+                                              "connection is not private", "certificate for this server")).firstMatch.exists
+        })
+        observed("browser-network-error-visible", browserOwners.contains {
+            $0.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@ OR label CONTAINS[c] %@",
+                                              "Safari cannot open the page", "could not connect to the server")).firstMatch.exists
+        })
     }
 
     @MainActor private func waitFor(_ check: () -> Bool, seconds: TimeInterval = 45) -> Bool {
@@ -110,6 +142,23 @@ final class AccountTests: XCTestCase {
 
     @MainActor private func field(_ label: String, in web: XCUIElement) -> XCUIElement {
         let fields = label == "Password" ? web.secureTextFields : web.textFields
+        if web is XCUIApplication {
+            let exact = fields.matching(NSPredicate(format: "label == %@", label))
+            if exact.count == 1 { return exact.firstMatch }
+            // WebKit can expose the HTML label as a neighbouring text node.
+            // Never use an unnamed control outside the verified issuer form,
+            // or choose an ambiguous input of the same type.
+            guard issuerFormContext(web) else { return exact.firstMatch }
+            if ["Email address", "Password"].contains(label), fields.count == 1 { return fields.firstMatch }
+            if label == "Email address", ["member", "admin"].contains(String(scenario.split(separator: ":").first ?? "")) {
+                // MFA adds another text input. The email already entered must
+                // still be uniquely identifiable by its exact fixture value.
+                let address = String(scenario.split(separator: ":")[0]) + "@example.test"
+                let entered = fields.matching(NSPredicate(format: "value == %@", address))
+                if entered.count == 1 { return entered.firstMatch }
+            }
+            return exact.firstMatch
+        }
         let named = fields[label]
         return named.exists ? named : fields.matching(NSPredicate(format: "label CONTAINS[c] %@", label)).firstMatch
     }
@@ -117,7 +166,7 @@ final class AccountTests: XCTestCase {
     @MainActor private func enter(_ value: String, into label: String, in web: XCUIElement) throws {
         var acceptedTutorial = false
         @MainActor func keyboardReady() -> Bool {
-            let owners = [authSheet, safari, app, springboard].filter { $0.state == .runningForeground }
+            let owners = browserOwners + [springboard]
             for surface in owners {
                 let tutorial = surface.descendants(matching: .any)["UIContinuousPathIntroductionView"].firstMatch
                 guard tutorial.exists else { continue }
@@ -135,13 +184,24 @@ final class AccountTests: XCTestCase {
             return owners.contains { $0.keyboards.firstMatch.exists }
         }
         let input = field(label, in: web)
-        let editable = waitFor({ input.exists && input.isEnabled && input.isHittable }, seconds: 15)
-        try XCTUnwrap(editable ? input : nil, "Browser input is editable").tap()
+        let editable = waitFor({ input.exists && input.isEnabled &&
+            (input.isHittable || (web is XCUIApplication && self.issuerFormContext(web) &&
+                                  !input.frame.intersection(self.app.frame).isEmpty)) }, seconds: 15)
+        _ = try XCTUnwrap(editable ? true : nil, "Browser input is editable")
+        if input.isHittable {
+            input.tap()
+        } else {
+            let visible = input.frame.intersection(app.frame)
+            let point = CGVector(dx: visible.midX - app.frame.minX, dy: visible.midY - app.frame.minY)
+            app.coordinate(withNormalizedOffset: .zero).withOffset(point).tap()
+        }
         if !waitFor(keyboardReady, seconds: 6), input.exists && input.isEnabled && input.isHittable {
             // A newly presented WebKit field can appear before its first tap
             // gives the software keyboard focus. This repeat only focuses it.
             let visible = web.frame.intersection(input.frame)
-            if !visible.isEmpty {
+            if web is XCUIApplication {
+                input.tap()
+            } else if !visible.isEmpty {
                 let offset = CGVector(dx: visible.midX - web.frame.minX, dy: visible.midY - web.frame.minY)
                 web.coordinate(withNormalizedOffset: .zero).withOffset(offset).tap()
             }
@@ -150,11 +210,19 @@ final class AccountTests: XCTestCase {
         if !ready { browserFailureState() }
         // A focused descendant receives real OS typing. Verify privately that
         // the intended field received it before entering another value.
-        try XCTUnwrap(ready ? web : nil, "Browser keyboard is ready for input").typeText(value)
+        let typingTarget = web is XCUIApplication ? input : web
+        let keyboardTarget = try XCTUnwrap(ready ? typingTarget : nil, "Browser keyboard is ready for input")
+        // Complete each native key event before the next. Bulk WebKit typing
+        // can drop characters; a mismatched value must never be submitted.
+        for character in value { keyboardTarget.typeText(String(character)) }
         let received = waitFor({
             let current = self.field(label, in: web)
             guard let actual = current.value as? String else { return false }
-            return label == "Password" ? !actual.isEmpty && actual != current.placeholderValue : actual == value
+            if label == "Password" {
+                return current.elementType == .secureTextField && actual.count == value.count &&
+                    actual.allSatisfy { $0 == "•" || $0 == "●" }
+            }
+            return actual == value
         }, seconds: 5)
         _ = try XCTUnwrap(received ? true : nil, "Named browser input received the fixture value")
     }
@@ -162,7 +230,7 @@ final class AccountTests: XCTestCase {
     @MainActor private func dismissNativeKeyboard() throws {
         var doneTyping: XCUIElement?
         XCTAssertTrue(waitFor({
-            for surface in [app, authSheet, safari] where surface.state == .runningForeground {
+            for surface in browserOwners {
                 let done = surface.buttons["Done"].firstMatch
                 if done.exists && done.isHittable { doneTyping = done; return true }
             }
@@ -170,7 +238,7 @@ final class AccountTests: XCTestCase {
         }, seconds: 10), "Native browser Done control")
         try XCTUnwrap(doneTyping).tap()
         XCTAssertTrue(waitFor({
-            [app, authSheet, safari].filter { $0.state == .runningForeground }.allSatisfy { !$0.keyboards.firstMatch.exists }
+            self.browserOwners.allSatisfy { !$0.keyboards.firstMatch.exists }
         }, seconds: 10), "Native keyboard dismissed before form action")
     }
 
@@ -285,14 +353,31 @@ final class AccountTests: XCTestCase {
     }
 
     @MainActor private func inSheet(_ name: String, browserOnly: Bool = false, readyForInput: Bool = false) -> XCUIElement? {
-        let owners = browserOnly ? [authSheet, safari] : [app, authSheet, safari]
-        for surface in owners where surface.state == .runningForeground {
-            let web = surface.webViews.firstMatch
-            guard web.exists else { continue }
+        if browserOnly && ![.runningForeground, .runningBackground].contains(authSheet.state) &&
+            safari.state != .runningForeground { return nil }
+        for surface in browserOwners {
+            for web in surface.webViews.allElementsBoundByIndex {
+                if name == "Email address" {
+                    let email = field(name, in: web)
+                    if email.exists && (!readyForInput || (email.isEnabled && email.isHittable)) { return web }
+                } else {
+                    let action = web.buttons[name]
+                    if action.exists && action.isEnabled && action.isHittable { return web }
+                }
+            }
+            // The embedded browser may expose its form on the owning app's
+            // accessibility tree, outside its WebView descendants. Verify the
+            // issuer context before inspecting unique typed fields there.
+            guard issuerFormContext(surface) else { continue }
             if name == "Email address" {
-                let email = field(name, in: web)
-                if email.exists && (!readyForInput || (email.isEnabled && email.isHittable)) { return web }
-            } else if web.buttons[name].exists { return web }
+                let email = field(name, in: surface)
+                let password = field("Password", in: surface)
+                if email.exists && password.exists && email.isEnabled && password.isEnabled &&
+                    !email.frame.intersection(app.frame).isEmpty { return surface }
+            } else {
+                let action = surface.buttons[name]
+                if action.exists && action.isEnabled && action.isHittable { return surface }
+            }
         }
         return nil
     }

@@ -24,3 +24,14 @@ once before installing any certificate or application. Failure to boot the secon
 device fails the job. There is no retry of a failed account or planner test, and
 exactly one successful required XCTest with zero failed/skipped tests is required.
 No physical device, aircraft interface, provider or production account is used.
+
+WebKit may expose an embedded authentication form outside the first web view,
+with HTML labels as neighbouring text nodes. The account suite checks all active
+browser surfaces and accepts an owning-app form only while the Safari service is
+running and the exact Portal heading, remember control and cancel action are
+present. Unnamed inputs must have a unique type in that verified form; after MFA
+adds another text input, the previously entered fixture email must remain unique
+by its exact value. Keyboard input is verified before submission, including the
+secure-field length. Member/admin cold and warm sign-in, MFA, issuer request
+counts, scoped expiry, immutable subject, Keychain relaunch and logout checks all
+remain mandatory. Only fixed failure-state flags leave the private test output.

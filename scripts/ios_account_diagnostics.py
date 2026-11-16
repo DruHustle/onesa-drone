@@ -40,6 +40,8 @@ def summarize(text):
         r"(app-foreground|safari-foreground|auth-sheet-foreground|consent-continue-visible|"
         r"sign-in-enabled|sign-in-disabled|contacting-visible|service-unavailable-visible|"
         r"interrupted-visible|callback-unconfirmed-visible|invalid-account-visible|reconnect-visible|"
+        r"issuer-form-context-visible|browser-text-field-visible|portal-loading-visible|portal-sign-in-visible|"
+        r"portal-unavailable-visible|browser-trust-error-visible|browser-network-error-visible|"
         r"session-rejected-visible|cancelled-visible|invalid-start-visible|network-failure-visible|timeout-failure-visible|tls-failure-visible|"
         r"app-webview-visible|browser-webview-visible|email-field-visible)(?=\r?$)", text, re.MULTILINE
     ):
