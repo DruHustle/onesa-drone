@@ -68,9 +68,11 @@ for _ in {1..90}; do
   sleep 1
 done
 if [[ "$ready" != true ]]; then echo "Metro did not start." >&2; exit 1; fi
-if [[ "$mode" == auth ]]; then
-  python3 "$repo/scripts/verify_native_metro.py" "$work/metro-preflight.json"
-fi
+# Metro's status endpoint does not mean its first full bundle has compiled.
+# Prepare that response before either Debug UI test starts its unchanged wait.
+profile=planner
+if [[ "$mode" == auth ]]; then profile=account; fi
+python3 "$repo/scripts/verify_native_metro.py" "$work/metro-preflight.json" --profile "$profile"
 if [[ "$mode" == auth ]]; then
   selected=AccountTests/testPortalSignInAndSystemCallback
   export TEST_RUNNER_ONESA_FIXTURE_PASSWORD="$ONESA_FIXTURE_PASSWORD"

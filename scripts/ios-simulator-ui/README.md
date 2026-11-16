@@ -25,6 +25,16 @@ device fails the job. There is no retry of a failed account or planner test, and
 exactly one successful required XCTest with zero failed/skipped tests is required.
 No physical device, aircraft interface, provider or production account is used.
 
+Both Debug UI paths compile and verify the complete Metro entry response before
+launching XCTest. A listening `/status` endpoint alone does not establish bundle
+readiness. Both profiles require the debug account module. The planner profile
+also requires its offline planner labels; the account profile requires the exact
+loopback fixture origin. Both retain the 120-second preparation bound, response size/type
+checks and redirect/proxy refusal. Only fixed metadata and a digest leave the
+preflight. The actual UI, encrypted-draft persistence and hardware-lock assertions
+remain independent and keep their original deadlines. Standalone Release still
+runs its bundled application without Metro.
+
 OS browser consent is identified by its localhost sign-in alert and enabled,
 hittable Continue control. Each tap uses that control's current frame, bounded by
 the verified alert and foreground application. The harness permits one repeat
