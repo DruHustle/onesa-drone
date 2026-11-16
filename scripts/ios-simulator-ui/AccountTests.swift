@@ -7,6 +7,25 @@ final class AccountTests: XCTestCase {
     @MainActor private lazy var springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
     private var scenario = ""
 
+    @MainActor private var browserOwners: [XCUIApplication] {
+        var owners: [XCUIApplication] = []
+        // The authentication service can remain embedded in the foreground
+        // product while XCTest reports its own process in the background.
+        if [.runningForeground, .runningBackground].contains(authSheet.state) { owners.append(authSheet) }
+        if safari.state == .runningForeground { owners.append(safari) }
+        if app.state == .runningForeground { owners.append(app) }
+        return owners
+    }
+
+    @MainActor private func issuerFormContext(_ surface: XCUIElement) -> Bool {
+        guard [.runningForeground, .runningBackground].contains(authSheet.state) ||
+                safari.state == .runningForeground, surface.webViews.count > 0 else { return false }
+        let nodes = surface.descendants(matching: .any)
+        return nodes["Sign in to Onesa"].firstMatch.exists &&
+            nodes["Remember this browser"].firstMatch.exists &&
+            (surface.buttons["Cancel sign-in"].firstMatch.exists || surface.links["Cancel sign-in"].firstMatch.exists)
+    }
+
     private func checkpoint(_ phase: String) {
         print("ONESA_ACCOUNT_CHECKPOINT \(scenario):\(phase)")
     }
@@ -65,6 +84,19 @@ final class AccountTests: XCTestCase {
             $0.state == .runningForeground && $0.webViews.firstMatch.exists
         })
         observed("email-field-visible", inSheet("Email address") != nil)
+        observed("issuer-form-context-visible", browserOwners.contains { issuerFormContext($0) })
+        observed("browser-text-field-visible", browserOwners.contains { $0.textFields.firstMatch.exists })
+        observed("portal-loading-visible", browserOwners.contains { $0.staticTexts["Please wait…"].exists })
+        observed("portal-sign-in-visible", browserOwners.contains { $0.descendants(matching: .any)["Sign in to Onesa"].firstMatch.exists })
+        observed("portal-unavailable-visible", browserOwners.contains { $0.staticTexts["Shared sign-in is being prepared"].exists })
+        observed("browser-trust-error-visible", browserOwners.contains {
+            $0.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@ OR label CONTAINS[c] %@",
+                                              "connection is not private", "certificate for this server")).firstMatch.exists
+        })
+        observed("browser-network-error-visible", browserOwners.contains {
+            $0.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@ OR label CONTAINS[c] %@ OR label CONTAINS[c] %@",
+                                              "Safari cannot open the page", "could not connect to the server", "server stopped responding")).firstMatch.exists
+        })
     }
 
     @MainActor private func waitFor(_ check: () -> Bool, seconds: TimeInterval = 45) -> Bool {
@@ -76,15 +108,37 @@ final class AccountTests: XCTestCase {
         return false
     }
 
-    @MainActor private func browserConsent() -> XCUIElement? {
+    @MainActor private func browserConsentAlert() -> XCUIElement? {
         let title = NSPredicate(format: "label CONTAINS[c] %@ AND label CONTAINS[c] %@", "localhost", "sign in")
         for owner in [springboard, app] {
             let alert = owner.alerts.firstMatch
             guard alert.exists, title.evaluate(with: alert) || alert.staticTexts.matching(title).firstMatch.exists else { continue }
-            let button = alert.buttons["Continue"].firstMatch
-            if button.exists && button.isHittable { return button }
+            return alert
         }
         return nil
+    }
+
+    @MainActor private func browserConsent() -> XCUIElement? {
+        guard let alert = browserConsentAlert() else { return nil }
+        let button = alert.buttons["Continue"].firstMatch
+        guard button.exists, button.isEnabled, button.isHittable,
+              !button.frame.isEmpty, alert.frame.contains(button.frame) else { return nil }
+        return button
+    }
+
+    @MainActor private func tapBrowserConsent() -> Bool {
+        // Reacquire the exact OS alert for every tap. XCTest can report a valid
+        // Continue control while its activation point does not dismiss it.
+        // Use only its live visible frame through the foreground application.
+        guard let button = browserConsent(),
+              let foreground = [app, springboard].first(where: { $0.state == .runningForeground }) else { return false }
+        let frame = button.frame
+        let window = foreground.frame
+        guard [frame.minX, frame.minY, frame.width, frame.height].allSatisfy({ $0.isFinite }),
+              !frame.isEmpty, window.contains(frame) else { return false }
+        foreground.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: frame.midX - window.minX, dy: frame.midY - window.minY)).tap()
+        return true
     }
 
     @MainActor private func awaitBrowser(_ ready: @escaping () -> Bool) -> Bool {
@@ -97,19 +151,39 @@ final class AccountTests: XCTestCase {
         // live alert once before failing. Rendering Portal gets its own wait
         // after the OS prompt has actually been accepted.
         guard waitFor(presented) || presented() else { return false }
-        guard let consent else { return true }
-        consent.tap()
+        guard consent != nil else { return true }
+        guard tapBrowserConsent() else { return false }
         checkpoint("consent-tapped")
-        if !consent.waitForNonExistence(timeout: 5), let stillPresented = browserConsent() {
-            // The first tap can coincide with presentation. Retry only the
-            // same local sign-in alert, without repeating the app's request.
-            stillPresented.tap()
+        if !waitFor({ self.browserConsentAlert() == nil }, seconds: 5), browserConsentAlert() != nil {
+            // At most one retry of the still-present, semantically verified OS
+            // consent. Never repeat the product's authorization request.
+            guard tapBrowserConsent() else { return false }
+            checkpoint("consent-retried")
         }
+        guard waitFor({ self.browserConsentAlert() == nil }, seconds: 10) else { return false }
+        checkpoint("consent-dismissed")
         return waitFor(ready)
     }
 
     @MainActor private func field(_ label: String, in web: XCUIElement) -> XCUIElement {
         let fields = label == "Password" ? web.secureTextFields : web.textFields
+        if web is XCUIApplication {
+            let exact = fields.matching(NSPredicate(format: "label == %@", label))
+            if exact.count == 1 { return exact.firstMatch }
+            // WebKit can expose the HTML label as a neighbouring text node.
+            // Never use an unnamed control outside the verified issuer form,
+            // or choose an ambiguous input of the same type.
+            guard issuerFormContext(web) else { return exact.firstMatch }
+            if ["Email address", "Password"].contains(label), fields.count == 1 { return fields.firstMatch }
+            if label == "Email address", ["member", "admin"].contains(String(scenario.split(separator: ":").first ?? "")) {
+                // MFA adds another text input. The email already entered must
+                // still be uniquely identifiable by its exact fixture value.
+                let address = String(scenario.split(separator: ":")[0]) + "@example.test"
+                let entered = fields.matching(NSPredicate(format: "value == %@", address))
+                if entered.count == 1 { return entered.firstMatch }
+            }
+            return exact.firstMatch
+        }
         let named = fields[label]
         return named.exists ? named : fields.matching(NSPredicate(format: "label CONTAINS[c] %@", label)).firstMatch
     }
@@ -117,7 +191,7 @@ final class AccountTests: XCTestCase {
     @MainActor private func enter(_ value: String, into label: String, in web: XCUIElement) throws {
         var acceptedTutorial = false
         @MainActor func keyboardReady() -> Bool {
-            let owners = [authSheet, safari, app, springboard].filter { $0.state == .runningForeground }
+            let owners = browserOwners + [springboard]
             for surface in owners {
                 let tutorial = surface.descendants(matching: .any)["UIContinuousPathIntroductionView"].firstMatch
                 guard tutorial.exists else { continue }
@@ -135,13 +209,24 @@ final class AccountTests: XCTestCase {
             return owners.contains { $0.keyboards.firstMatch.exists }
         }
         let input = field(label, in: web)
-        let editable = waitFor({ input.exists && input.isEnabled && input.isHittable }, seconds: 15)
-        try XCTUnwrap(editable ? input : nil, "Browser input is editable").tap()
+        let editable = waitFor({ input.exists && input.isEnabled &&
+            (input.isHittable || (web is XCUIApplication && self.issuerFormContext(web) &&
+                                  !input.frame.intersection(self.app.frame).isEmpty)) }, seconds: 15)
+        _ = try XCTUnwrap(editable ? true : nil, "Browser input is editable")
+        if input.isHittable {
+            input.tap()
+        } else {
+            let visible = input.frame.intersection(app.frame)
+            let point = CGVector(dx: visible.midX - app.frame.minX, dy: visible.midY - app.frame.minY)
+            app.coordinate(withNormalizedOffset: .zero).withOffset(point).tap()
+        }
         if !waitFor(keyboardReady, seconds: 6), input.exists && input.isEnabled && input.isHittable {
             // A newly presented WebKit field can appear before its first tap
             // gives the software keyboard focus. This repeat only focuses it.
             let visible = web.frame.intersection(input.frame)
-            if !visible.isEmpty {
+            if web is XCUIApplication {
+                input.tap()
+            } else if !visible.isEmpty {
                 let offset = CGVector(dx: visible.midX - web.frame.minX, dy: visible.midY - web.frame.minY)
                 web.coordinate(withNormalizedOffset: .zero).withOffset(offset).tap()
             }
@@ -150,11 +235,19 @@ final class AccountTests: XCTestCase {
         if !ready { browserFailureState() }
         // A focused descendant receives real OS typing. Verify privately that
         // the intended field received it before entering another value.
-        try XCTUnwrap(ready ? web : nil, "Browser keyboard is ready for input").typeText(value)
+        let typingTarget = web is XCUIApplication ? input : web
+        let keyboardTarget = try XCTUnwrap(ready ? typingTarget : nil, "Browser keyboard is ready for input")
+        // Complete each native key event before the next. Bulk WebKit typing
+        // can drop characters; a mismatched value must never be submitted.
+        for character in value { keyboardTarget.typeText(String(character)) }
         let received = waitFor({
             let current = self.field(label, in: web)
             guard let actual = current.value as? String else { return false }
-            return label == "Password" ? !actual.isEmpty && actual != current.placeholderValue : actual == value
+            if label == "Password" {
+                return current.elementType == .secureTextField && actual.count == value.count &&
+                    actual.allSatisfy { $0 == "•" || $0 == "●" }
+            }
+            return actual == value
         }, seconds: 5)
         _ = try XCTUnwrap(received ? true : nil, "Named browser input received the fixture value")
     }
@@ -162,7 +255,7 @@ final class AccountTests: XCTestCase {
     @MainActor private func dismissNativeKeyboard() throws {
         var doneTyping: XCUIElement?
         XCTAssertTrue(waitFor({
-            for surface in [app, authSheet, safari] where surface.state == .runningForeground {
+            for surface in browserOwners {
                 let done = surface.buttons["Done"].firstMatch
                 if done.exists && done.isHittable { doneTyping = done; return true }
             }
@@ -170,8 +263,22 @@ final class AccountTests: XCTestCase {
         }, seconds: 10), "Native browser Done control")
         try XCTUnwrap(doneTyping).tap()
         XCTAssertTrue(waitFor({
-            [app, authSheet, safari].filter { $0.state == .runningForeground }.allSatisfy { !$0.keyboards.firstMatch.exists }
+            self.browserOwners.allSatisfy { !$0.keyboards.firstMatch.exists }
         }, seconds: 10), "Native keyboard dismissed before form action")
+    }
+
+    @MainActor private func fixtureData(for request: URLRequest) async throws -> (Data, URLResponse) {
+        // These receipts are served by the disposable simulator fixture on the
+        // Mac host. Do not inherit a system proxy: some CI macOS images route
+        // loopback URLSession traffic through the corporate HTTP proxy even
+        // though the app's local API requests correctly bypass it.
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = request.timeoutInterval
+        configuration.timeoutIntervalForResource = request.timeoutInterval + 3
+        configuration.connectionProxyDictionary = [:]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        return try await session.data(for: request)
     }
 
     @MainActor private func receivedCredentialPosts(_ role: String) async throws -> Int {
@@ -180,7 +287,7 @@ final class AccountTests: XCTestCase {
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.setValue(try XCTUnwrap(ProcessInfo.processInfo.environment["ONESA_FIXTURE_CONTROL"]), forHTTPHeaderField: "x-onesa-fixture-control")
         request.setValue(role, forHTTPHeaderField: "x-onesa-fixture-role")
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await fixtureData(for: request)
         let status = try XCTUnwrap(response as? HTTPURLResponse).statusCode
         if status == 409 { checkpoint("unexpected-credential-route") }
         if status == 412 { checkpoint("interaction-not-observed") }
@@ -252,9 +359,14 @@ final class AccountTests: XCTestCase {
             _ = try XCTUnwrap(observed == expected ? true : nil, "Issuer observed exactly one form submission")
             submittedCount = expected
         }
-        if role == "admin" && !code.exists {
+        // WebKit can expose the conditional MFA input in its accessibility
+        // tree before the Portal has issued the challenge. Presence alone is
+        // not proof that the MFA form is visible; submit the password form
+        // unless the factor input is actually enabled and hittable.
+        if role == "admin" && !(code.exists && code.isEnabled && code.isHittable) {
             try await submitForm()
-            XCTAssertTrue(code.waitForExistence(timeout: 20), "Portal MFA challenge")
+            XCTAssertTrue(waitFor({ code.exists && code.isEnabled && code.isHittable }, seconds: 20),
+                          "Portal MFA challenge is visible and ready")
             checkpoint("mfa-visible")
         }
         if role == "admin" {
@@ -266,14 +378,31 @@ final class AccountTests: XCTestCase {
     }
 
     @MainActor private func inSheet(_ name: String, browserOnly: Bool = false, readyForInput: Bool = false) -> XCUIElement? {
-        let owners = browserOnly ? [authSheet, safari] : [app, authSheet, safari]
-        for surface in owners where surface.state == .runningForeground {
-            let web = surface.webViews.firstMatch
-            guard web.exists else { continue }
+        if browserOnly && ![.runningForeground, .runningBackground].contains(authSheet.state) &&
+            safari.state != .runningForeground { return nil }
+        for surface in browserOwners {
+            for web in surface.webViews.allElementsBoundByIndex {
+                if name == "Email address" {
+                    let email = field(name, in: web)
+                    if email.exists && (!readyForInput || (email.isEnabled && email.isHittable)) { return web }
+                } else {
+                    let action = web.buttons[name]
+                    if action.exists && action.isEnabled && action.isHittable { return web }
+                }
+            }
+            // The embedded browser may expose its form on the owning app's
+            // accessibility tree, outside its WebView descendants. Verify the
+            // issuer context before inspecting unique typed fields there.
+            guard issuerFormContext(surface) else { continue }
             if name == "Email address" {
-                let email = field(name, in: web)
-                if email.exists && (!readyForInput || (email.isEnabled && email.isHittable)) { return web }
-            } else if web.buttons[name].exists { return web }
+                let email = field(name, in: surface)
+                let password = field("Password", in: surface)
+                if email.exists && password.exists && email.isEnabled && password.isEnabled &&
+                    !email.frame.intersection(app.frame).isEmpty { return surface }
+            } else {
+                let action = surface.buttons[name]
+                if action.exists && action.isEnabled && action.isHittable { return surface }
+            }
         }
         return nil
     }
@@ -377,7 +506,7 @@ final class AccountTests: XCTestCase {
         request.timeoutInterval = 15
         request.setValue(try XCTUnwrap(ProcessInfo.processInfo.environment["ONESA_FIXTURE_CONTROL"]), forHTTPHeaderField: "x-onesa-fixture-control")
         request.setValue(role, forHTTPHeaderField: "x-onesa-fixture-role")
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await fixtureData(for: request)
         XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200, "Scoped fixture product expiry")
         let receipt = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         XCTAssertEqual(receipt["expiredProductSessions"] as? Int, 1, "Exactly one product session expired")

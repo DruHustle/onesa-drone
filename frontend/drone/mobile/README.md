@@ -16,7 +16,7 @@ The app exchanges a single-use authorization code through the Drone backend. It 
 - Up to 12 device-local drafts in Expo SecureStore. At capacity, the planner preserves each saved route and prompts the operator to delete one before adding another. Concurrent saves and interrupted storage operations have regression coverage.
 - Under **Aircraft**, a recoverable encrypted ground bench record captures the asset label, known firmware and companion-app versions, and four timestamped human observations. The operator can reopen it offline, share the record explicitly, or delete it.
 - Under **Monitor**, choose a bench observation or a simulation review, then choose a session note or an encrypted note saved on this device. Each log holds ten notes and preserves existing entries when full.
-- Camera panel explaining the local CHUBORY FLY Wi-Fi feed and offering an external handoff to the official companion app.
+- Camera panel explicitly reports that no live feed or supported camera integration is available; no manufacturer-app handoff or provider service is exposed.
 - Safety checklist and no remote flight, mission launch, take-off, payload release, human tracking, automated surveillance or live video endpoints.
 
 ## Setup and tests
@@ -54,7 +54,7 @@ app, completing simulator journeys, signing a release, and testing a device.
 
 ## Integration boundary
 
-The CHUBORY A77 uses CHUBORY FLY (iOS App Store ID 6467178101; Android `com.h8.chubory`). The vendor advertises Wi-Fi control, video, and trajectory flight, **not** a documented third-party SDK or authenticated GPS/RTSP telemetry endpoint. Onesa never reverse-engineers unsafe flight commands or assumes a phone location is the drone location.
+The CHUBORY A77 companion app has not been qualified or accepted as an Onesa integration. Onesa does not link to or recommend the vendor app, and the native camera panel does not hand off to it. Public vendor claims are not evidence of a supported SDK, authenticated telemetry or a secure camera feed. Any future bench observation is separate from Onesa, operator-led, motors-off and subject to explicit owner approval; it is not a Drone feature or flight authorization. Onesa never reverse-engineers unsafe flight commands or assumes a phone location is the drone location.
 
 A later supported aircraft adapter must authenticate telemetry, prove source/freshness, restrict video URLs and audit every access; pass supervised flight test and operator/regulatory acceptance before any physical dispatch. Long-range wildlife patrols and medical deliveries require suitable aircraft and aviation approvals and are not supported by this prototype.
 

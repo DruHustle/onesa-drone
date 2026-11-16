@@ -667,3 +667,23 @@ class NativeInputTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HardwareHandoffTests(unittest.TestCase):
+    def test_unqualified_manufacturer_app_handoff_is_not_exposed(self):
+        app = (Path(__file__).resolve().parents[1] / "frontend/drone/mobile/App.jsx").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("HARDWARE_HANDOFF_REASON", app)
+        self.assertNotIn("vendorApp", app)
+        self.assertNotIn("View CHUBORY FLY", app)
+        self.assertNotIn("while flying", app)
+        root = Path(__file__).resolve().parents[1]
+        readme = (root / "frontend/drone/mobile/README.md").read_text(encoding="utf-8")
+        self.assertIn("no manufacturer-app handoff", readme)
+        self.assertNotIn("offering an external handoff", readme)
+        assessment = (root / "docs/engineering/chubory-a77-prototype.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("not a supported Onesa integration", assessment)
+        self.assertNotIn("explicit vendor-app video handoff", assessment)

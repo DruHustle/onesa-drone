@@ -14,6 +14,8 @@ Test Case '-[AccountTests testPortalSignInAndSystemCallback]' started.
 ONESA_ACCOUNT_CHECKPOINT member:cold:start
 ONESA_ACCOUNT_CHECKPOINT member:cold:account-screen-ready
 ONESA_ACCOUNT_CHECKPOINT member:cold:consent-tapped
+ONESA_ACCOUNT_CHECKPOINT member:cold:consent-retried
+ONESA_ACCOUNT_CHECKPOINT member:cold:consent-dismissed
 ONESA_ACCOUNT_CHECKPOINT member:cold:credentials-filled
 ONESA_ACCOUNT_CHECKPOINT member:cold:credentials-filled
 ONESA_ACCOUNT_CHECKPOINT member:cold:private-planner-open
@@ -23,7 +25,7 @@ Type 'private password'
 ONESA_ACCOUNT_CHECKPOINT admin:warm:https://private.invalid
 """)
         self.assertEqual(result, {
-            "checkpoints": ["member:cold:start", "member:cold:account-screen-ready", "member:cold:consent-tapped", "member:cold:credentials-filled", "member:cold:private-planner-open"],
+            "checkpoints": ["member:cold:start", "member:cold:account-screen-ready", "member:cold:consent-tapped", "member:cold:consent-retried", "member:cold:consent-dismissed", "member:cold:credentials-filled", "member:cold:private-planner-open"],
             "categories": ["test-started", "assertion-failed"],
             "account_test_source_lines": [53],
         })
@@ -36,6 +38,13 @@ ONESA_ACCOUNT_CHECKPOINT admin:warm:https://private.invalid
     def test_unknown_failure_stays_unknown(self):
         self.assertEqual(summarize("private unexpected message")["categories"],
                          ["unclassified-failure"])
+
+    def test_disk_exhaustion_is_reported_without_private_build_paths(self):
+        result = summarize("error: error opening /private/account-secret/cache.d: No space left on device\n"
+                           "Command CompileC failed with a nonzero exit code\n** TEST FAILED **")
+        self.assertEqual(result["categories"], ["test-run-failed", "disk-space-exhausted"])
+        self.assertEqual(result["checkpoints"], [])
+        self.assertNotIn("account-secret", json.dumps(result))
 
     def test_keyboard_errors_return_only_the_fixed_category(self):
         result = summarize("Failed to synthesize event for private-user: Neither element nor any descendant has keyboard focus")
@@ -90,6 +99,20 @@ ONESA_ACCOUNT_STATE person@example.test:cold:app-foreground
                     self.assertEqual(read_start_diagnostics(path), {"status": "invalid-diagnostics"})
             path.write_text("private" * 1000)
             self.assertEqual(read_start_diagnostics(path), {"status": "invalid-diagnostics"})
+
+    def test_existing_account_failure_flags_survive_sanitization(self):
+        flags = ["interrupted-visible", "callback-unconfirmed-visible", "invalid-account-visible", "reconnect-visible",
+                 "issuer-form-context-visible", "browser-text-field-visible", "portal-loading-visible", "portal-sign-in-visible",
+                 "portal-unavailable-visible", "browser-trust-error-visible", "browser-network-error-visible"]
+        text = "\n".join(f"ONESA_ACCOUNT_STATE member:cold:{flag}" for flag in flags)
+        result = summarize(text + "\nONESA_ACCOUNT_STATE member:cold:reconnect-visible private-account")
+        self.assertEqual(result["observed_states"], [f"member:cold:{flag}" for flag in flags])
+        self.assertNotIn("private-account", json.dumps(result))
+        for flag in flags:
+            with self.subTest(flag=flag):
+                private = summarize(f"ONESA_ACCOUNT_STATE member:cold:{flag} private-account")
+                self.assertNotIn("observed_states", private)
+                self.assertNotIn("private-account", json.dumps(private))
 
 
 class ButtonGeometryDiagnosticsTests(unittest.TestCase):

@@ -10,6 +10,8 @@ app = project.native_targets.find { |target| target.name == 'OnesaDrone' }
 raise 'Generated Onesa Drone application target missing' unless app
 
 name = 'OnesaDroneSimulatorUI'
+source_path = File.join(ios, name)
+FileUtils.mkdir_p(source_path)
 unless project.native_targets.any? { |target| target.name == name }
   target = project.new_target(:ui_test_bundle, name, :ios, app.deployment_target)
   target.add_dependency(app)
@@ -23,11 +25,8 @@ unless project.native_targets.any? { |target| target.name == name }
       'SUPPORTED_PLATFORMS' => 'iphonesimulator'
     )
   end
-  source_path = File.join(ios, name)
-  FileUtils.mkdir_p(source_path)
   group = project.main_group.new_group(name, name)
   %w[PlannerTests.swift AccountTests.swift].each do |file|
-    FileUtils.cp(File.join(__dir__, file), source_path)
     target.add_file_references([group.new_file(file)])
   end
   attributes = project.root_object.attributes['TargetAttributes'] ||= {}
@@ -36,4 +35,10 @@ unless project.native_targets.any? { |target| target.name == name }
   scheme = Xcodeproj::XCScheme.new
   scheme.configure_with_targets(app, target, launch_target: true)
   scheme.save_as(project_path, name)
+end
+
+# Local preparation can reuse the generated target. Always refresh its copied
+# tests so a subsequent run verifies the current source instead of an old helper.
+%w[PlannerTests.swift AccountTests.swift].each do |file|
+  FileUtils.cp(File.join(__dir__, file), source_path)
 end

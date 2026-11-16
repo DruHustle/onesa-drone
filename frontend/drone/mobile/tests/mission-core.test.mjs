@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  A77, DEMO_ROUTE, PURPOSES, aircraftLocation, coordinate, waypoint,
+  A77, DEMO_ROUTE, PURPOSES, HARDWARE_HANDOFF_REASON, aircraftLocation, coordinate, waypoint,
   inspectRoute, makeDraft, simulationPosition, physicalDispatchStatus,
 } from "../src/mission-core.mjs";
 import { saveDraft, loadDrafts, deleteDraft } from "../src/mission-store.mjs";
@@ -10,6 +10,9 @@ test("A77 is not silently treated as a GPS or video-bridge aircraft", () => {
   assert.equal(A77.commandBridge, false);
   assert.equal(A77.flightEnabled, false);
   assert.equal(A77.gps, "unverified");
+  assert.equal(A77.video, "unverified");
+  assert.equal(Object.hasOwn(A77, "vendorApp"), false);
+  assert.match(HARDWARE_HANDOFF_REASON, /operator-led, motors-off/);
   assert.equal(aircraftLocation().position, null);
   assert.equal(physicalDispatchStatus().allowed, false);
 });
