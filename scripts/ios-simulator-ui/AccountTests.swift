@@ -174,23 +174,27 @@ final class AccountTests: XCTestCase {
         }, seconds: 10), "Native keyboard dismissed before form action")
     }
 
-    @MainActor private func receivedCredentialPosts(_ role: String) async throws -> Int {
-        // This receipt is served by the disposable simulator fixture on the
+    @MainActor private func fixtureData(for request: URLRequest) async throws -> (Data, URLResponse) {
+        // These receipts are served by the disposable simulator fixture on the
         // Mac host. Do not inherit a system proxy: some CI macOS images route
         // loopback URLSession traffic through the corporate HTTP proxy even
         // though the app's local API requests correctly bypass it.
         let configuration = URLSessionConfiguration.ephemeral
-        configuration.timeoutIntervalForRequest = 5
-        configuration.timeoutIntervalForResource = 8
+        configuration.timeoutIntervalForRequest = request.timeoutInterval
+        configuration.timeoutIntervalForResource = request.timeoutInterval + 3
         configuration.connectionProxyDictionary = [:]
         let session = URLSession(configuration: configuration)
         defer { session.invalidateAndCancel() }
+        return try await session.data(for: request)
+    }
+
+    @MainActor private func receivedCredentialPosts(_ role: String) async throws -> Int {
         var request = URLRequest(url: try XCTUnwrap(URL(string: "https://127.0.0.1:54844/__onesa_fixture/credential-receipt")))
         request.timeoutInterval = 5
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.setValue(try XCTUnwrap(ProcessInfo.processInfo.environment["ONESA_FIXTURE_CONTROL"]), forHTTPHeaderField: "x-onesa-fixture-control")
         request.setValue(role, forHTTPHeaderField: "x-onesa-fixture-role")
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await fixtureData(for: request)
         let status = try XCTUnwrap(response as? HTTPURLResponse).statusCode
         if status == 409 { checkpoint("unexpected-credential-route") }
         if status == 412 { checkpoint("interaction-not-observed") }
@@ -392,7 +396,7 @@ final class AccountTests: XCTestCase {
         request.timeoutInterval = 15
         request.setValue(try XCTUnwrap(ProcessInfo.processInfo.environment["ONESA_FIXTURE_CONTROL"]), forHTTPHeaderField: "x-onesa-fixture-control")
         request.setValue(role, forHTTPHeaderField: "x-onesa-fixture-role")
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await fixtureData(for: request)
         XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200, "Scoped fixture product expiry")
         let receipt = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         XCTAssertEqual(receipt["expiredProductSessions"] as? Int, 1, "Exactly one product session expired")
