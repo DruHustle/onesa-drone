@@ -27,3 +27,11 @@ working-tools/
 
 # Expo prebuild caches resized copies of the tracked store icon.
 frontend/drone/mobile/.expo/web/cache/production/images/**/*.png
+
+# Native projects are generated from the locked Expo template. Their local build
+# products and private XCTest logs must stay outside publication.
+frontend/drone/mobile/.validation/
+frontend/drone/mobile/ios/*
+!frontend/drone/mobile/ios/README.md
+frontend/drone/mobile/android/*
+!frontend/drone/mobile/android/README.md
