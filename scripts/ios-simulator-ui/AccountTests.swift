@@ -7,6 +7,36 @@ final class AccountTests: XCTestCase {
     @MainActor private lazy var springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
     private var scenario = ""
 
+    private enum BrowserOwner: String {
+        case product, safari, authentication, springboard, none
+    }
+
+    private enum BrowserObservation: String {
+        case state, consent, touch, navigation, query, webviews, heading, remember, cancel
+    }
+
+    // Only fixed names and bounded integers are public diagnostics. These
+    // observations reuse the existing queries; never export AX labels, values,
+    // URLs, hierarchies, screenshots or a platform error description.
+    private func observe(_ event: BrowserObservation, owner: BrowserOwner, value: Int) {
+        print("ONESA_ACCOUNT_UI \(scenario):\(event.rawValue):\(owner.rawValue):\(min(8, max(0, value)))")
+    }
+
+    @MainActor private func ownerName(_ surface: XCUIElement) -> BrowserOwner {
+        if surface === app { return .product }
+        if surface === authSheet { return .authentication }
+        if surface === safari { return .safari }
+        if surface === springboard { return .springboard }
+        return .none
+    }
+
+    @MainActor private func navigation(_ phase: Int) {
+        observe(.navigation, owner: .none, value: phase)
+        for owner in [app, authSheet, safari, springboard] {
+            observe(.state, owner: ownerName(owner), value: Int(owner.state.rawValue))
+        }
+    }
+
     @MainActor private var browserOwners: [XCUIApplication] {
         var owners: [XCUIApplication] = []
         // The authentication service can remain embedded in the foreground
@@ -21,9 +51,13 @@ final class AccountTests: XCTestCase {
         guard [.runningForeground, .runningBackground].contains(authSheet.state) ||
                 safari.state == .runningForeground, surface.webViews.count > 0 else { return false }
         let nodes = surface.descendants(matching: .any)
-        return nodes["Sign in to Onesa"].firstMatch.exists &&
-            nodes["Remember this browser"].firstMatch.exists &&
-            (surface.buttons["Cancel sign-in"].firstMatch.exists || surface.links["Cancel sign-in"].firstMatch.exists)
+        func landmark(_ event: BrowserObservation, _ found: Bool) -> Bool {
+            observe(event, owner: ownerName(surface), value: found ? 1 : 0)
+            return found
+        }
+        return landmark(.heading, nodes["Sign in to Onesa"].firstMatch.exists) &&
+            landmark(.remember, nodes["Remember this browser"].firstMatch.exists) &&
+            landmark(.cancel, surface.buttons["Cancel sign-in"].firstMatch.exists || surface.links["Cancel sign-in"].firstMatch.exists)
     }
 
     private func checkpoint(_ phase: String) {
@@ -53,6 +87,7 @@ final class AccountTests: XCTestCase {
         // element label/value, URL, hierarchy, error description or screenshot.
         // Preserve the failed wait even if a diagnostic OS query also fails.
         checkpoint("browser-wait-failed")
+        navigation(3)
         func observed(_ name: String, _ present: Bool) {
             if present { print("ONESA_ACCOUNT_STATE \(scenario):\(name)") }
         }
@@ -60,10 +95,8 @@ final class AccountTests: XCTestCase {
         observed("app-foreground", app.state == .runningForeground)
         observed("safari-foreground", safari.state == .runningForeground)
         observed("auth-sheet-foreground", authSheet.state == .runningForeground)
-        observed("consent-continue-visible", [springboard, app].contains {
-            let button = $0.alerts.buttons["Continue"].firstMatch
-            return button.exists && button.isHittable
-        })
+        let consentPresent = browserConsentAlert() != nil
+        observed("consent-continue-visible", consentPresent)
         let signIn = app.buttons["Sign in with Onesa"]
         observed("sign-in-enabled", signIn.exists && signIn.isEnabled)
         observed("sign-in-disabled", signIn.exists && !signIn.isEnabled)
@@ -79,6 +112,10 @@ final class AccountTests: XCTestCase {
         observed("network-failure-visible", app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "Network request failed")).firstMatch.exists)
         observed("timeout-failure-visible", app.staticTexts.matching(NSPredicate(format: "label ==[c] %@ OR label CONTAINS[c] %@ OR label CONTAINS[c] %@", "Aborted", "timed out", "timeout")).firstMatch.exists)
         observed("tls-failure-visible", app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@ OR label CONTAINS[c] %@ OR label CONTAINS[c] %@", "SSL", "certificate", "secure connection")).firstMatch.exists)
+        // A visible OS consent prompt already explains why the browser is not
+        // ready. Querying its covered WebView can itself fail in XCTest and
+        // obscure the original assertion. Keep that assertion and its evidence.
+        if consentPresent { return }
         observed("app-webview-visible", app.state == .runningForeground && app.webViews.firstMatch.exists)
         observed("browser-webview-visible", [authSheet, safari].contains {
             $0.state == .runningForeground && $0.webViews.firstMatch.exists
@@ -113,8 +150,10 @@ final class AccountTests: XCTestCase {
         for owner in [springboard, app] {
             let alert = owner.alerts.firstMatch
             guard alert.exists, title.evaluate(with: alert) || alert.staticTexts.matching(title).firstMatch.exists else { continue }
+            observe(.consent, owner: ownerName(owner), value: 1)
             return alert
         }
+        observe(.consent, owner: .none, value: 0)
         return nil
     }
 
@@ -136,12 +175,16 @@ final class AccountTests: XCTestCase {
         let window = foreground.frame
         guard [frame.minX, frame.minY, frame.width, frame.height].allSatisfy({ $0.isFinite }),
               !frame.isEmpty, window.contains(frame) else { return false }
+        navigation(1)
+        observe(.touch, owner: ownerName(foreground), value: 0)
         foreground.coordinate(withNormalizedOffset: .zero)
             .withOffset(CGVector(dx: frame.midX - window.minX, dy: frame.midY - window.minY)).tap()
+        observe(.touch, owner: ownerName(foreground), value: 1)
         return true
     }
 
     @MainActor private func awaitBrowser(_ ready: @escaping () -> Bool) -> Bool {
+        navigation(0)
         var consent: XCUIElement?
         let presented = {
             consent = self.browserConsent()
@@ -162,6 +205,7 @@ final class AccountTests: XCTestCase {
         }
         guard waitFor({ self.browserConsentAlert() == nil }, seconds: 10) else { return false }
         checkpoint("consent-dismissed")
+        navigation(2)
         return waitFor(ready)
     }
 
@@ -381,7 +425,11 @@ final class AccountTests: XCTestCase {
         if browserOnly && ![.runningForeground, .runningBackground].contains(authSheet.state) &&
             safari.state != .runningForeground { return nil }
         for surface in browserOwners {
-            for web in surface.webViews.allElementsBoundByIndex {
+            observe(.query, owner: ownerName(surface), value: 0)
+            let webViews = surface.webViews.allElementsBoundByIndex
+            observe(.query, owner: ownerName(surface), value: 1)
+            observe(.webviews, owner: ownerName(surface), value: webViews.count)
+            for web in webViews {
                 if name == "Email address" {
                     let email = field(name, in: web)
                     if email.exists && (!readyForInput || (email.isEnabled && email.isHittable)) { return web }

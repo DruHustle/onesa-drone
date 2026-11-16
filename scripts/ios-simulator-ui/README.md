@@ -25,6 +25,20 @@ device fails the job. There is no retry of a failed account or planner test, and
 exactly one successful required XCTest with zero failed/skipped tests is required.
 No physical device, aircraft interface, provider or production account is used.
 
+Both Debug UI paths compile and verify the complete Metro entry response before
+launching XCTest. A listening `/status` endpoint alone does not establish bundle
+readiness. Both profiles require the debug account module. The planner profile
+also requires its offline planner labels; the account profile requires the exact
+loopback fixture origin. Both retain the 120-second preparation bound, response size/type
+checks and redirect/proxy refusal. Only fixed metadata and a digest leave the
+preflight. The actual UI, encrypted-draft persistence and hardware-lock assertions
+remain independent and keep their original deadlines. Standalone Release still
+runs its bundled application without Metro.
+
+The Debug test build disables the compiler index store to keep disposable editor
+index records from exhausting runner storage. All source compilation and the
+complete selected XCTest remain required.
+
 OS browser consent is identified by its localhost sign-in alert and enabled,
 hittable Continue control. Each tap uses that control's current frame, bounded by
 the verified alert and foreground application. The harness permits one repeat
@@ -45,3 +59,12 @@ by its exact value. Keyboard input is verified before submission, including the
 secure-field length. Member/admin cold and warm sign-in, MFA, issuer request
 counts, scoped expiry, immutable subject, Keychain relaunch and logout checks all
 remain mandatory. Only fixed failure-state flags leave the private test output.
+
+The private log also records fixed browser owner states, semantic consent presence,
+native touch completion, WebView query progress/counts and expected issuer landmark
+presence. The public reducer retains at most 64 observations and rejects unknown
+names and out-of-range values. Counts saturate at eight. Navigation values mean
+waiting (0), before consent touch (1), consent dismissed (2), and failed wait (3).
+No observed text, URL, hierarchy, screenshot or error description is published.
+When the verified OS consent prompt remains visible, failure reporting does not
+query the covered browser tree; the original account assertion still fails.

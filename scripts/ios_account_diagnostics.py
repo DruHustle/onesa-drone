@@ -74,6 +74,26 @@ def summarize(text):
             pass
     if frames:
         result["button_geometry"] = frames
+    # Bound the retained transition history. All strings come from this fixed
+    # vocabulary, not from the UI or a platform exception. A WebView count of
+    # eight means eight or more; other events have smaller explicit domains.
+    observations = []
+    limits = {"state": 4, "consent": 1, "touch": 1, "navigation": 3,
+              "query": 1, "webviews": 8, "heading": 1, "remember": 1, "cancel": 1}
+    for role, state, event, owner, value in re.findall(
+        r"^ONESA_ACCOUNT_UI (member|admin):(cold|warm):"
+        r"(state|consent|touch|navigation|query|webviews|heading|remember|cancel):"
+        r"(product|safari|authentication|springboard|none):([0-8])(?=\r?$)", text, re.MULTILINE
+    ):
+        number = int(value)
+        if number > limits[event]:
+            continue
+        record = {"scenario": f"{role}:{state}", "event": event, "owner": owner, "value": number}
+        if not observations or observations[-1] != record:
+            observations.append(record)
+        observations = observations[-64:]
+    if observations:
+        result["browser_observations"] = observations
     return result
 
 
