@@ -25,6 +25,16 @@ device fails the job. There is no retry of a failed account or planner test, and
 exactly one successful required XCTest with zero failed/skipped tests is required.
 No physical device, aircraft interface, provider or production account is used.
 
+OS browser consent is identified by its localhost sign-in alert and enabled,
+hittable Continue control. Each tap uses that control's current frame, bounded by
+the verified alert and foreground application. The harness permits one repeat
+only while the same semantic consent is still present, then requires dismissal
+before looking for Portal. It never repeats the application's authorization
+request or accepts another alert. Fixed tapped/retried/dismissed checkpoints
+distinguish a retained OS prompt from a missing issuer form.
+Preparation refreshes both copied XCTest sources even when the generated native
+target already exists, so repeated local qualification runs use current helpers.
+
 WebKit may expose an embedded authentication form outside the first web view,
 with HTML labels as neighbouring text nodes. The account suite checks all active
 browser surfaces and accepts an owning-app form only while the Safari service is

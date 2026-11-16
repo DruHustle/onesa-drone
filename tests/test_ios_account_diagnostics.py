@@ -14,6 +14,8 @@ Test Case '-[AccountTests testPortalSignInAndSystemCallback]' started.
 ONESA_ACCOUNT_CHECKPOINT member:cold:start
 ONESA_ACCOUNT_CHECKPOINT member:cold:account-screen-ready
 ONESA_ACCOUNT_CHECKPOINT member:cold:consent-tapped
+ONESA_ACCOUNT_CHECKPOINT member:cold:consent-retried
+ONESA_ACCOUNT_CHECKPOINT member:cold:consent-dismissed
 ONESA_ACCOUNT_CHECKPOINT member:cold:credentials-filled
 ONESA_ACCOUNT_CHECKPOINT member:cold:credentials-filled
 ONESA_ACCOUNT_CHECKPOINT member:cold:private-planner-open
@@ -23,7 +25,7 @@ Type 'private password'
 ONESA_ACCOUNT_CHECKPOINT admin:warm:https://private.invalid
 """)
         self.assertEqual(result, {
-            "checkpoints": ["member:cold:start", "member:cold:account-screen-ready", "member:cold:consent-tapped", "member:cold:credentials-filled", "member:cold:private-planner-open"],
+            "checkpoints": ["member:cold:start", "member:cold:account-screen-ready", "member:cold:consent-tapped", "member:cold:consent-retried", "member:cold:consent-dismissed", "member:cold:credentials-filled", "member:cold:private-planner-open"],
             "categories": ["test-started", "assertion-failed"],
             "account_test_source_lines": [53],
         })

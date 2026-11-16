@@ -108,15 +108,37 @@ final class AccountTests: XCTestCase {
         return false
     }
 
-    @MainActor private func browserConsent() -> XCUIElement? {
+    @MainActor private func browserConsentAlert() -> XCUIElement? {
         let title = NSPredicate(format: "label CONTAINS[c] %@ AND label CONTAINS[c] %@", "localhost", "sign in")
         for owner in [springboard, app] {
             let alert = owner.alerts.firstMatch
             guard alert.exists, title.evaluate(with: alert) || alert.staticTexts.matching(title).firstMatch.exists else { continue }
-            let button = alert.buttons["Continue"].firstMatch
-            if button.exists && button.isHittable { return button }
+            return alert
         }
         return nil
+    }
+
+    @MainActor private func browserConsent() -> XCUIElement? {
+        guard let alert = browserConsentAlert() else { return nil }
+        let button = alert.buttons["Continue"].firstMatch
+        guard button.exists, button.isEnabled, button.isHittable,
+              !button.frame.isEmpty, alert.frame.contains(button.frame) else { return nil }
+        return button
+    }
+
+    @MainActor private func tapBrowserConsent() -> Bool {
+        // Reacquire the exact OS alert for every tap. XCTest can report a valid
+        // Continue control while its activation point does not dismiss it.
+        // Use only its live visible frame through the foreground application.
+        guard let button = browserConsent(),
+              let foreground = [app, springboard].first(where: { $0.state == .runningForeground }) else { return false }
+        let frame = button.frame
+        let window = foreground.frame
+        guard [frame.minX, frame.minY, frame.width, frame.height].allSatisfy({ $0.isFinite }),
+              !frame.isEmpty, window.contains(frame) else { return false }
+        foreground.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: frame.midX - window.minX, dy: frame.midY - window.minY)).tap()
+        return true
     }
 
     @MainActor private func awaitBrowser(_ ready: @escaping () -> Bool) -> Bool {
@@ -129,14 +151,17 @@ final class AccountTests: XCTestCase {
         // live alert once before failing. Rendering Portal gets its own wait
         // after the OS prompt has actually been accepted.
         guard waitFor(presented) || presented() else { return false }
-        guard let consent else { return true }
-        consent.tap()
+        guard consent != nil else { return true }
+        guard tapBrowserConsent() else { return false }
         checkpoint("consent-tapped")
-        if !consent.waitForNonExistence(timeout: 5), let stillPresented = browserConsent() {
-            // The first tap can coincide with presentation. Retry only the
-            // same local sign-in alert, without repeating the app's request.
-            stillPresented.tap()
+        if !waitFor({ self.browserConsentAlert() == nil }, seconds: 5), browserConsentAlert() != nil {
+            // At most one retry of the still-present, semantically verified OS
+            // consent. Never repeat the product's authorization request.
+            guard tapBrowserConsent() else { return false }
+            checkpoint("consent-retried")
         }
+        guard waitFor({ self.browserConsentAlert() == nil }, seconds: 10) else { return false }
+        checkpoint("consent-dismissed")
         return waitFor(ready)
     }
 
