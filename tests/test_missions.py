@@ -450,6 +450,26 @@ def test_history_returns_newest_window_in_chronological_order(stack):
     assert [event["id"] for event in history["events"]] == [f"{mission_id}-{i:04d}" for i in range(1, 1001)]
 
 
+def test_abort_after_takeoff_transition_requires_a_new_operator_command(stack, aircraft):
+    taking_off, _ = launch(stack)
+    outbound = tick(stack, taking_off["id"], 3)
+    assert outbound["state"] == "outbound"
+    assert outbound["revision"] > taking_off["revision"]
+
+    rejected = cmd(stack, taking_off, "abort")
+    assert rejected.status_code == 409
+    assert rejected.json()["detail"] == "Mission changed; reload before retrying"
+    assert tick(stack, taking_off["id"], 0) == outbound
+    assert outbound["outcome"] is None
+
+    acknowledged = cmd(stack, outbound, "abort")
+    assert acknowledged.status_code == 200
+    assert acknowledged.json()["state"] == "returning"
+    assert acknowledged.json()["outcome"] == "aborted"
+    assert not acknowledged.json()["delivered"]
+    assert tick(stack, taking_off["id"], 100)["state"] == "aborted"
+
+
 def test_revision_conflict_and_reschedule_invalidates_authorization(stack, aircraft):
     first = delivery(stack)["mission"]
     m = cmd(stack, first, "plan").json()

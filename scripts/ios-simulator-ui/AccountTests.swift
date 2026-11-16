@@ -94,8 +94,8 @@ final class AccountTests: XCTestCase {
                                               "connection is not private", "certificate for this server")).firstMatch.exists
         })
         observed("browser-network-error-visible", browserOwners.contains {
-            $0.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@ OR label CONTAINS[c] %@",
-                                              "Safari cannot open the page", "could not connect to the server")).firstMatch.exists
+            $0.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@ OR label CONTAINS[c] %@ OR label CONTAINS[c] %@",
+                                              "Safari cannot open the page", "could not connect to the server", "server stopped responding")).firstMatch.exists
         })
     }
 

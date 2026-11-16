@@ -193,7 +193,27 @@ test("fleet maintenance, delivery cancellation and abort, incident resolution an
   await button("Validate preflight").click();
   await button("Authorize simulation").click();
   await button("Launch simulation").click();
+  // Takeoff advances independently of the browser. Review the sustained
+  // outbound phase before issuing the command; a click against the previous
+  // revision is correctly rejected and must never count as an abort.
+  await expect(page.locator(".mission-detail .badge")).toHaveText(/outbound/);
+  const abortResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      response.url().endsWith("/commands") &&
+      response.request().postDataJSON().action === "abort",
+  );
   await button("Abort to virtual home").click();
+  const aborted = await abortResponse;
+  expect(aborted.status(), await aborted.text()).toBe(200);
+  expect(await aborted.json()).toMatchObject({
+    state: "returning",
+    outcome: "aborted",
+    delivered: false,
+  });
+  await expect(page.locator(".command-feedback")).toContainText(
+    "Acknowledged by simulator — abort",
+  );
   await expect(page.locator(".mission-detail .badge")).toHaveText(/aborted/, {
     timeout: 45000,
   });
