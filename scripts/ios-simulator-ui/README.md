@@ -59,3 +59,12 @@ by its exact value. Keyboard input is verified before submission, including the
 secure-field length. Member/admin cold and warm sign-in, MFA, issuer request
 counts, scoped expiry, immutable subject, Keychain relaunch and logout checks all
 remain mandatory. Only fixed failure-state flags leave the private test output.
+
+The private log also records fixed browser owner states, semantic consent presence,
+native touch completion, WebView query progress/counts and expected issuer landmark
+presence. The public reducer retains at most 64 observations and rejects unknown
+names and out-of-range values. Counts saturate at eight. Navigation values mean
+waiting (0), before consent touch (1), consent dismissed (2), and failed wait (3).
+No observed text, URL, hierarchy, screenshot or error description is published.
+When the verified OS consent prompt remains visible, failure reporting does not
+query the covered browser tree; the original account assertion still fails.

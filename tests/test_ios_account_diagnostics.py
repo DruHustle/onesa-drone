@@ -135,3 +135,48 @@ class ButtonGeometryDiagnosticsTests(unittest.TestCase):
                            "ONESA_ACCOUNT_STATE member:cold:tls-failure-visible secret")
         self.assertEqual(result["observed_states"], ["member:cold:timeout-failure-visible",
                                                      "member:cold:tls-failure-visible"])
+
+
+class BrowserObservationDiagnosticsTests(unittest.TestCase):
+    def test_fixed_transition_records_preserve_consent_owner_and_query_progress(self):
+        rows = ["member:warm:navigation:none:0", "member:warm:state:product:4",
+                "member:warm:consent:springboard:1", "member:warm:touch:product:0",
+                "member:warm:touch:product:1", "member:warm:navigation:none:3",
+                "member:warm:query:authentication:0", "member:warm:query:authentication:1",
+                "member:warm:webviews:authentication:8", "member:warm:heading:authentication:1",
+                "member:warm:remember:authentication:0", "member:warm:cancel:authentication:1"]
+        result = summarize("\n".join("ONESA_ACCOUNT_UI " + row for row in rows))
+        self.assertEqual(result["browser_observations"], [
+            {"scenario": ":".join(parts[:2]), "event": parts[2], "owner": parts[3], "value": int(parts[4])}
+            for parts in (row.split(":") for row in rows)
+        ])
+
+    def test_private_unknown_or_out_of_domain_values_are_never_exported(self):
+        for row in ["member:warm:state:product:5", "member:cold:touch:product:2",
+                    "member:cold:consent:none:8", "member:warm:navigation:none:4",
+                    "member:cold:webviews:authentication:9", "member:cold:webviews:authentication:-1",
+                    "member:cold:webviews:authentication:1.0", "member:cold:query:safari:true",
+                    "member:cold:heading:authentication:1 private-password",
+                    "member:cold:remember:authentication:0?code=secret", "member:cold:cancel:secret:1",
+                    "secret@example.test:cold:state:product:4", "member:cold:https://issuer.invalid:product:1",
+                    "member:cold:state:product:04", "member:cold:state:product:4\nprivate-password"]:
+            with self.subTest(row=row):
+                result = summarize("private-password ONESA_ACCOUNT_UI " + row)
+                self.assertNotIn("browser_observations", result)
+                result = summarize("ONESA_ACCOUNT_UI " + row)
+                if row.endswith("\nprivate-password"):
+                    self.assertEqual(len(result["browser_observations"]), 1)
+                else:
+                    self.assertNotIn("browser_observations", result)
+                self.assertNotIn("private-password", json.dumps(result))
+                self.assertNotIn("secret", json.dumps(result))
+                self.assertNotIn("@", json.dumps(result))
+
+    def test_history_is_bounded_and_repeated_polls_are_coalesced(self):
+        same = "ONESA_ACCOUNT_UI member:warm:consent:springboard:1\n"
+        result = summarize(same * 200)
+        self.assertEqual(len(result["browser_observations"]), 1)
+        rows = [f"ONESA_ACCOUNT_UI member:warm:query:authentication:{i % 2}\n" for i in range(200)]
+        result = summarize("".join(rows))
+        self.assertEqual(len(result["browser_observations"]), 64)
+        self.assertEqual(result["browser_observations"][-1]["value"], 1)
