@@ -35,6 +35,10 @@ preflight. The actual UI, encrypted-draft persistence and hardware-lock assertio
 remain independent and keep their original deadlines. Standalone Release still
 runs its bundled application without Metro.
 
+The Debug test build disables the compiler index store to keep disposable editor
+index records from exhausting runner storage. All source compilation and the
+complete selected XCTest remain required.
+
 OS browser consent is identified by its localhost sign-in alert and enabled,
 hittable Continue control. Each tap uses that control's current frame, bounded by
 the verified alert and foreground application. The harness permits one repeat

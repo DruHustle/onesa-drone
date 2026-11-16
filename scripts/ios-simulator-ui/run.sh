@@ -86,7 +86,7 @@ arguments=(test -workspace ios/OnesaDrone.xcworkspace -scheme OnesaDroneSimulato
   -configuration Debug -destination "platform=iOS Simulator,id=$device" -parallel-testing-enabled NO
   -derivedDataPath .validation/ios-build -resultBundlePath "$results"
   "-only-testing:OnesaDroneSimulatorUI/$selected"
-  ARCHS=arm64 ONLY_ACTIVE_ARCH=YES ENABLE_DEBUG_DYLIB=NO)
+  ARCHS=arm64 ONLY_ACTIVE_ARCH=YES ENABLE_DEBUG_DYLIB=NO COMPILER_INDEX_STORE_ENABLE=NO)
 if [[ "$mode" == auth ]]; then
   if ! RCT_NO_LAUNCH_PACKAGER=1 xcodebuild "${arguments[@]}" > "$work/private-xcode.log" 2>&1; then
     python3 "$repo/scripts/ios_account_diagnostics.py" "$work/private-xcode.log"
