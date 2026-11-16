@@ -57,9 +57,17 @@ _, runtime, model = max(choices)
 print(runtime, model)
 PY
 )
-device=$(xcrun simctl create "Onesa Drone UI $$" "$model" "$runtime")
-xcrun simctl boot "$device"
-xcrun simctl bootstatus "$device" -b
+booted=false
+for attempt in 1 2; do
+  device=$(xcrun simctl create "Onesa Drone UI $$ $attempt" "$model" "$runtime")
+  if python3 "$repo/scripts/ios-simulator-ui/boot.py" "$device"; then booted=true; break; fi
+  # A terminal migration failure can exit zero. Discard only this disposable
+  # device; retry setup once, before certificates, apps or tests are installed.
+  xcrun simctl shutdown "$device" >/dev/null 2>&1 || true
+  xcrun simctl delete "$device"
+  device=''
+done
+if [[ "$booted" != true ]]; then echo "Fresh simulator boot did not complete." >&2; exit 1; fi
 if [[ "$mode" == auth ]]; then
   xcrun simctl keychain "$device" add-root-cert "$FIXTURE_CA"
 fi

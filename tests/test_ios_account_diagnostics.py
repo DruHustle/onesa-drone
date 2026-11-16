@@ -91,6 +91,13 @@ ONESA_ACCOUNT_STATE person@example.test:cold:app-foreground
             path.write_text("private" * 1000)
             self.assertEqual(read_start_diagnostics(path), {"status": "invalid-diagnostics"})
 
+    def test_existing_account_failure_flags_survive_sanitization(self):
+        flags = ["interrupted-visible", "callback-unconfirmed-visible", "invalid-account-visible", "reconnect-visible"]
+        text = "\n".join(f"ONESA_ACCOUNT_STATE member:cold:{flag}" for flag in flags)
+        result = summarize(text + "\nONESA_ACCOUNT_STATE member:cold:reconnect-visible private-account")
+        self.assertEqual(result["observed_states"], [f"member:cold:{flag}" for flag in flags])
+        self.assertNotIn("private-account", json.dumps(result))
+
 
 class ButtonGeometryDiagnosticsTests(unittest.TestCase):
     def test_only_bounded_fixed_geometry_is_exported(self):

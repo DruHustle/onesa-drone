@@ -43,10 +43,17 @@ jobs:
             exit 1
           fi
           read -r runtime model < <(xcrun simctl list devices available -j | python3 -c 'import json,sys; print(next(runtime+" "+d["deviceTypeIdentifier"] for runtime,ds in json.load(sys.stdin)["devices"].items() if ".iOS-" in runtime for d in ds if d.get("isAvailable") and d["name"].startswith("iPhone")))')
-          device=$(xcrun simctl create OnesaStandalonePlanner "$model" "$runtime")
+          device=''
           trap 'xcrun simctl shutdown "$device" >/dev/null 2>&1 || true; xcrun simctl delete "$device" >/dev/null 2>&1 || true' EXIT
-          xcrun simctl boot "$device"
-          xcrun simctl bootstatus "$device" -b
+          booted=false
+          for attempt in 1 2; do
+            device=$(xcrun simctl create "OnesaStandalonePlanner $attempt" "$model" "$runtime")
+            if python3 ../../../scripts/ios-simulator-ui/boot.py "$device"; then booted=true; break; fi
+            xcrun simctl shutdown "$device" >/dev/null 2>&1 || true
+            xcrun simctl delete "$device"
+            device=''
+          done
+          if [[ "$booted" != true ]]; then echo 'Fresh simulator boot did not complete.' >&2; exit 1; fi
           result="$RUNNER_TEMP/ReleasePlanner.xcresult"
           xcodebuild test -workspace ios/OnesaDrone.xcworkspace -scheme OnesaDroneSimulatorUI \
             -configuration Release -destination "platform=iOS Simulator,id=$device" -parallel-testing-enabled NO \
