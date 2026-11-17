@@ -325,6 +325,29 @@ final class AccountTests: XCTestCase {
         return try await session.data(for: request)
     }
 
+    @MainActor private func receivedStartAttempts() async throws -> Int {
+        var request = URLRequest(url: try XCTUnwrap(URL(string: "https://127.0.0.1:54844/__onesa_fixture/start-receipt")))
+        request.timeoutInterval = 5
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue(try XCTUnwrap(ProcessInfo.processInfo.environment["ONESA_FIXTURE_CONTROL"]),
+                         forHTTPHeaderField: "x-onesa-fixture-control")
+        let (data, response) = try await fixtureData(for: request)
+        let status = try XCTUnwrap(response as? HTTPURLResponse).statusCode
+        _ = try XCTUnwrap(status == 200 ? true : nil, "Native fixture start receipt is available")
+        let counts = try JSONDecoder().decode([String: Int].self, from: data)
+        return try XCTUnwrap(counts["attempts"], "Fixture returned its native start count")
+    }
+
+    @MainActor private func awaitStart(after previous: Int, seconds: TimeInterval) async throws -> Int {
+        let deadline = Date().addingTimeInterval(seconds)
+        var observed = try await receivedStartAttempts()
+        while observed == previous && Date() < deadline {
+            try await Task.sleep(nanoseconds: 350_000_000)
+            observed = try await receivedStartAttempts()
+        }
+        return observed
+    }
+
     @MainActor private func receivedCredentialPosts(_ role: String) async throws -> Int {
         var request = URLRequest(url: try XCTUnwrap(URL(string: "https://127.0.0.1:54844/__onesa_fixture/credential-receipt")))
         request.timeoutInterval = 5
@@ -466,8 +489,15 @@ final class AccountTests: XCTestCase {
             XCTAssertTrue(app.staticTexts["Your Onesa session or workspace access has changed. Sign in again."].waitForExistence(timeout: 45), "Expired product session requires real sign-in")
         } else {
             let account = app.buttons["Onesa account"]
-            XCTAssertTrue(account.waitForExistence(timeout: 100), "Signed-out Drone planner")
+            // A cold launch can already show the signed-out account screen.
+            // Require a real, actionable entry on either product screen.
+            func onAccount() -> Bool {
+                accountHeading.exists && signInButton.exists && signInButton.isEnabled && signInButton.isHittable
+            }
+            XCTAssertTrue(waitFor({ onAccount() || (account.exists && account.isHittable) }, seconds: 100),
+                          "Signed-out Drone account or planner")
             for attempt in 0..<2 {
+                if onAccount() { break }
                 XCTAssertTrue(waitFor({ account.exists && account.isHittable }, seconds: 10), "Account entry is hittable")
                 account.tap()
                 if waitFor({ accountHeading.exists && signInButton.exists }, seconds: 10) { break }
@@ -489,8 +519,28 @@ final class AccountTests: XCTestCase {
                           "Sign-in button has a visible touch target")
         let center = CGVector(dx: visibleButton.midX - app.frame.minX,
                               dy: visibleButton.midY - app.frame.minY)
+        let previous = (role == "admin" ? 2 : 0) + (warm ? 1 : 0)
+        let before = try await receivedStartAttempts()
+        _ = try XCTUnwrap(before == previous ? true : nil, "No unexpected native sign-in attempt")
         app.coordinate(withNormalizedOffset: .zero).withOffset(center).tap()
         checkpoint("sign-in-tapped")
+        var observed = try await awaitStart(after: previous, seconds: 8)
+        // XCTest can lose a tap while React Native settles the screen. Retry
+        // only an unobserved touch with the same foreground and enabled button.
+        if observed == previous && app.state == .runningForeground &&
+            safari.state != .runningForeground && authSheet.state != .runningForeground &&
+            !app.alerts.firstMatch.exists && browserConsentAlert() == nil &&
+            accountHeading.exists && signInButton.exists && signInButton.isEnabled && signInButton.isHittable {
+            let stillUnsent = try await receivedStartAttempts()
+            if stillUnsent == previous {
+                checkpoint("retry-unobserved-start-touch")
+                signInButton.tap()
+                observed = try await awaitStart(after: previous, seconds: 12)
+            } else {
+                observed = stillUnsent
+            }
+        }
+        _ = try XCTUnwrap(observed == previous + 1 ? true : nil, "Exactly one real native sign-in request")
         if warm {
             let reuse = "Continue as " + address
             let returned = app.buttons["Open my field planner"]
