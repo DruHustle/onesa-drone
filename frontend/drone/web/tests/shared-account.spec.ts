@@ -168,7 +168,7 @@ test("shared sign-in has one clear entry and no second account form", async ({
   await page.goto("/");
   for (const [audience, name] of [["user", "Create an Onesa account"], ["admin", "Request administrator access"]]) {
     await expect(page.getByRole("link", { name })).toHaveAttribute("href",
-      "https://auth.onesa.eu/register?product=drone&platform=web&audience=" + audience);
+      "https://account.onesa.eu/register?product=drone&platform=web&audience=" + audience);
   }
   await expect(
     page.getByRole("heading", {
@@ -355,7 +355,7 @@ for (const [tier, linkName] of [["user", "Create an Onesa account"], ["admin", "
     const writes = await identityUI(page);
     await page.goto("/");
     const resume = new URL("/?registration=complete", page.url()).href;
-    await page.route("https://auth.onesa.eu/register?*", route => {
+    await page.route("https://account.onesa.eu/register?*", route => {
       expect(Object.fromEntries(new URL(route.request().url()).searchParams)).toEqual({ product: "drone", platform: "web", audience: tier });
       return route.fulfill({ contentType: "text/html", body: `<!doctype html><script>location.replace(${JSON.stringify(resume)})</script>` });
     });
