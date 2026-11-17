@@ -598,8 +598,8 @@ function App() {
             <p role="status">Drone shared sign-in is temporarily unavailable. Reload this page to retry.</p>
           ) : null}
           {(sharedAccount || !localSimulator) && <>
-            <a className="identity-link" href="https://auth.onesa.eu/register?product=drone&platform=web&audience=user">Create an Onesa account</a>
-            <a className="identity-link" href="https://auth.onesa.eu/register?product=drone&platform=web&audience=admin">Request administrator access</a>
+            <a className="identity-link" href="https://account.onesa.eu/register?product=drone&platform=web&audience=user">Create an Onesa account</a>
+            <a className="identity-link" href="https://account.onesa.eu/register?product=drone&platform=web&audience=admin">Request administrator access</a>
           </>}
           {notice && (
             <div role="alert" className="error identity-notice">
