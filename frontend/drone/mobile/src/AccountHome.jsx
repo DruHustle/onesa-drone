@@ -1,5 +1,6 @@
+import { registerWithOnesa } from "../registration.mjs";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { AppState, Linking, ScrollView, Text, View } from "react-native";
+import { AppState, Linking, Platform, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as SecureStore from "expo-secure-store";
 import * as WebBrowser from "expo-web-browser";
@@ -164,7 +165,7 @@ export default function AccountHome({ colors, children }) {
               ) : (
                 <>
                   <Body colors={colors}>
-                    Use your existing Portal account for your private field
+                    Use your Onesa account for your private field
                     planner and Drone workspaces.
                   </Body>
                   <Button
@@ -173,6 +174,14 @@ export default function AccountHome({ colors, children }) {
                     onPress={() => act(login)}
                   >
                     Sign in with Onesa
+                  </Button>
+                  <Button colors={colors} secondary disabled={working || locked}
+                    onPress={() => act(() => registerWithOnesa(WebBrowser.openAuthSessionAsync, Platform.OS, "user", login))}>
+                    Create an Onesa account
+                  </Button>
+                  <Button colors={colors} secondary disabled={working || locked}
+                    onPress={() => act(() => registerWithOnesa(WebBrowser.openAuthSessionAsync, Platform.OS, "admin", login))}>
+                    Request administrator access
                   </Button>
                   {!locked && (
                     <Button

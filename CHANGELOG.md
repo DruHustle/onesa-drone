@@ -1,5 +1,7 @@
 # Changelog
 
+- Drone web and installed apps return to their own sign-in after Onesa user or administrator registration.
+
 - Hosted Drone requires Company Portal identity at startup. The web sign-in screen keeps local simulation credentials on loopback and offers Portal account creation.
 
 - Add an iPhone Simulator UI check for saving a route, reopening it after relaunch,

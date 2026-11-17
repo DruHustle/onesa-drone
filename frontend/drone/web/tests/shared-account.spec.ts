@@ -166,6 +166,10 @@ test("shared sign-in has one clear entry and no second account form", async ({
   const writes = await identityUI(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
+  for (const [audience, name] of [["user", "Create an Onesa account"], ["admin", "Request administrator access"]]) {
+    await expect(page.getByRole("link", { name })).toHaveAttribute("href",
+      "https://auth.onesa.eu/register?product=drone&platform=web&audience=" + audience);
+  }
   await expect(
     page.getByRole("heading", {
       name: "One account. Every Onesa application.",
@@ -344,4 +348,16 @@ test("partial central logout clears Drone and provides a direct account recovery
     path: test.info().outputPath("partial-sign-out-390.png"),
     fullPage: true,
   });
+});
+
+test("administrator registration returns to Drone before starting product sign-in", async ({page}) => {
+  const writes = await identityUI(page);
+  await page.goto("/");
+  const origin = new URL(page.url()).origin;
+  await page.route("https://auth.onesa.eu/register?*", route => route.fulfill({
+    status: 303, headers: { location: origin + "/?registration=complete" }, body: "",
+  }));
+  await page.getByRole("link", {name:"Request administrator access"}).click();
+  await expect(page.getByRole("heading", {name:"Onesa account"})).toBeVisible();
+  expect(writes.filter(write => write.path === "/api/v1/auth/identity/start")).toHaveLength(1);
 });
