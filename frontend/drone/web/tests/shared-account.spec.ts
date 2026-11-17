@@ -166,6 +166,10 @@ test("shared sign-in has one clear entry and no second account form", async ({
   const writes = await identityUI(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
+  for (const [audience, name] of [["user", "Create an Onesa account"], ["admin", "Request administrator access"]]) {
+    await expect(page.getByRole("link", { name })).toHaveAttribute("href",
+      "https://auth.onesa.eu/register?product=drone&platform=web&audience=" + audience);
+  }
   await expect(
     page.getByRole("heading", {
       name: "One account. Every Onesa application.",
@@ -345,3 +349,21 @@ test("partial central logout clears Drone and provides a direct account recovery
     fullPage: true,
   });
 });
+
+for (const [tier, linkName] of [["user", "Create an Onesa account"], ["admin", "Request administrator access"]]) {
+  test(`${tier} registration returns to Drone before starting product sign-in`, async ({ page }) => {
+    const writes = await identityUI(page);
+    await page.goto("/");
+    const resume = new URL("/?registration=complete", page.url()).href;
+    await page.route("https://auth.onesa.eu/register?*", route => {
+      expect(Object.fromEntries(new URL(route.request().url()).searchParams)).toEqual({ product: "drone", platform: "web", audience: tier });
+      return route.fulfill({ contentType: "text/html", body: `<!doctype html><script>location.replace(${JSON.stringify(resume)})</script>` });
+    });
+    await Promise.all([
+      page.waitForRequest(request => request.isNavigationRequest() && request.url() === resume),
+      page.getByRole("link", { name: linkName, exact: true }).click(),
+    ]);
+    await expect(page.getByRole("heading", { name: "Onesa account" })).toBeVisible();
+    expect(writes.filter(write => write.path === "/api/v1/auth/identity/start")).toHaveLength(1);
+  });
+}

@@ -90,6 +90,18 @@ for (const [port, target] of [
         nativeFlows.at(-1).exchangeAttempts++;
         saveNativeAudit();
       }
+      if (port === 54844 && url.pathname === "/__onesa_fixture/start-receipt") {
+        const key = process.env.ONESA_NATIVE_CONTROL_KEY;
+        if (!process.env.ONESA_NATIVE_AUDIT_PATH || !key || req.method !== "GET" ||
+            req.headers["x-onesa-fixture-control"] !== key || url.search ||
+            Number(req.headers["content-length"] || 0) !== 0 || req.headers["transfer-encoding"]) {
+          res.writeHead(404).end();
+          return;
+        }
+        res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+        res.end(JSON.stringify({ attempts: nativeStartDiagnostics.attempts }));
+        return;
+      }
       if (port === 54844 && url.pathname === "/__onesa_fixture/credential-receipt") {
         // The private native test reads only the current cold flow's count.
         // The browser and product do not receive the fixture control key.
