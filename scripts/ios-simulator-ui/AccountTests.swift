@@ -414,10 +414,32 @@ final class AccountTests: XCTestCase {
         _ = try XCTUnwrap(app.wait(for: .notRunning, timeout: 15) ? true : nil, "Original planner process stopped")
         app.launch()
         let restored = app.buttons[address]
-        let restoredPlanner = restored.waitForExistence(timeout: 75)
+        let reconnect = app.staticTexts["Reconnect to verify your Onesa account, or sign out to use the device planner."]
+        let checkConnection = app.buttons["Check connection"]
+        var checkedConnection = false
+        var reopenedPlanner = false
+        let restoredPlanner = waitFor({
+            if restored.exists && restored.isHittable { return true }
+            // A cold Keychain or network read can lock the account screen.
+            // Revalidate its existing session once using the actual product UI.
+            if !checkedConnection && reconnect.exists && checkConnection.exists &&
+                checkConnection.isEnabled && checkConnection.isHittable {
+                checkedConnection = true
+                checkConnection.tap()
+            } else if !reopenedPlanner && identity.exists && app.staticTexts[assigned].exists &&
+                        openPlanner.exists && openPlanner.isEnabled && openPlanner.isHittable {
+                // After a successful reconnect the app stays on the account
+                // page. Only reopen a planner with this exact identity and role.
+                reopenedPlanner = true
+                openPlanner.tap()
+            }
+            return false
+        }, seconds: 75)
         if !restoredPlanner { browserFailureState() }
         let restoredAccount = try XCTUnwrap(restoredPlanner ? restored : nil,
                                            "Keychain session survives relaunch")
+        let startsAfterRestore = try await receivedStartAttempts()
+        XCTAssertEqual(startsAfterRestore, previous + 1, "Keychain restore did not start another sign-in")
         checkpoint("keychain-restored")
         restoredAccount.tap()
         XCTAssertTrue(app.staticTexts[assigned].waitForExistence(timeout: 15), "Revalidated account authority")
