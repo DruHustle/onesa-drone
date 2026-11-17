@@ -11,7 +11,7 @@ def summarize(text):
     checkpoints = []
     for role, state, phase in re.findall(
         r"ONESA_ACCOUNT_CHECKPOINT (member|admin):(cold|warm):"
-        r"(start|account-screen-ready|sign-in-tapped|consent-tapped|browser-wait-failed|browser-ready|credentials-filled|mfa-visible|submitted|"
+        r"(start|account-screen-ready|sign-in-tapped|consent-tapped|consent-retried|consent-dismissed|browser-wait-failed|browser-ready|credentials-filled|mfa-visible|submitted|"
         r"unexpected-credential-route|interaction-not-observed|retry-visible-form-touch|retry-unobserved-start-touch|"
         r"identity-returned|private-planner-open|keychain-restored|central-logout)\b", text
     ):
@@ -24,6 +24,7 @@ def summarize(text):
         "test-run-failed": r"\*\* TEST FAILED \*\*",
         "test-build-failed": r"\*\* TEST BUILD FAILED \*\*",
         "compiler-error": r"(?m)^.*\.(?:swift|m|mm|h):\d+:\d+: error:",
+        "disk-space-exhausted": r"No space left on device",
         "simulator-boot-failed": r"(?:Failed to boot|Unable to boot|Data Migration Failed)",
         "runner-launch-failed": r"(?:Failed to launch|Failed to establish communication|Early unexpected exit)",
         "assertion-failed": r"XCTAssert\w* failed|XCTUnwrap failed",
@@ -39,6 +40,9 @@ def summarize(text):
         r"ONESA_ACCOUNT_STATE (member|admin):(cold|warm):"
         r"(app-foreground|safari-foreground|auth-sheet-foreground|consent-continue-visible|"
         r"sign-in-enabled|sign-in-disabled|contacting-visible|service-unavailable-visible|"
+        r"interrupted-visible|callback-unconfirmed-visible|invalid-account-visible|reconnect-visible|"
+        r"issuer-form-context-visible|browser-text-field-visible|portal-loading-visible|portal-sign-in-visible|"
+        r"portal-unavailable-visible|browser-trust-error-visible|browser-network-error-visible|"
         r"session-rejected-visible|cancelled-visible|invalid-start-visible|network-failure-visible|timeout-failure-visible|tls-failure-visible|"
         r"app-webview-visible|browser-webview-visible|email-field-visible)(?=\r?$)", text, re.MULTILINE
     ):
@@ -70,6 +74,26 @@ def summarize(text):
             pass
     if frames:
         result["button_geometry"] = frames
+    # Bound the retained transition history. All strings come from this fixed
+    # vocabulary, not from the UI or a platform exception. A WebView count of
+    # eight means eight or more; other events have smaller explicit domains.
+    observations = []
+    limits = {"state": 4, "consent": 1, "touch": 1, "navigation": 3,
+              "query": 1, "webviews": 8, "heading": 1, "remember": 1, "cancel": 1}
+    for role, state, event, owner, value in re.findall(
+        r"^ONESA_ACCOUNT_UI (member|admin):(cold|warm):"
+        r"(state|consent|touch|navigation|query|webviews|heading|remember|cancel):"
+        r"(product|safari|authentication|springboard|none):([0-8])(?=\r?$)", text, re.MULTILINE
+    ):
+        number = int(value)
+        if number > limits[event]:
+            continue
+        record = {"scenario": f"{role}:{state}", "event": event, "owner": owner, "value": number}
+        if not observations or observations[-1] != record:
+            observations.append(record)
+        observations = observations[-64:]
+    if observations:
+        result["browser_observations"] = observations
     return result
 
 
