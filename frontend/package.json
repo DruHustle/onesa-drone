@@ -27,5 +27,8 @@
     "prettier": "3.8.4",
     "typescript": "5.9.3",
     "vite": "8.3.5"
+  },
+  "overrides": {
+    "picomatch": "file:vendor/onesa-picomatch-redos-4.0.8-onesa.1"
   }
 }
