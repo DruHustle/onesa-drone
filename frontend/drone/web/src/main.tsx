@@ -15,6 +15,7 @@ import FlightPlanPreview from "./FlightPlanPreview";
 import MobileDownloads from "./MobileDownloads";
 import {
   accountError,
+  droneRegistrationUrl,
   startSharedSignIn,
   WorkspaceChooser,
 } from "./SharedAccount";
@@ -522,8 +523,15 @@ function App() {
                 {busy ? "Opening Onesa sign-in…" : "Continue with Onesa"}
               </button>
               <p className="fine">
-                New to Onesa? Create your account on the next screen.
+                New to Onesa? Choose the registration type for your one shared
+                Onesa account. Drone workspace access is reviewed separately.
               </p>
+              <a className="identity-link" href={droneRegistrationUrl("user")}>
+                Create an Onesa account
+              </a>
+              <a className="identity-link" href={droneRegistrationUrl("admin")}>
+                Request administrator registration
+              </a>
             </div>
           ) : sharedAccount === false ? (
             <form
