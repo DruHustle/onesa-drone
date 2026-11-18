@@ -381,11 +381,13 @@ with contextlib.ExitStack() as resources:
         audit_path = temp / "native-route-audit.json"
         audit = json.loads(audit_path.read_text()) if audit_path.is_file() else {}
         print("ONESA_NATIVE_ROUTE_AUDIT " + json.dumps(audit), flush=True)
-        print("ONESA_NATIVE_START_DIAGNOSTICS " + json.dumps(
-            read_start_diagnostics(temp / "native-start-diagnostics.json")), flush=True)
+        starts = read_start_diagnostics(temp / "native-start-diagnostics.json")
+        print("ONESA_NATIVE_START_DIAGNOSTICS " + json.dumps(starts), flush=True)
         if result.returncode == 0:
             try:
                 verify_native_audit(audit)
+                if starts.get("status") != "recorded" or starts.get("attempts") != 4 or starts.get("responses200") != 4:
+                    raise ValueError("Exactly four native sign-in starts must reach the product")
                 verify_fixture_control_denials(drone_origin, native_control_key, ca, exhausted=True)
             except ValueError:
                 sys.exit("Native acceptance requires four real starts, credential-free warm flows, scoped expiry and stable subjects.")

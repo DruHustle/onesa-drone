@@ -287,6 +287,12 @@ function App() {
         try {
           const config = await api<{ shared_account: boolean }>("/auth/config");
           setSharedAccount(config.shared_account);
+          const current = new URL(window.location.href);
+          if (config.shared_account && current.searchParams.get("registration") === "complete") {
+            current.searchParams.delete("registration");
+            window.history.replaceState(null, "", current.pathname + current.search + current.hash);
+            await startSharedSignIn();
+          }
         } catch {
           setNotice(
             "Sign-in is temporarily unavailable. Reload this page to try again.",
@@ -535,7 +541,7 @@ function App() {
           </h2>
           <p>
             {(sharedAccount || !localSimulator)
-              ? "Sign in through Onesa Company Portal to open your approved Drone workspace."
+              ? "Sign in with your Onesa account to open your approved Drone workspace."
               : "Use your individually provisioned operator account."}
           </p>
           {sharedAccount ? (
@@ -547,9 +553,7 @@ function App() {
               >
                 {busy ? "Opening Onesa sign-in…" : "Sign in with Onesa"}
               </button>
-              <p className="fine">
-                New to Onesa? Create your account on the next screen.
-              </p>
+
             </div>
           ) : localSimulator && sharedAccount === false ? (
             <form
@@ -593,7 +597,10 @@ function App() {
           ) : !localSimulator ? (
             <p role="status">Drone shared sign-in is temporarily unavailable. Reload this page to retry.</p>
           ) : null}
-          {!localSimulator && <a className="identity-link" href="https://portal.onesa.eu/account/register">Create an Onesa account</a>}
+          {(sharedAccount || !localSimulator) && <>
+            <a className="identity-link" href="https://account.onesa.eu/register?product=drone&platform=web&audience=user">Create an Onesa account</a>
+            <a className="identity-link" href="https://account.onesa.eu/register?product=drone&platform=web&audience=admin">Request administrator access</a>
+          </>}
           {notice && (
             <div role="alert" className="error identity-notice">
               <p>{notice}</p>

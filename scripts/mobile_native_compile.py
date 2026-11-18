@@ -21,8 +21,8 @@ from scripts.ci_manifests import source_binding
 
 ROOT = Path(__file__).resolve().parents[1]
 MOBILE_PATH = Path("frontend/drone/mobile")
-EXPO_VERSION = "58.0.25"
-TEMPLATE_SHA256 = "620af187939324352a6cebd9d5db300613c8426d6e5d9b52afb308f2b070ef7f"
+EXPO_VERSION = "58.0.26"
+TEMPLATE_SHA256 = "4b32af1fa03a1687f51992acefd8923ead96c1dd229eb25504adb78a1c561299"
 GRADLE_VERSION = "9.4.1"
 GRADLE_NETWORK_TIMEOUT_MS = 60000
 # https://services.gradle.org/distributions/gradle-9.4.1-bin.zip.sha256
@@ -99,7 +99,10 @@ def locked_inputs(mobile):
             and expo["extra"]["hardwareFlightEnabled"] is False and expo["extra"]["simulationOnly"] is True,
             "Native compilation requires the reviewed simulation-only app configuration")
     template = mobile / "node_modules/expo/template.tgz"
-    require(file_record(template, 1024 * 1024)["sha256"] == TEMPLATE_SHA256, "Locked Expo template differs")
+    installed_template_sha = file_record(template, 1024 * 1024)["sha256"]
+    require(installed_template_sha == TEMPLATE_SHA256,
+            "Locked Expo template differs; public Expo template sha256 observed "
+            + installed_template_sha + " (qualification refused until the reviewed pin is updated)")
     versions = tomllib.loads(regular_bytes(
         mobile / "node_modules/react-native/gradle/libs.versions.toml", 64 * 1024,
     ).decode())["versions"]

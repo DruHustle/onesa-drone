@@ -200,6 +200,9 @@ jobs:
     env:
       CI: '1'
       EXPO_NO_TELEMETRY: '1'
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      ONESA_IOS_UI_RUNTIME_VERSION: '26.4.1'
+      ONESA_IOS_UI_DEVICE_TYPE: com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro
     steps:
       - name: Verify hosted execution, visibility and included-allowance policy
         env:

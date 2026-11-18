@@ -14,6 +14,8 @@ Test Case '-[AccountTests testPortalSignInAndSystemCallback]' started.
 ONESA_ACCOUNT_CHECKPOINT member:cold:start
 ONESA_ACCOUNT_CHECKPOINT member:cold:account-screen-ready
 ONESA_ACCOUNT_CHECKPOINT member:cold:consent-tapped
+ONESA_ACCOUNT_CHECKPOINT member:cold:consent-retried
+ONESA_ACCOUNT_CHECKPOINT member:cold:consent-dismissed
 ONESA_ACCOUNT_CHECKPOINT member:cold:credentials-filled
 ONESA_ACCOUNT_CHECKPOINT member:cold:credentials-filled
 ONESA_ACCOUNT_CHECKPOINT member:cold:private-planner-open
@@ -23,7 +25,7 @@ Type 'private password'
 ONESA_ACCOUNT_CHECKPOINT admin:warm:https://private.invalid
 """)
         self.assertEqual(result, {
-            "checkpoints": ["member:cold:start", "member:cold:account-screen-ready", "member:cold:consent-tapped", "member:cold:credentials-filled", "member:cold:private-planner-open"],
+            "checkpoints": ["member:cold:start", "member:cold:account-screen-ready", "member:cold:consent-tapped", "member:cold:consent-retried", "member:cold:consent-dismissed", "member:cold:credentials-filled", "member:cold:private-planner-open"],
             "categories": ["test-started", "assertion-failed"],
             "account_test_source_lines": [53],
         })
@@ -36,6 +38,13 @@ ONESA_ACCOUNT_CHECKPOINT admin:warm:https://private.invalid
     def test_unknown_failure_stays_unknown(self):
         self.assertEqual(summarize("private unexpected message")["categories"],
                          ["unclassified-failure"])
+
+    def test_disk_exhaustion_is_reported_without_private_build_paths(self):
+        result = summarize("error: error opening /private/account-secret/cache.d: No space left on device\n"
+                           "Command CompileC failed with a nonzero exit code\n** TEST FAILED **")
+        self.assertEqual(result["categories"], ["test-run-failed", "disk-space-exhausted"])
+        self.assertEqual(result["checkpoints"], [])
+        self.assertNotIn("account-secret", json.dumps(result))
 
     def test_keyboard_errors_return_only_the_fixed_category(self):
         result = summarize("Failed to synthesize event for private-user: Neither element nor any descendant has keyboard focus")
@@ -91,6 +100,20 @@ ONESA_ACCOUNT_STATE person@example.test:cold:app-foreground
             path.write_text("private" * 1000)
             self.assertEqual(read_start_diagnostics(path), {"status": "invalid-diagnostics"})
 
+    def test_existing_account_failure_flags_survive_sanitization(self):
+        flags = ["interrupted-visible", "callback-unconfirmed-visible", "invalid-account-visible", "reconnect-visible",
+                 "issuer-form-context-visible", "browser-text-field-visible", "portal-loading-visible", "portal-sign-in-visible",
+                 "portal-unavailable-visible", "browser-trust-error-visible", "browser-network-error-visible"]
+        text = "\n".join(f"ONESA_ACCOUNT_STATE member:cold:{flag}" for flag in flags)
+        result = summarize(text + "\nONESA_ACCOUNT_STATE member:cold:reconnect-visible private-account")
+        self.assertEqual(result["observed_states"], [f"member:cold:{flag}" for flag in flags])
+        self.assertNotIn("private-account", json.dumps(result))
+        for flag in flags:
+            with self.subTest(flag=flag):
+                private = summarize(f"ONESA_ACCOUNT_STATE member:cold:{flag} private-account")
+                self.assertNotIn("observed_states", private)
+                self.assertNotIn("private-account", json.dumps(private))
+
 
 class ButtonGeometryDiagnosticsTests(unittest.TestCase):
     def test_only_bounded_fixed_geometry_is_exported(self):
@@ -112,3 +135,48 @@ class ButtonGeometryDiagnosticsTests(unittest.TestCase):
                            "ONESA_ACCOUNT_STATE member:cold:tls-failure-visible secret")
         self.assertEqual(result["observed_states"], ["member:cold:timeout-failure-visible",
                                                      "member:cold:tls-failure-visible"])
+
+
+class BrowserObservationDiagnosticsTests(unittest.TestCase):
+    def test_fixed_transition_records_preserve_consent_owner_and_query_progress(self):
+        rows = ["member:warm:navigation:none:0", "member:warm:state:product:4",
+                "member:warm:consent:springboard:1", "member:warm:touch:product:0",
+                "member:warm:touch:product:1", "member:warm:navigation:none:3",
+                "member:warm:query:authentication:0", "member:warm:query:authentication:1",
+                "member:warm:webviews:authentication:8", "member:warm:heading:authentication:1",
+                "member:warm:remember:authentication:0", "member:warm:cancel:authentication:1"]
+        result = summarize("\n".join("ONESA_ACCOUNT_UI " + row for row in rows))
+        self.assertEqual(result["browser_observations"], [
+            {"scenario": ":".join(parts[:2]), "event": parts[2], "owner": parts[3], "value": int(parts[4])}
+            for parts in (row.split(":") for row in rows)
+        ])
+
+    def test_private_unknown_or_out_of_domain_values_are_never_exported(self):
+        for row in ["member:warm:state:product:5", "member:cold:touch:product:2",
+                    "member:cold:consent:none:8", "member:warm:navigation:none:4",
+                    "member:cold:webviews:authentication:9", "member:cold:webviews:authentication:-1",
+                    "member:cold:webviews:authentication:1.0", "member:cold:query:safari:true",
+                    "member:cold:heading:authentication:1 private-password",
+                    "member:cold:remember:authentication:0?code=secret", "member:cold:cancel:secret:1",
+                    "secret@example.test:cold:state:product:4", "member:cold:https://issuer.invalid:product:1",
+                    "member:cold:state:product:04", "member:cold:state:product:4\nprivate-password"]:
+            with self.subTest(row=row):
+                result = summarize("private-password ONESA_ACCOUNT_UI " + row)
+                self.assertNotIn("browser_observations", result)
+                result = summarize("ONESA_ACCOUNT_UI " + row)
+                if row.endswith("\nprivate-password"):
+                    self.assertEqual(len(result["browser_observations"]), 1)
+                else:
+                    self.assertNotIn("browser_observations", result)
+                self.assertNotIn("private-password", json.dumps(result))
+                self.assertNotIn("secret", json.dumps(result))
+                self.assertNotIn("@", json.dumps(result))
+
+    def test_history_is_bounded_and_repeated_polls_are_coalesced(self):
+        same = "ONESA_ACCOUNT_UI member:warm:consent:springboard:1\n"
+        result = summarize(same * 200)
+        self.assertEqual(len(result["browser_observations"]), 1)
+        rows = [f"ONESA_ACCOUNT_UI member:warm:query:authentication:{i % 2}\n" for i in range(200)]
+        result = summarize("".join(rows))
+        self.assertEqual(len(result["browser_observations"]), 64)
+        self.assertEqual(result["browser_observations"][-1]["value"], 1)
