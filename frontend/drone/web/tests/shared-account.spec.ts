@@ -228,7 +228,7 @@ test("returning from shared Account enrollment shows pending access, not an auth
   await expect(page.getByRole("alert")).toContainText(
     "administrator approval",
   );
-  await expect(page).toHaveURL(/\\/$/);
+  await expect(page).toHaveURL(/\/$/);
   await expect(
     page.getByRole("button", { name: "Continue with Onesa" }),
   ).toBeVisible();
