@@ -175,6 +175,18 @@ test("shared sign-in has one clear entry and no second account form", async ({
   await expect(
     page.getByRole("button", { name: "Continue with Onesa" }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Create an Onesa account" }),
+  ).toHaveAttribute(
+    "href",
+    "https://account.onesa.eu/register?audience=user&product=drone&platform=web",
+  );
+  await expect(
+    page.getByRole("link", { name: "Request administrator registration" }),
+  ).toHaveAttribute(
+    "href",
+    "https://account.onesa.eu/register?audience=admin&product=drone&platform=web",
+  );
   const button = await page
     .getByRole("button", { name: "Continue with Onesa" })
     .boundingBox();
@@ -205,6 +217,22 @@ test("shared sign-in has one clear entry and no second account form", async ({
   expect(writes).toEqual([
     { path: "/api/v1/auth/identity/start", body: { reauthenticate: false } },
   ]);
+});
+
+test("returning from shared Account enrollment shows pending access, not an authenticated Drone session", async ({ page }) => {
+  await identityUI(page);
+  await page.goto("/?registration=complete");
+  await expect(page.getByRole("alert")).toContainText(
+    "registration was received",
+  );
+  await expect(page.getByRole("alert")).toContainText(
+    "administrator approval",
+  );
+  await expect(page).toHaveURL(/\\/$/);
+  await expect(
+    page.getByRole("button", { name: "Continue with Onesa" }),
+  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Choose your workspace" })).toHaveCount(0);
 });
 
 test("global administrator explicitly chooses a workspace and can switch it", async ({
