@@ -8,7 +8,27 @@ case "${1:-}" in
     cd "$mobile"
     hook='require File.expand_path("../../../../scripts/ios-simulator-ui/target", __dir__)'
     if ! grep -Fxq "$hook" ios/Podfile; then printf '\n%s\n' "$hook" >> ios/Podfile; fi
-    pod install --project-directory=ios
+    # React Native's pinned prebuilt core archive can suffer intermittent TLS
+    # resets from repo.reactnative.dev. Retry only that exact download error;
+    # never skip CocoaPods, change the pinned version, or proceed without a lock.
+    pod_log=$(mktemp)
+    trap 'rm -f "$pod_log"' EXIT
+    resolved=false
+    for attempt in 1 2 3; do
+      if pod install --project-directory=ios > "$pod_log" 2>&1; then
+        resolved=true
+        break
+      fi
+      if [[ "$attempt" -eq 3 ]] ||
+         ! grep -Fq 'Failed to download reactnative-core-0.88.1-release.tar.gz' "$pod_log" ||
+         ! grep -Eq 'curl: \((56|28)\)' "$pod_log"; then
+        cat "$pod_log" >&2
+        exit 1
+      fi
+      echo "Pinned React Native core archive connection reset; retrying pod resolution ($attempt/3)." >&2
+      sleep "$((8 * attempt))"
+    done
+    [[ "$resolved" == true && -s ios/Podfile.lock ]] || exit 1
     exit 0
     ;;
   test) mode=planner ;;
