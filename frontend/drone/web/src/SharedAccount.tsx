@@ -22,13 +22,27 @@ const errors: Record<string, string> = {
     "Your account is ready. Ask an administrator for Drone access.",
 };
 
+// Account enrollment is separate from Drone's existing-user OIDC flow.
+// Use only the fixed Identity return registry for this product; never accept a
+// caller-provided return URL or take an administrator straight to Drone roles.
+export const droneRegistrationUrl = (tier: "user" | "admin") =>
+  "https://account.onesa.eu/register?audience=" +
+  tier +
+  "&product=drone&platform=web";
+
 export function accountError(): string {
   const url = new URL(location.href);
   const code = url.searchParams.get("account_error");
-  if (!code) return "";
+  const registered = url.searchParams.get("registration") === "complete";
+  if (!code && !url.searchParams.has("registration")) return "";
   url.searchParams.delete("account_error");
+  url.searchParams.delete("registration");
   history.replaceState(null, "", url.pathname + url.search + url.hash);
-  return errors[code] || "Sign-in could not be completed. Please try again.";
+  if (code)
+    return errors[code] || "Sign-in could not be completed. Please try again.";
+  return registered
+    ? "Your Onesa registration was received. Account and Drone workspace access may require administrator approval before operations can open."
+    : "";
 }
 
 export async function startSharedSignIn(reauthenticate = false) {
