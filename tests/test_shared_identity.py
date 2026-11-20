@@ -337,6 +337,9 @@ def test_workspace_role_is_capped_by_live_product_role(shared):
     client = shared["client"]
     assert client.get("/api/v1/auth/me").json()["role"] == "admin"
     assert client.get("/api/v1/users").status_code == 200
+    state["identity"] = replace(state["identity"], product_roles={"drone": "administrator"})
+    assert client.get("/api/v1/auth/me").json()["role"] == "admin"
+    assert client.get("/api/v1/users").status_code == 200
     state["identity"] = replace(state["identity"], product_roles={"drone": "operator"})
     assert client.get("/api/v1/auth/me").json()["role"] == "operator"
     assert client.get("/api/v1/users").status_code == 403
