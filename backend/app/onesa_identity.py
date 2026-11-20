@@ -21,9 +21,9 @@ import httpx
 
 PRODUCTS = frozenset({"ai", "drone", "robot"})
 PRODUCT_ROLES = {
-    "ai": {"user", "admin"},
-    "drone": {"viewer", "operator", "admin"},
-    "robot": {"viewer", "operator", "admin"},
+    "ai": {"user", "admin", "administrator"},
+    "drone": {"viewer", "operator", "admin", "administrator"},
+    "robot": {"viewer", "operator", "admin", "administrator"},
 }
 MAX_RESPONSE_BYTES = 65536
 
@@ -246,6 +246,8 @@ def validate_session(config: IdentityConfig, token: str, *, client: httpx.Client
             for key, value in product_roles.items()
         ):
             raise ValueError("Invalid assertion")
+        product_roles = {key: "admin" if value == "administrator" else value
+                         for key, value in product_roles.items()}
         memberships = raw["onesa_memberships"]
         if not isinstance(memberships, list) or len(memberships) > 100:
             raise ValueError("Invalid assertion")
