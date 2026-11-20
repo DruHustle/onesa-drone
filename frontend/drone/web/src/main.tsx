@@ -2006,6 +2006,7 @@ function App() {
             (user.role === "admin" ? (
               <div className="two-col">
                 <section>
+                  {user.identity_managed && user.global_admin && user.account_url && <p><a href={new URL("/admin?product=drone", user.account_url).toString()}>Manage Onesa administrators</a></p>}
                   <h2>Operating preferences</h2>
                   <form
                     onSubmit={(e) => {
