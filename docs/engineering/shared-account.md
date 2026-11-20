@@ -73,7 +73,7 @@ sets the maximum permission, and membership can narrow it for each tenant.
 A central application-role downgrade takes effect on the next request.
 No customer tenant is selected from an environment default or inferred from an
 email domain. Global administrators need the central `global_admin` role and MFA
-evidence. Product administrator sessions also require MFA. Administrator writes and
+evidence. Product administrator sessions use the canonical `administrator` entitlement (with the legacy `admin` alias accepted during migration) and require MFA. It maps to Drone’s existing local `admin` ceiling; it does not create an `administrator` tenant membership. Administrator writes and
 global administrator workspace switching require an actual authentication within
 five minutes; selecting **Confirm administrator sign-in** requests a new login
 and MFA and preserves the previously chosen workspace for the same account.

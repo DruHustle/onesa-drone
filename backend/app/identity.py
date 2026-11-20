@@ -240,6 +240,8 @@ class IdentityService:
         result = {}
         ranks = {"viewer": 0, "operator": 1, "admin": 2}
         ceiling = identity.product_roles.get("drone", "viewer")
+        if ceiling == "administrator":
+            ceiling = "admin"
         for item in identity.memberships:
             if item["product"] == "drone":
                 if item["tenant_id"] in result:
