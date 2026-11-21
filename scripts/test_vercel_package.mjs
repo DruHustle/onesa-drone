@@ -46,6 +46,30 @@ async function fixture(t) {
   };
 }
 
+test("ordinary Vercel Git builds never drop API ingress or mix production with staging", async () => {
+  const config = JSON.parse(await readFile(new URL("../frontend/vercel.json", import.meta.url)));
+  assert.equal(config.git.deploymentEnabled, false, "Automated Git promotion remains disabled");
+  const [production, staging, spa] = config.rewrites;
+  assert.deepEqual(production, {
+    source: "/api/v1/:path*",
+    has: [{ type: "host", value: "^drone\\\\.onesa\\\\.eu$" }],
+    destination: "https://drone-api.onesa.eu/api/v1/:path*",
+  });
+  assert.deepEqual(staging, {
+    source: "/api/v1/:path*",
+    has: [{ type: "host", value: "^drone-staging\\\\.onesa\\\\.eu$" }],
+    destination: "https://drone-api-staging.onesa.eu/api/v1/:path*",
+  });
+  assert.deepEqual(spa, { source: "/((?!api/).*)", destination: "/index.html" });
+  assert.equal(config.rewrites.length, 3, "Every other API request must remain 404");
+  const apiHeaders = config.headers.find(item => item.source === "/api/(.*)");
+  assert.ok(apiHeaders, "API requests must not be indexed or cached");
+  assert.ok(apiHeaders.headers.some(h => h.key === "Cache-Control" && h.value.includes("no-store")));
+  assert.ok(apiHeaders.headers.some(h => h.key === "X-Robots-Tag" && h.value.includes("noindex")));
+  // The prebuilt deployment's immutable routing remains independently tested
+  // against the selected environment's exact fixed origin.
+});
+
 test("prebuilt routing keeps API before SPA and no private cache or indexing", async (t) => {
   const { args } = await fixture(t);
   const result = await packageVercel(args);
