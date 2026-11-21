@@ -52,12 +52,12 @@ test("ordinary Vercel Git builds never drop API ingress or mix production with s
   const [production, staging, spa] = config.rewrites;
   assert.deepEqual(production, {
     source: "/api/v1/:path*",
-    has: [{ type: "host", value: "^drone\\\\.onesa\\\\.eu$" }],
+    has: [{ type: "host", value: "^drone\\.onesa\\.eu$" }],
     destination: "https://drone-api.onesa.eu/api/v1/:path*",
   });
   assert.deepEqual(staging, {
     source: "/api/v1/:path*",
-    has: [{ type: "host", value: "^drone-staging\\\\.onesa\\\\.eu$" }],
+    has: [{ type: "host", value: "^drone-staging\\.onesa\\.eu$" }],
     destination: "https://drone-api-staging.onesa.eu/api/v1/:path*",
   });
   assert.deepEqual(spa, { source: "/((?!api/).*)", destination: "/index.html" });
