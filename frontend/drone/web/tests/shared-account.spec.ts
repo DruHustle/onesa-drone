@@ -168,7 +168,7 @@ test("shared sign-in has one clear entry and no second account form", async ({
   await page.goto("/");
   for (const [audience, name] of [["user", "Create an Onesa account"], ["admin", "Request administrator access"]]) {
     await expect(page.getByRole("link", { name })).toHaveAttribute("href",
-      "https://auth.onesa.eu/register?product=drone&platform=web&audience=" + audience);
+      "https://account.onesa.eu/register?product=drone&platform=web&audience=" + audience);
   }
   await expect(
     page.getByRole("heading", {
