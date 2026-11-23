@@ -68,9 +68,11 @@ final class PlannerTests: XCTestCase {
         reveal(example)
         example.tap()
         XCTAssertTrue(app.staticTexts["Illustrative points loaded, not your farm or actual aircraft GPS."].waitForExistence(timeout: 10))
-        let save = app.buttons["Save encrypted draft"]
-        reveal(save)
+        let save = app.buttons["planner-save-draft"]
+        XCTAssertTrue(save.waitForExistence(timeout: 10))
+        XCTAssertEqual(save.label, "Save encrypted draft")
         XCTAssertTrue(save.isEnabled)
+        // XCTest brings an existing off-screen button into view before tapping.
         save.tap()
         XCTAssertTrue(app.staticTexts["Example security perimeter"].waitForExistence(timeout: 15))
 
