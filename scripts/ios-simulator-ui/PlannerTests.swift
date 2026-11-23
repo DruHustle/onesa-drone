@@ -22,19 +22,19 @@ final class PlannerTests: XCTestCase {
     @MainActor private func reveal(_ element: XCUIElement) {
         let scroll = app.scrollViews.firstMatch
         XCTAssertTrue(scroll.waitForExistence(timeout: 10))
-        if element.exists && element.isHittable { return }
-        for _ in 0..<8 {
-            scroll.swipeDown()
-            if element.exists && element.isHittable { return }
-        }
-        // A full swipe can jump from the top of the form past a short row
-        // of controls. Drag over a quarter of the visible area and let the
-        // scroll settle before looking for a hittable control again.
+        let viewport = scroll.frame.insetBy(dx: 0, dy: 12)
         let lower = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.94, dy: 0.65))
         let upper = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.94, dy: 0.40))
-        for _ in 0..<16 {
-            lower.press(forDuration: 0.05, thenDragTo: upper, withVelocity: .slow, thenHoldForDuration: 0.15)
-            if element.exists && element.isHittable { return }
+        // Move toward the control from the current scroll offset. A full
+        // swipe can skip a short button row or reset progress through the form.
+        for _ in 0..<20 {
+            let frame = element.exists ? element.frame : .null
+            let center = CGPoint(x: frame.midX, y: frame.midY)
+            if !frame.isEmpty && viewport.contains(center) && element.isHittable { return }
+            let above = !frame.isEmpty && center.y < viewport.midY
+            let start = above ? upper : lower
+            let end = above ? lower : upper
+            start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.15)
         }
         XCTFail("Expected planner control never appeared on screen: \(element)")
     }
@@ -67,6 +67,7 @@ final class PlannerTests: XCTestCase {
         let example = app.buttons["Load example"]
         reveal(example)
         example.tap()
+        XCTAssertTrue(app.staticTexts["Illustrative points loaded, not your farm or actual aircraft GPS."].waitForExistence(timeout: 10))
         let save = app.buttons["Save encrypted draft"]
         reveal(save)
         XCTAssertTrue(save.isEnabled)
