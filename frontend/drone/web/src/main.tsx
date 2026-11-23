@@ -295,8 +295,6 @@ function App() {
         if (!active) return;
         setSharedAccount(config.shared_account);
         if (config.shared_account && returnedFromRegistration) {
-          current.searchParams.delete("registration");
-          window.history.replaceState(null, "", current.pathname + current.search + current.hash);
           rememberRequestedView(entryView);
           await startSharedSignIn();
         }
