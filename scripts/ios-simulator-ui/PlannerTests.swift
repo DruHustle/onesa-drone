@@ -27,8 +27,13 @@ final class PlannerTests: XCTestCase {
             scroll.swipeDown()
             if element.exists && element.isHittable { return }
         }
-        for _ in 0..<14 {
-            scroll.swipeUp()
+        // A full swipe can jump from the top of the form past a short row
+        // of controls. Drag over a quarter of the visible area and let the
+        // scroll settle before looking for a hittable control again.
+        let lower = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.94, dy: 0.65))
+        let upper = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.94, dy: 0.40))
+        for _ in 0..<16 {
+            lower.press(forDuration: 0.05, thenDragTo: upper, withVelocity: .slow, thenHoldForDuration: 0.15)
             if element.exists && element.isHittable { return }
         }
         XCTFail("Expected planner control never appeared on screen: \(element)")
