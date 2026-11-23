@@ -640,6 +640,10 @@ class NativeInputTests(unittest.TestCase):
                             ("app.json", self.config)):
             (self.mobile / name).write_text(json.dumps(value))
 
+    def test_reviewed_expo_version_matches_the_mobile_application(self):
+        manifest = json.loads((native.ROOT / native.MOBILE_PATH / "package.json").read_text())
+        self.assertEqual(manifest["dependencies"]["expo"], native.EXPO_VERSION)
+
     def test_installed_locked_sdk_and_local_template_are_bound(self):
         value = native.locked_inputs(self.mobile)
         self.assertEqual(set(value["files_sha256"]), {"package.json", "package-lock.json", "app.json"})
