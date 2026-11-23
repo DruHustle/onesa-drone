@@ -39,13 +39,13 @@ The Debug test build disables the compiler index store to keep disposable editor
 index records from exhausting runner storage. All source compilation and the
 complete selected XCTest remain required.
 
-OS browser consent is identified by its localhost sign-in alert and enabled,
-hittable Continue control. Each tap uses that control's current frame, bounded by
-the verified alert and foreground application. The harness permits one repeat
-only while the same semantic consent is still present, then requires dismissal
-before looking for Portal. It never repeats the application's authorization
-request or accepts another alert. Fixed tapped/retried/dismissed checkpoints
-distinguish a retained OS prompt from a missing issuer form.
+The harness checks SpringBoard's localhost sign-in alert before and after each
+browser accessibility lookup. Once the alert appears, it gives the exact enabled,
+hittable Continue control ten seconds to become actionable. Each tap uses that
+control's current frame, bounded by the verified alert and foreground application.
+The harness permits one repeat only while the same consent is present. Portal
+must appear after the alert is dismissed. Fixed tapped, retried and dismissed
+checkpoints distinguish a retained OS prompt from a missing issuer form.
 Preparation refreshes both copied XCTest sources even when the generated native
 target already exists, so repeated local qualification runs use current helpers.
 
