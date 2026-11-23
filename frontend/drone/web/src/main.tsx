@@ -285,31 +285,44 @@ function App() {
   }, []);
   useEffect(() => {
     mounted.current = true;
-    api<User>("/auth/me")
-      .then((u) => {
-        setUser(u);
-        setCSRF(u.csrf);
-        setSharedAccount(!!u.identity_managed);
-      })
-      .catch(async () => {
-        try {
-          const config = await api<{ shared_account: boolean }>("/auth/config");
-          setSharedAccount(config.shared_account);
-          const current = new URL(window.location.href);
-          if (config.shared_account && current.searchParams.get("registration") === "complete") {
-            current.searchParams.delete("registration");
-            window.history.replaceState(null, "", current.pathname + current.search + current.hash);
-            rememberRequestedView(entryView);
-            await startSharedSignIn();
-          }
-        } catch {
+    let active = true;
+    const current = new URL(window.location.href);
+    const returnedFromRegistration = current.searchParams.get("registration") === "complete";
+    async function openSignIn() {
+      if (!active) return;
+      try {
+        const config = await api<{ shared_account: boolean }>("/auth/config");
+        if (!active) return;
+        setSharedAccount(config.shared_account);
+        if (config.shared_account && returnedFromRegistration) {
+          current.searchParams.delete("registration");
+          window.history.replaceState(null, "", current.pathname + current.search + current.hash);
+          rememberRequestedView(entryView);
+          await startSharedSignIn();
+        }
+      } catch {
+        if (active) {
           setNotice(
             "Sign-in is temporarily unavailable. Reload this page to try again.",
           );
         }
-      })
-      .finally(() => setBoot(false));
+      }
+    }
+    // Registration must confirm the central account before showing an existing
+    // workspace. A local cookie may belong to a different account.
+    const open = returnedFromRegistration
+      ? openSignIn()
+      : api<User>("/auth/me")
+        .then((u) => {
+          if (!active) return;
+          setUser(u);
+          setCSRF(u.csrf);
+          setSharedAccount(!!u.identity_managed);
+        })
+        .catch(openSignIn);
+    void open.finally(() => { if (active) setBoot(false); });
     return () => {
+      active = false;
       mounted.current = false;
     };
   }, [entryView]);

@@ -367,3 +367,18 @@ for (const [tier, linkName] of [["user", "Create an Onesa account"], ["admin", "
     expect(writes.filter(write => write.path === "/api/v1/auth/identity/start")).toHaveLength(1);
   });
 }
+
+test("registration return starts Onesa sign-in without restoring a previous workspace", async ({ page }) => {
+  const writes = await identityUI(page, { signedIn: true });
+  const sessionReads: string[] = [];
+  page.on("request", request => {
+    const path = new URL(request.url()).pathname;
+    if (path === "/api/v1/auth/me" || path === "/api/v1/operations") sessionReads.push(path);
+  });
+  await page.goto("/?registration=complete");
+  await expect(page.getByRole("heading", { name: "Onesa account" })).toBeVisible();
+  expect(sessionReads).toEqual([]);
+  expect(writes).toEqual([
+    { path: "/api/v1/auth/identity/start", body: { reauthenticate: false } },
+  ]);
+});
