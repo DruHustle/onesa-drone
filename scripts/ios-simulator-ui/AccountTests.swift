@@ -328,7 +328,24 @@ final class AccountTests: XCTestCase {
         configuration.connectionProxyDictionary = [:]
         let session = URLSession(configuration: configuration)
         defer { session.invalidateAndCancel() }
-        return try await session.data(for: request)
+        do {
+            return try await session.data(for: request)
+        } catch let error as URLError {
+            switch error.code {
+            case .timedOut: checkpoint("fixture-transport-timeout")
+            case .networkConnectionLost: checkpoint("fixture-transport-disconnected")
+            case .cannotConnectToHost: checkpoint("fixture-transport-connect")
+            default:
+                checkpoint("fixture-transport-other")
+                throw error
+            }
+            // Re-read a current receipt before deciding whether the browser
+            // acted. Never retry the session expiry POST or submit a form here.
+            guard request.httpMethod == "GET" else { throw error }
+            checkpoint("fixture-read-retry")
+            try await Task.sleep(nanoseconds: 250_000_000)
+            return try await session.data(for: request)
+        }
     }
 
     @MainActor private func receivedStartAttempts() async throws -> Int {

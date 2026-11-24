@@ -37,7 +37,10 @@ runs its bundled application without Metro.
 
 The Debug test build disables the compiler index store to keep disposable editor
 index records from exhausting runner storage. All source compilation and the
-complete selected XCTest remain required.
+complete selected XCTest remain required. The hosted Debug planner boots its
+fresh simulator before the standalone native compile proof, matching the startup
+order that passed in the Release planner. The generic arm64 build and its
+provenance checks still run before producing combined Debug evidence.
 
 The harness checks SpringBoard's localhost sign-in alert before and after each
 browser accessibility lookup. Once the alert appears, it gives the exact enabled,
@@ -59,6 +62,9 @@ by its exact value. Keyboard input is verified before submission, including the
 secure-field length. Member/admin cold and warm sign-in, MFA, issuer request
 counts, scoped expiry, immutable subject, Keychain relaunch and logout checks all
 remain mandatory. Only fixed failure-state flags leave the private test output.
+If a receipt read times out, loses its connection, or cannot connect, the suite
+reads it once more after a short pause. It still requires exact issuer counts.
+It never retries the session-expiry POST or replays credentials on a read error.
 
 The private log also records fixed browser owner states, semantic consent presence,
 native touch completion, WebView query progress/counts and expected issuer landmark
