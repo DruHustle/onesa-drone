@@ -168,7 +168,7 @@ test("shared sign-in has one clear entry and no second account form", async ({
   await page.goto("/");
   for (const [audience, name] of [["user", "Create an Onesa account"], ["admin", "Request administrator access"]]) {
     await expect(page.getByRole("link", { name })).toHaveAttribute("href",
-      "https://auth.onesa.eu/register?product=drone&platform=web&audience=" + audience);
+      "https://account.onesa.eu/register?product=drone&platform=web&audience=" + audience);
   }
   await expect(
     page.getByRole("heading", {
@@ -355,7 +355,7 @@ for (const [tier, linkName] of [["user", "Create an Onesa account"], ["admin", "
     const writes = await identityUI(page);
     await page.goto("/");
     const resume = new URL("/?registration=complete", page.url()).href;
-    await page.route("https://auth.onesa.eu/register?*", route => {
+    await page.route("https://account.onesa.eu/register?*", route => {
       expect(Object.fromEntries(new URL(route.request().url()).searchParams)).toEqual({ product: "drone", platform: "web", audience: tier });
       return route.fulfill({ contentType: "text/html", body: `<!doctype html><script>location.replace(${JSON.stringify(resume)})</script>` });
     });
@@ -367,3 +367,24 @@ for (const [tier, linkName] of [["user", "Create an Onesa account"], ["admin", "
     expect(writes.filter(write => write.path === "/api/v1/auth/identity/start")).toHaveLength(1);
   });
 }
+
+test("registration return retries Onesa sign-in without restoring a previous workspace", async ({ page }) => {
+  const writes = await identityUI(page, { signedIn: true });
+  const sessionReads: string[] = [];
+  page.on("request", request => {
+    const path = new URL(request.url()).pathname;
+    if (path === "/api/v1/auth/me" || path === "/api/v1/operations") sessionReads.push(path);
+  });
+  await page.route("**/api/v1/auth/identity/start", route =>
+    route.fulfill({ status: 503, json: { detail: "Synthetic sign-in outage" } }),
+  { times: 1 });
+  await page.goto("/?registration=complete");
+  await expect(page.getByRole("alert")).toContainText("Reload this page to try again.");
+  await expect(page).toHaveURL(/\?registration=complete$/);
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Onesa account" })).toBeVisible();
+  expect(sessionReads).toEqual([]);
+  expect(writes).toEqual([
+    { path: "/api/v1/auth/identity/start", body: { reauthenticate: false } },
+  ]);
+});

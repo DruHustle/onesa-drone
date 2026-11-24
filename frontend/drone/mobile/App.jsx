@@ -204,7 +204,7 @@ function Screen({account, colors, openAccount}) {
           <Body colors={colors}>{review?review.distance_m.toLocaleString()+" m estimated ground route":"Add at least two distinct waypoints."}</Body>
           <Body colors={colors} muted small>No terrain clearance, flight endurance, GPS, airspace or payload feasibility has been confirmed.</Body>
           <View style={styles.wrap}>
-            <Button colors={colors} disabled={!review||busy} onPress={save}>{busy?"Saving…":"Save encrypted draft"}</Button>
+            <Button testID="planner-save-draft" colors={colors} disabled={!review||busy} onPress={save}>{busy?"Saving…":"Save encrypted draft"}</Button>
             <Button colors={colors} secondary disabled={!review} onPress={()=>{setTab("Monitor");setSimulating(true);setProgress(0);}}>Preview simulation</Button>
           </View>
         </Panel>

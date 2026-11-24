@@ -31,8 +31,8 @@ export function Panel({ children, colors }) {
 export function Body({ children, colors, muted=false, small=false, style, testID }) {
   return <Text testID={testID} style={[small?styles.small:styles.body,{color:muted?colors.muted:colors.text},style]}>{children}</Text>;
 }
-export function Button({ children, onPress, colors, secondary=false, disabled=false, style }) {
-  return <Pressable accessibilityRole="button" accessibilityState={{disabled}} onPress={onPress}
+export function Button({ children, onPress, colors, secondary=false, disabled=false, style, testID }) {
+  return <Pressable testID={testID} accessibilityRole="button" accessibilityState={{disabled}} onPress={onPress}
     disabled={disabled} style={({pressed})=>[styles.button,{borderColor:colors.brand,
       backgroundColor:secondary?colors.surface:colors.brand,opacity:disabled?0.45:pressed?0.75:1},style]}>
     <Text style={[styles.buttonText,{color:secondary?colors.brand:colors.brandText}]}>{children}</Text>
