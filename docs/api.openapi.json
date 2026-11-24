@@ -127,6 +127,7 @@
               "validate",
               "authorize",
               "launch",
+              "abort",
               "cancel",
               "recover",
               "reschedule",

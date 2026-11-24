@@ -38,7 +38,7 @@ With Metro stopped, run from the Drone checkout:
 
 ```sh
 .venv311/bin/python scripts/acceptance/run_local.py \
-  --portal ../onesa-company-portal --pg-bin "${PG_BIN:-$(pg_config --bindir)}" --native-ui ios
+  --portal ../onesa-portal --pg-bin "${PG_BIN:-$(pg_config --bindir)}" --native-ui ios
 ```
 
 The harness starts both products on HTTPS loopback origins and installs a

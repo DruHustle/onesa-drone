@@ -1,5 +1,5 @@
 // SecureStore is injected: the module can be tested without a device.
-import { inspectRoute, PURPOSES } from "./mission-core.mjs";
+import { makeDraft } from "./mission-core.mjs";
 
 import { inOrder } from "./secure-operations.mjs";
 
@@ -22,12 +22,13 @@ async function indexOf(store) {
   }
   return [...new Set(ids)];
 }
-function validDraft(value) {
-  if (!value || !safeId(value.id) || value.status !== "draft" ||
-      value.execution_enabled !== false || typeof value.title !== "string" ||
-      value.title.length < 3 || value.title.length > 80 ||
-      !PURPOSES.some(p => p.id === value.purpose)) return false;
-  try { inspectRoute(value.waypoints); return true; } catch { return false; }
+function normalizedDraft(value) {
+  if (value?.status !== "draft" || value.execution_enabled !== false ||
+      typeof value.title !== "string") throw new RangeError("Invalid draft");
+  return makeDraft({
+    id: value.id, title: value.title, purpose: value.purpose,
+    points: value.waypoints, now: value.created_at,
+  });
 }
 export async function loadDrafts(store) {
   return inOrder(store, () => readDrafts(store));
@@ -37,15 +38,19 @@ async function readDrafts(store) {
   const drafts = [];
   for (const id of ids) {
     const raw = await store.getItemAsync(key(id));
-    let value;
-    try { value = JSON.parse(raw); } catch { continue; }
-    if (validDraft(value) && value.id === id) drafts.push(value);
+    if (raw === null) continue;
+    try {
+      const draft = normalizedDraft(JSON.parse(raw));
+      if (draft.id !== id) throw new RangeError("Draft identifier mismatch");
+      drafts.push(draft);
+    } catch {
+      drafts.push({ id, unreadable: true });
+    }
   }
   return drafts;
 }
 export async function saveDraft(store, draft) {
-  if (!validDraft(draft)) throw new RangeError("Invalid draft");
-  const raw = JSON.stringify(draft);
+  const raw = JSON.stringify(normalizedDraft(draft));
   if (raw.length > 1800) throw new RangeError("Draft is too large for secure storage");
   return inOrder(store, async () => {
     const location = key(draft.id);

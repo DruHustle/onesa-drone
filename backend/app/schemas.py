@@ -62,7 +62,7 @@ class MissionIn(Strict):
 
 
 class Command(SimulationCommand):
-    action: Literal["plan", "validate", "authorize", "launch", "cancel", "recover", "reschedule", "replan"]
+    action: Literal["plan", "validate", "authorize", "launch", "abort", "cancel", "recover", "reschedule", "replan"]
     revision: int = Field(ge=1)
     aircraft_id: str | None = Field(default=None, max_length=40)
     scheduled_at: float | None = Field(default=None, ge=0)

@@ -14,6 +14,13 @@ import { api, APIError, setCSRF, SessionChangedError } from "./api";
 import { subscribeToOperations, type StreamStatus } from "./operationsStream";
 import FlightPlanPreview from "./FlightPlanPreview";
 import MobileDownloads from "./MobileDownloads";
+import ProductOverview, { droneRegistration } from "./ProductOverview";
+import {
+  clearRequestedView,
+  rememberRequestedView,
+  requestedView,
+  showProductOverview,
+} from "./productEntry";
 import {
   accountError,
   startSharedSignIn,
@@ -93,12 +100,13 @@ function Empty({ children }: { children: ReactNode }) {
 }
 function App() {
   const localSimulator = ["127.0.0.1", "localhost", "[::1]"].includes(window.location.hostname);
+  const [entryView] = useState(requestedView);
   const [sharedAccount, setSharedAccount] = useState<boolean | null>(null);
   const [choosingWorkspace, setChoosingWorkspace] = useState(false);
   const [signOutAccountUrl, setSignOutAccountUrl] = useState("");
   const [user, setUser] = useState<User | null>(null),
     [boot, setBoot] = useState(true),
-    [page, setPage] = useState("Dashboard"),
+    [page, setPage] = useState(entryView),
     [data, setData] = useState<Operations>({
       aircraft: [],
       missions: [],
@@ -277,33 +285,48 @@ function App() {
   }, []);
   useEffect(() => {
     mounted.current = true;
-    api<User>("/auth/me")
-      .then((u) => {
-        setUser(u);
-        setCSRF(u.csrf);
-        setSharedAccount(!!u.identity_managed);
-      })
-      .catch(async () => {
-        try {
-          const config = await api<{ shared_account: boolean }>("/auth/config");
-          setSharedAccount(config.shared_account);
-          const current = new URL(window.location.href);
-          if (config.shared_account && current.searchParams.get("registration") === "complete") {
-            current.searchParams.delete("registration");
-            window.history.replaceState(null, "", current.pathname + current.search + current.hash);
-            await startSharedSignIn();
-          }
-        } catch {
+    let active = true;
+    const current = new URL(window.location.href);
+    const returnedFromRegistration = current.searchParams.get("registration") === "complete";
+    async function openSignIn() {
+      if (!active) return;
+      try {
+        const config = await api<{ shared_account: boolean }>("/auth/config");
+        if (!active) return;
+        setSharedAccount(config.shared_account);
+        if (config.shared_account && returnedFromRegistration) {
+          rememberRequestedView(entryView);
+          await startSharedSignIn();
+        }
+      } catch {
+        if (active) {
           setNotice(
             "Sign-in is temporarily unavailable. Reload this page to try again.",
           );
         }
-      })
-      .finally(() => setBoot(false));
+      }
+    }
+    // Registration must confirm the central account before showing an existing
+    // workspace. A local cookie may belong to a different account.
+    const open = returnedFromRegistration
+      ? openSignIn()
+      : api<User>("/auth/me")
+        .then((u) => {
+          if (!active) return;
+          setUser(u);
+          setCSRF(u.csrf);
+          setSharedAccount(!!u.identity_managed);
+        })
+        .catch(openSignIn);
+    void open.finally(() => { if (active) setBoot(false); });
     return () => {
+      active = false;
       mounted.current = false;
     };
-  }, []);
+  }, [entryView]);
+  useEffect(() => {
+    if (user?.tenant_id) clearRequestedView();
+  }, [user?.tenant_id]);
   useEffect(() => {
     if (!user?.tenant_id) return;
     let stopped = false;
@@ -502,8 +525,6 @@ function App() {
     }
   }
   const canOperate = !!user && user.role !== "viewer";
-  if (location.pathname.startsWith("/track/"))
-    return <Tracking token={location.pathname.split("/")[2]} />;
   if (boot)
     return (
       <div className="initial">
@@ -549,7 +570,10 @@ function App() {
               <button
                 className="primary"
                 disabled={busy}
-                onClick={() => void run(() => startSharedSignIn())}
+                onClick={() => void run(async () => {
+                  rememberRequestedView(entryView);
+                  await startSharedSignIn();
+                })}
               >
                 {busy ? "Opening Onesa sign-in…" : "Sign in with Onesa"}
               </button>
@@ -598,8 +622,8 @@ function App() {
             <p role="status">Drone shared sign-in is temporarily unavailable. Reload this page to retry.</p>
           ) : null}
           {(sharedAccount || !localSimulator) && <>
-            <a className="identity-link" href="https://account.onesa.eu/register?product=drone&platform=web&audience=user">Create an Onesa account</a>
-            <a className="identity-link" href="https://account.onesa.eu/register?product=drone&platform=web&audience=admin">Request administrator access</a>
+            <a className="identity-link" href={droneRegistration + "&audience=user"} onClick={() => rememberRequestedView(entryView)}>Create an Onesa account</a>
+            <a className="identity-link" href={droneRegistration + "&audience=admin"} onClick={() => rememberRequestedView(entryView)}>Request administrator access</a>
           </>}
           {notice && (
             <div role="alert" className="error identity-notice">
@@ -632,7 +656,7 @@ function App() {
             });
             setCSRF(account.csrf);
             resetWorkspace();
-            setPage("Dashboard");
+            setPage(choosingWorkspace ? "Dashboard" : entryView);
             setUser(account);
             setChoosingWorkspace(false);
           })
@@ -700,7 +724,7 @@ function App() {
         >
           <DroneScene
             mission={page === "Digital twins" ? undefined : flight}
-            sample={replay !== null ? history?.telemetry[replay] : undefined}
+            sample={page === "Digital twins" ? undefined : replay !== null ? history?.telemetry[replay] : undefined}
             lowPower={lowPower}
             night={night}
             weather={weather}
@@ -714,9 +738,19 @@ function App() {
         </Suspense>
         <div className="visual-top">
           <Badge
-            state={replay !== null ? "replay" : flight?.state || "standby"}
+            state={
+              page === "Digital twins"
+                ? inspectedAircraft?.status || "inspection"
+                : replay !== null
+                  ? "replay"
+                  : flight?.state || "standby"
+            }
           />
-          <span>VIRTUAL AIRSPACE / {prefs.region.toUpperCase()}</span>
+          <span>
+            {page === "Digital twins"
+              ? `AIRCRAFT / ${inspectedAircraft?.name || "REFERENCE MODEL"} · STATIC 3D MODEL · NO LIVE CAMERA OR GPS`
+              : `VIRTUAL AIRSPACE / ${prefs.region.toUpperCase()}`}
+          </span>
         </div>
       </div>
     </div>
@@ -1209,6 +1243,8 @@ function App() {
                           <button
                             onClick={() => {
                               setInspectedAircraft(a);
+                              setReplay(null);
+                              setPlaying(false);
                               setView("inspect");
                               navigate("Digital twins");
                             }}
@@ -1553,6 +1589,20 @@ function App() {
                               onClick={() => void act(flight, "cancel")}
                             >
                               Cancel mission
+                            </button>
+                          )}
+                          {[
+                            "taking_off",
+                            "outbound",
+                            "delivering",
+                            "returning",
+                            "landing",
+                          ].includes(flight.state) && (
+                            <button
+                              disabled={busy}
+                              onClick={() => void act(flight, "abort")}
+                            >
+                              Abort to virtual home
                             </button>
                           )}
                           {["planned", "validated", "authorized"].includes(
@@ -2735,19 +2785,24 @@ function Tracking({ token }: { token: string }) {
     [error, setError] = useState("");
   useEffect(() => {
     let stopped = false;
+    let timer: ReturnType<typeof setTimeout>;
     const read = () =>
       api("/tracking/" + encodeURIComponent(token))
         .then((d) => {
-          if (!stopped) setData(d);
+          if (stopped) return;
+          setData(d);
+          setError("");
         })
         .catch((e) => {
           if (!stopped) setError(e.message);
+        })
+        .finally(() => {
+          if (!stopped) timer = setTimeout(read, 10000);
         });
     void read();
-    const id = setInterval(() => void read(), 10000);
     return () => {
       stopped = true;
-      clearInterval(id);
+      clearTimeout(timer);
     };
   }, [token]);
   return (
@@ -2812,4 +2867,12 @@ const subtitles: Record<string, string> = {
   Administration:
     "Manage scoped access and international operating preferences.",
 };
-createRoot(document.getElementById("root")!).render(<App />);
+createRoot(document.getElementById("root")!).render(
+  location.pathname.startsWith("/track/") ? (
+    <Tracking token={location.pathname.split("/")[2]} />
+  ) : showProductOverview() ? (
+    <ProductOverview />
+  ) : (
+    <App />
+  ),
+);

@@ -10,14 +10,15 @@ export const MAX_WAYPOINTS = 12;
 export const A77 = Object.freeze({
   manufacturer: "CHUBORY",
   model: "A77 brushless",
-  vendorApp: "CHUBORY FLY",
   gps: "unverified",
-  video: "vendor-app-local-only",
+  video: "unverified",
   commandBridge: false,
   cloudLink: false,
   payloadCertified: false,
   flightEnabled: false,
 });
+export const HARDWARE_HANDOFF_REASON = "Manufacturer-app handoff is withheld until operator-led, motors-off hardware qualification and owner approval are complete.";
+
 export const DEMO_ROUTE = Object.freeze([
   { lat: -17.8235, lon: 31.0451 },
   { lat: -17.8232, lon: 31.0455 },

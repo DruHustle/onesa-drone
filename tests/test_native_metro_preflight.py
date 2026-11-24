@@ -9,6 +9,8 @@ from scripts.verify_native_metro import NoRedirect, PreflightFailure, evaluate, 
 
 class NativeMetroPreflightTests(unittest.TestCase):
     VALID = b'var __DEV__=true;const API="https://127.0.0.1:54844"+"/api/v1/auth/mobile";/*private*/'
+    PLANNER = (b'var __DEV__=true;const API="https://drone.onesa.eu/api/v1/auth/mobile";'
+               b'/*Drone Mission Control;Save encrypted draft;Physical launch and remote commands disabled;private*/')
 
     def response(self, body=None, status=200, content_type='application/javascript; charset=UTF-8'):
         response = Mock()
@@ -36,6 +38,43 @@ class NativeMetroPreflightTests(unittest.TestCase):
         with patch('scripts.verify_native_metro.LIMIT', 8):
             with self.assertRaises(PreflightFailure):
                 inspect_bundle(self.VALID)
+
+    def test_offline_planner_requires_its_complete_debug_module_without_fixture_origin(self):
+        result = inspect_bundle(self.PLANNER, profile='planner')
+        self.assertEqual((result['status'], result['profile']), ('PASS', 'planner'))
+        self.assertTrue(result['debugPrelude'] and result['plannerScreen'] and result['mobileAccountModule'])
+        self.assertNotIn('expectedLoopbackOrigin', result)
+        self.assertNotIn('private', str(result))
+        with self.assertRaises(PreflightFailure):
+            inspect_bundle(self.PLANNER)
+        for body in [self.VALID, self.PLANNER.replace(b'true', b'false'),
+                     self.PLANNER.replace(b'Save encrypted draft', b'missing'),
+                     self.PLANNER.replace(b'/api/v1/auth/mobile', b'/other')]:
+            with self.subTest(size=len(body)), self.assertRaises(PreflightFailure):
+                inspect_bundle(body, profile='planner')
+
+    def test_planner_preflight_still_requires_bounded_successful_bundle_response(self):
+        opener = self.response(self.PLANNER)
+        result = evaluate(opener, profile='planner')
+        self.assertEqual((result['status'], result['httpStatus'], result['profile']), ('PASS', 200, 'planner'))
+        self.assertEqual(opener.open.call_args.kwargs['timeout'], 120)
+        opener.open.return_value.read.assert_called_once_with(64 * 1024 * 1024 + 1)
+        for opener, category in [
+            (self.response(self.PLANNER, status=503), 'http-status'),
+            (self.response(self.PLANNER, content_type='text/html'), 'content-type'),
+            (Mock(open=Mock(side_effect=TimeoutError('private'))), 'timeout'),
+        ]:
+            with self.subTest(category=category):
+                result = evaluate(opener, profile='planner')
+                self.assertEqual((result['status'], result['category']), ('FAIL', category))
+                self.assertNotIn('private', json.dumps(result))
+
+    def test_unknown_profile_fails_before_any_request(self):
+        opener = self.response()
+        result = evaluate(opener, profile='private-invalid')
+        self.assertEqual((result['status'], result['category']), ('FAIL', 'profile'))
+        opener.open.assert_not_called()
+        self.assertNotIn('private-invalid', json.dumps(result))
 
     def test_redirects_are_never_followed(self):
         self.assertIsNone(NoRedirect().redirect_request(None, None, 302, None, {}, 'https://outside.invalid'))

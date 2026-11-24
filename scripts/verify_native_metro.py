@@ -1,8 +1,8 @@
 """Verify the prepared public iOS debug bundle without exposing bundle contents."""
+import argparse
 import hashlib
 import json
 import re
-import sys
 import time
 import urllib.error
 import urllib.request
@@ -38,9 +38,11 @@ def status_code(value):
     return value if type(value) is int and 100 <= value <= 599 else 0
 
 
-def inspect_bundle(body):
+def inspect_bundle(body, *, profile='account'):
+    if profile not in ('account', 'planner'):
+        raise PreflightFailure('profile')
     size = len(body) if isinstance(body, bytes) else 0
-    metadata = {'bytes': min(size, LIMIT + 1)}
+    metadata = {'bytes': min(size, LIMIT + 1), 'profile': profile}
     if not isinstance(body, bytes) or not 0 < size <= LIMIT:
         raise PreflightFailure('size', metadata)
     metadata['sha256'] = hashlib.sha256(body).hexdigest()
@@ -50,10 +52,19 @@ def inspect_bundle(body):
         raise PreflightFailure('encoding', metadata) from None
     metadata.update(
         debugPrelude=re.search(r'\b__DEV__\s*=\s*true\b', source[:4096]) is not None,
-        expectedLoopbackOrigin=ORIGIN in source,
         mobileAccountModule='/api/v1/auth/mobile' in source,
     )
-    if not all(metadata[key] for key in ('debugPrelude', 'expectedLoopbackOrigin', 'mobileAccountModule')):
+    required = ['debugPrelude', 'mobileAccountModule']
+    if profile == 'account':
+        metadata['expectedLoopbackOrigin'] = ORIGIN in source
+        required.append('expectedLoopbackOrigin')
+    else:
+        metadata['plannerScreen'] = all(label in source for label in (
+            'Drone Mission Control', 'Save encrypted draft',
+            'Physical launch and remote commands disabled',
+        ))
+        required.append('plannerScreen')
+    if not all(metadata[key] for key in required):
         raise PreflightFailure('config', metadata)
     return {'status': 'PASS', **metadata,
             'scope': 'Prepared Metro response; this does not independently prove which bundle the simulator consumed.'}
@@ -64,11 +75,13 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def evaluate(opener=None):
+def evaluate(opener=None, *, profile='account'):
     start = time.monotonic()
     metadata = {}
     result = None
     try:
+        if profile not in ('account', 'planner'):
+            raise PreflightFailure('profile')
         # Explicit local address and disabled proxy discovery prevent any provider request.
         if opener is None:
             opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
@@ -79,7 +92,7 @@ def evaluate(opener=None):
                 raise PreflightFailure('http-status')
             if metadata['contentKind'] != 'javascript':
                 raise PreflightFailure('content-type')
-            result = inspect_bundle(response.read(LIMIT + 1))
+            result = inspect_bundle(response.read(LIMIT + 1), profile=profile)
     except PreflightFailure as error:
         result = {'status': 'FAIL', 'category': error.category, **error.metadata}
     except urllib.error.HTTPError as error:
@@ -99,10 +112,14 @@ def evaluate(opener=None):
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('output', type=Path)
+    parser.add_argument('--profile', choices=('account', 'planner'), default='account')
+    args = parser.parse_args()
     print('ONESA_METRO_PREFLIGHT_START ' + json.dumps({'timeoutSeconds': COMPILE_TIMEOUT, 'maximumBytes': LIMIT}), flush=True)
-    result = evaluate()
+    result = evaluate(profile=args.profile)
     try:
-        Path(sys.argv[1]).write_text(json.dumps(result) + '\n')
+        args.output.write_text(json.dumps(result) + '\n')
     except Exception:
         # Preserve safe diagnostic progress if the private receipt cannot be written.
         result = {**result, 'status': 'FAIL', 'category': 'output'}

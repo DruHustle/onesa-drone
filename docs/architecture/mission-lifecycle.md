@@ -29,7 +29,12 @@ stateDiagram-v2
 The full transition graph in `autonomy/decision_engine/states.py` is authoritative.
 Prelaunch cancellation terminates and releases the reservation. Reschedule/replan
 invalidates prior authorization. Cancellation during a flight requests virtual return;
-it does not teleport an aircraft or claim an immediate delivery.
+it does not teleport an aircraft or claim an immediate delivery. An explicit operator
+abort is accepted only while a simulation is active and battery/endurance observations
+are valid; it records an aborted outcome and requests virtual return. If already
+returning or landing, it preserves the existing phase checkpoint and changes only the
+terminal outcome. A paused simulation uses the separate recovery action after valid
+observations are restored. Neither command can issue a physical aircraft instruction.
 
 The independent supervisor rejects nonfinite or untyped numeric launch data before
 performing route, payload or energy comparisons. An unavailable endurance or invalid

@@ -195,7 +195,19 @@ with contextlib.ExitStack() as resources:
         ],
         temp,
     )
-    ready(56882, p)
+    # PostgreSQL accepts TCP connections before it accepts SQL during startup.
+    for _ in range(200):
+        if p.poll() is not None:
+            raise RuntimeError("Local PostgreSQL exited during startup")
+        probe = subprocess.run(
+            [pg_bin / "pg_isready", "-q", "-h", "127.0.0.1", "-p", "56882", "-U", "fixture", "-d", "postgres"],
+            check=False,
+        )
+        if probe.returncode == 0:
+            break
+        time.sleep(0.15)
+    else:
+        raise RuntimeError("Local PostgreSQL did not accept connections")
     with psycopg.connect(
         f"postgresql://fixture:{db_password}@127.0.0.1:56882/postgres", autocommit=True
     ) as db:
