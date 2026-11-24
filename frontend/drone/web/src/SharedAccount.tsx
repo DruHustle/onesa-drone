@@ -43,7 +43,9 @@ export async function startSharedSignIn(reauthenticate = false) {
     ["127.0.0.1", "localhost"].includes(target.hostname);
   if (target.protocol !== "https:" && !(local && target.protocol === "http:"))
     throw new Error("The Onesa sign-in address is unavailable.");
-  window.location.assign(target.href);
+  const registrationReturn = new URL(window.location.href).searchParams.get("registration") === "complete";
+  if (!reauthenticate && registrationReturn) window.location.replace(target.href);
+  else window.location.assign(target.href);
 }
 
 export function WorkspaceChooser({

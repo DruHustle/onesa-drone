@@ -8,7 +8,7 @@ test("user and administrator registration resume the originating native product"
       let resumed = false;
       await registerWithOnesa(async (address, callback) => {
         const url = new URL(address);
-        assert.equal(url.origin + url.pathname, "https://auth.onesa.eu/register");
+        assert.equal(url.origin + url.pathname, "https://account.onesa.eu/register");
         assert.deepEqual(Object.fromEntries(url.searchParams), { audience, product: "drone", platform });
         assert.equal(callback, "onesadrone://account/registered");
         return { type: "success", url: callback };
