@@ -419,6 +419,8 @@ class IdentityPlanTests(unittest.TestCase):
             runner.initialize_backend("staging")
         commands = repr(compose.call_args_list)
         self.assertIn("identity_transactions,public.identity_sessions TO drone_runtime", commands)
+        self.assertIn("GRANT SELECT ON public.managed_identity_memberships TO drone_runtime", commands)
+        self.assertNotIn("INSERT,UPDATE,DELETE ON public.managed_identity_memberships", commands)
         for forbidden in ["bootstrap", "seed", "CREATE ROLE", "TRUNCATE", "DROP"]:
             self.assertNotIn(forbidden, commands)
 

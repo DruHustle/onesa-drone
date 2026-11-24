@@ -39,6 +39,19 @@ ONESA_ACCOUNT_CHECKPOINT admin:warm:https://private.invalid
         self.assertEqual(summarize("private unexpected message")["categories"],
                          ["unclassified-failure"])
 
+    def test_fixture_transport_reports_only_fixed_retry_and_failure_checkpoints(self):
+        phases = [
+            "fixture-transport-timeout", "fixture-transport-disconnected",
+            "fixture-transport-connect", "fixture-transport-other", "fixture-read-retry",
+        ]
+        private = "request URL and header must stay private"
+        result = summarize(
+            "\n".join(f"ONESA_ACCOUNT_CHECKPOINT admin:cold:{phase} {private}" for phase in phases)
+            + "\nONESA_ACCOUNT_CHECKPOINT admin:cold:fixture-transport-private"
+        )
+        self.assertEqual(result["checkpoints"], [f"admin:cold:{phase}" for phase in phases])
+        self.assertNotIn(private, json.dumps(result))
+
     def test_disk_exhaustion_is_reported_without_private_build_paths(self):
         result = summarize("error: error opening /private/account-secret/cache.d: No space left on device\n"
                            "Command CompileC failed with a nonzero exit code\n** TEST FAILED **")

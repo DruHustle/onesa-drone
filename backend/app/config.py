@@ -22,6 +22,10 @@ class Settings:
     ai_tenant: str = os.getenv("ONESA_AI_TENANT_ID", "")
     ai_cookie: str = os.getenv("ONESA_AI_COOKIE_NAME", "onesa_session")
     identity_enabled: bool = os.getenv("ONESA_IDENTITY_ENABLED", "false") == "true"
+    identity_audience: str = os.getenv("ONESA_IDENTITY_AUDIENCE", "")
+    identity_public_jwks: str = os.getenv("ONESA_IDENTITY_JWKS", "")
+    identity_mapping_issuer: str = os.getenv("ONESA_IDENTITY_MAPPING_ISSUER", "")
+    identity_account_url: str = os.getenv("ONESA_IDENTITY_ACCOUNT_URL", "")
     identity_issuer: str = os.getenv("ONESA_IDENTITY_ISSUER", "")
     identity_client_id: str = os.getenv("ONESA_IDENTITY_CLIENT_ID", "")
     identity_client_secret: str = field(default=os.getenv("ONESA_IDENTITY_CLIENT_SECRET", ""), repr=False)
@@ -70,8 +74,8 @@ class Settings:
                 or issuer.password
                 or issuer.query
                 or issuer.fragment
-                or self.identity_issuer.endswith("/")
-                or not self.identity_issuer.endswith("/api/v1/identity")
+                or (self.identity_audience and self.identity_issuer != issuer.scheme + "://" + issuer.netloc + "/")
+                or (not self.identity_audience and not self.identity_issuer.endswith("/api/v1/identity"))
                 or (issuer.scheme != "https" and not local)
                 or (local and not self.origin.startswith(("http://127.0.0.1:", "http://localhost:")))
             ):

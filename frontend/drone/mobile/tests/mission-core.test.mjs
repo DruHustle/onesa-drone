@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  A77, DEMO_ROUTE, PURPOSES, aircraftLocation, coordinate, waypoint,
+  A77, DEMO_ROUTE, PURPOSES, HARDWARE_HANDOFF_REASON, aircraftLocation, coordinate, waypoint,
   inspectRoute, makeDraft, simulationPosition, physicalDispatchStatus,
 } from "../src/mission-core.mjs";
 import { saveDraft, loadDrafts, deleteDraft } from "../src/mission-store.mjs";
@@ -10,6 +10,9 @@ test("A77 is not silently treated as a GPS or video-bridge aircraft", () => {
   assert.equal(A77.commandBridge, false);
   assert.equal(A77.flightEnabled, false);
   assert.equal(A77.gps, "unverified");
+  assert.equal(A77.video, "unverified");
+  assert.equal(Object.hasOwn(A77, "vendorApp"), false);
+  assert.match(HARDWARE_HANDOFF_REASON, /operator-led, motors-off/);
   assert.equal(aircraftLocation().position, null);
   assert.equal(physicalDispatchStatus().allowed, false);
 });
@@ -71,6 +74,31 @@ test("malformed stored records are not trusted", async () => {
   storage.values.set("onesa.drone.draft.draft_abc12345",
     JSON.stringify({ id: "draft_abc12345", title: "Bad", purpose: "conservancy",
       status: "draft", execution_enabled: true, waypoints: DEMO_ROUTE }));
+  assert.deepEqual(await loadDrafts(storage), [{ id: "draft_abc12345", unreadable: true }]);
+  await deleteDraft(storage, "draft_abc12345");
+  assert.deepEqual(await loadDrafts(storage), []);
+});
+
+test("stored drafts reopen with numeric coordinates and recalculated distance", async () => {
+  const storage = fakeStore();
+  const draft = numberedDraft(1);
+  await saveDraft(storage, draft);
+  const key = "onesa.drone.draft." + draft.id;
+  storage.values.set(key, JSON.stringify({
+    ...draft, distance_m: {}, waypoints: draft.waypoints.map(p => ({lat: String(p.lat), lon: String(p.lon)})),
+  }));
+  assert.deepEqual(await loadDrafts(storage), [draft]);
+});
+
+test("missing payloads free slots while damaged payloads remain removable", async () => {
+  const storage = fakeStore();
+  const draft = numberedDraft(2);
+  await saveDraft(storage, draft);
+  const key = "onesa.drone.draft." + draft.id;
+  storage.values.set(key, "{");
+  assert.deepEqual(await loadDrafts(storage), [{id: draft.id, unreadable: true}]);
+  assert.equal(storage.values.get(key), "{");
+  storage.values.delete(key);
   assert.deepEqual(await loadDrafts(storage), []);
 });
 test("secure index-write failure leaves no private record", async () => {

@@ -124,7 +124,12 @@ def configure_offline():
     # adb shell joins its arguments: preserve an explicit empty remote value.
     shell("settings", "put", "global", "airplane_mode_toggleable_radios", "''")
     shell("svc", "wifi", "disable")
-    shell("svc", "data", "disable")
+    # A disposable emulator has no SIM/subscription. On Android 15, svc may
+    # return exit 20 for that absent subscription even though airplane mode and
+    # the global mobile-data preference can still be applied. Do not fail on
+    # that command alone: the subsequent independent radio/network readback is
+    # the authoritative offline safety gate and must still pass.
+    shell("svc", "data", "disable", check=False)
     # The fresh image can retain the global preference when no default SIM
     # accepts svc's subscription-scoped request. Set both during fixture setup.
     shell("settings", "put", "global", "mobile_data", "0")

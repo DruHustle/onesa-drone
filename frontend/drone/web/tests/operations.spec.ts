@@ -107,6 +107,16 @@ test("real delivery, telemetry, replay, assistant and tracking", async ({
     page.getByRole("heading", { name: "Historical replay" }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Pause replay" }).click();
+  await page.getByRole("button", { name: "Maintenance", exact: true }).click();
+  await page
+    .getByRole("article")
+    .first()
+    .getByRole("button", { name: "View 3D", exact: true })
+    .click();
+  await expect(page.locator(".visual-top")).toContainText("STATIC 3D MODEL");
+  await expect(page.locator(".visual-top")).toContainText("NO LIVE CAMERA OR GPS");
+  await expect(page.locator(".visual-top .badge")).toHaveText(/available/);
+  await expect(page.locator(".visual-top")).not.toContainText("replay");
   const track = await context.newPage();
   await track.goto(link);
   await expect(
@@ -128,7 +138,7 @@ test("real delivery, telemetry, replay, assistant and tracking", async ({
   );
   expect(errors).toEqual([]);
 });
-test("fleet maintenance, delivery cancellation, incident resolution and report persist", async ({
+test("fleet maintenance, delivery cancellation and abort, incident resolution and report persist", async ({
   page,
 }) => {
   await login(page, "fleet-review");
@@ -174,6 +184,40 @@ test("fleet maintenance, delivery cancellation, incident resolution and report p
   await button("Reschedule +5 min").click();
   await button("Cancel mission").click();
   await expect(page.locator(".mission-detail .badge")).toHaveText(/cancelled/);
+
+  await button("+ New delivery").click();
+  await page.getByLabel("Delivery reference").fill("Aborted review parcel");
+  await button("Register delivery").click();
+  await button("Continue to mission").click();
+  await button("Plan & assign").click();
+  await button("Validate preflight").click();
+  await button("Authorize simulation").click();
+  await button("Launch simulation").click();
+  // Takeoff advances independently of the browser. Review the sustained
+  // outbound phase before issuing the command; a click against the previous
+  // revision is correctly rejected and must never count as an abort.
+  await expect(page.locator(".mission-detail .badge")).toHaveText(/outbound/);
+  const abortResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      response.url().endsWith("/commands") &&
+      response.request().postDataJSON().action === "abort",
+  );
+  await button("Abort to virtual home").click();
+  const aborted = await abortResponse;
+  expect(aborted.status(), await aborted.text()).toBe(200);
+  expect(await aborted.json()).toMatchObject({
+    state: "returning",
+    outcome: "aborted",
+    delivered: false,
+  });
+  await expect(page.locator(".command-feedback")).toContainText(
+    "Acknowledged by simulator — abort",
+  );
+  await expect(page.locator(".mission-detail .badge")).toHaveText(/aborted/, {
+    timeout: 45000,
+  });
+
   await button("Cybersecurity").click();
   await page
     .getByLabel("Title", { exact: true })
@@ -200,10 +244,13 @@ test("fleet maintenance, delivery cancellation, incident resolution and report p
   for await (const chunk of stream!) chunks.push(chunk);
   const report = JSON.parse(Buffer.concat(chunks).toString("utf8"));
   expect(report.mode).toBe("simulation");
+  // The report is newest-first (created_at DESC); assert the set of outcomes,
+  // not an incidental ordering between independently created missions.
   expect(
-    report.missions.map((mission: { state: string }) => mission.state),
-  ).toEqual(["cancelled"]);
+    report.missions.map((mission: { state: string }) => mission.state).sort(),
+  ).toEqual(["aborted", "cancelled"]);
   expect(JSON.stringify(report)).not.toContain("Cancelled review parcel");
+  expect(JSON.stringify(report)).not.toContain("Aborted review parcel");
 });
 
 for (const colorScheme of ["light", "dark"] as const)

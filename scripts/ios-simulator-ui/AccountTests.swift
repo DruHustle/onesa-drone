@@ -185,17 +185,23 @@ final class AccountTests: XCTestCase {
 
     @MainActor private func awaitBrowser(_ ready: @escaping () -> Bool) -> Bool {
         navigation(0)
-        var consent: XCUIElement?
+        var consentVisible = false
         let presented = {
-            consent = self.browserConsent()
-            return consent != nil || ready()
+            if self.browserConsentAlert() != nil {
+                consentVisible = true
+                return true
+            }
+            let pageReady = ready()
+            // The consent can appear during a slow WebKit accessibility query.
+            // Recheck it before returning readiness or a timed-out snapshot.
+            consentVisible = self.browserConsentAlert() != nil
+            return consentVisible || pageReady
         }
-        // A WebKit/XCTest snapshot can finish after the deadline. Recheck the
-        // live alert once before failing. Rendering Portal gets its own wait
-        // after the OS prompt has actually been accepted.
         guard waitFor(presented) || presented() else { return false }
-        guard consent != nil else { return true }
-        guard tapBrowserConsent() else { return false }
+        guard consentVisible else { return true }
+        // SpringBoard may publish the alert before its exact Continue button
+        // is actionable. Delay WebKit inspection until the OS prompt clears.
+        guard waitFor({ self.tapBrowserConsent() }, seconds: 10) else { return false }
         checkpoint("consent-tapped")
         if !waitFor({ self.browserConsentAlert() == nil }, seconds: 5), browserConsentAlert() != nil {
             // At most one retry of the still-present, semantically verified OS
@@ -322,7 +328,24 @@ final class AccountTests: XCTestCase {
         configuration.connectionProxyDictionary = [:]
         let session = URLSession(configuration: configuration)
         defer { session.invalidateAndCancel() }
-        return try await session.data(for: request)
+        do {
+            return try await session.data(for: request)
+        } catch let error as URLError {
+            switch error.code {
+            case .timedOut: checkpoint("fixture-transport-timeout")
+            case .networkConnectionLost: checkpoint("fixture-transport-disconnected")
+            case .cannotConnectToHost: checkpoint("fixture-transport-connect")
+            default:
+                checkpoint("fixture-transport-other")
+                throw error
+            }
+            // Re-read a current receipt before deciding whether the browser
+            // acted. Never retry the session expiry POST or submit a form here.
+            guard request.httpMethod == "GET" else { throw error }
+            checkpoint("fixture-read-retry")
+            try await Task.sleep(nanoseconds: 250_000_000)
+            return try await session.data(for: request)
+        }
     }
 
     @MainActor private func receivedStartAttempts() async throws -> Int {

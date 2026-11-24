@@ -74,17 +74,26 @@ test("simulator command feedback survives lost acknowledgements without automati
         ++revision;
         return route.fulfill({ json: aircraft() });
       }
-      if (writes === 2)
+      if (writes === 2) {
+        // The simulator can advance after the operator's snapshot. The UI
+        // must reconcile the new revision without replaying the rejected write.
+        ++revision;
+        return route.fulfill({
+          status: 409,
+          json: { detail: "Aircraft changed; reload before retrying" },
+        });
+      }
+      if (writes === 3)
         return route.fulfill({
           status: 422,
           json: { detail: "Synthetic rejection" },
         });
-      if (writes === 3)
+      if (writes === 4)
         return route.fulfill({
           status: 408,
           json: { detail: "Simulation command expired before execution" },
         });
-      if (writes === 4) return route.abort("connectionreset");
+      if (writes === 5) return route.abort("connectionreset");
     }
     throw new Error("Unexpected request " + path);
   });
@@ -99,6 +108,12 @@ test("simulator command feedback survives lost acknowledgements without automati
   await expect(status).toContainText("Acknowledged by simulator");
   await inspect.click();
   await expect(status).toContainText("Failed");
+  await expect(status).toContainText("Aircraft changed; reload before retrying");
+  await expect(inspect).toBeEnabled();
+  expect(writes).toBe(2);
+  await inspect.click();
+  await expect(status).toContainText("Failed");
+  await expect(status).toContainText("Synthetic rejection");
   await inspect.click();
   await expect(status).toContainText("Timed out");
   await inspect.click();
@@ -108,5 +123,5 @@ test("simulator command feedback survives lost acknowledgements without automati
     page.getByRole("heading", { name: "Mission overview" }),
   ).toBeVisible();
   await expect(page.locator(".fleet-row")).toContainText("Test quad");
-  expect(writes).toBe(4);
+  expect(writes).toBe(5);
 });

@@ -88,9 +88,11 @@ for _ in {1..90}; do
   sleep 1
 done
 if [[ "$ready" != true ]]; then echo "Metro did not start." >&2; exit 1; fi
-if [[ "$mode" == auth ]]; then
-  python3 "$repo/scripts/verify_native_metro.py" "$work/metro-preflight.json"
-fi
+# Metro's status endpoint does not mean its first full bundle has compiled.
+# Prepare that response before either Debug UI test starts its unchanged wait.
+profile=planner
+if [[ "$mode" == auth ]]; then profile=account; fi
+python3 "$repo/scripts/verify_native_metro.py" "$work/metro-preflight.json" --profile "$profile"
 if [[ "$mode" == auth ]]; then
   selected=AccountTests/testPortalSignInAndSystemCallback
   export TEST_RUNNER_ONESA_FIXTURE_PASSWORD="$ONESA_FIXTURE_PASSWORD"
@@ -104,7 +106,7 @@ arguments=(test -workspace ios/OnesaDrone.xcworkspace -scheme OnesaDroneSimulato
   -configuration Debug -destination "platform=iOS Simulator,id=$device" -parallel-testing-enabled NO
   -derivedDataPath .validation/ios-build -resultBundlePath "$results"
   "-only-testing:OnesaDroneSimulatorUI/$selected"
-  ARCHS=arm64 ONLY_ACTIVE_ARCH=YES ENABLE_DEBUG_DYLIB=NO)
+  ARCHS=arm64 ONLY_ACTIVE_ARCH=YES ENABLE_DEBUG_DYLIB=NO COMPILER_INDEX_STORE_ENABLE=NO)
 if [[ "$mode" == auth ]]; then
   if ! RCT_NO_LAUNCH_PACKAGER=1 xcodebuild "${arguments[@]}" > "$work/private-xcode.log" 2>&1; then
     python3 "$repo/scripts/ios_account_diagnostics.py" "$work/private-xcode.log"

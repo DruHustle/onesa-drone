@@ -8,5 +8,6 @@ GRANT INSERT, UPDATE ON tenants, users, aircraft, missions, incidents TO drone_r
 GRANT INSERT ON mission_events, audits, receipts TO drone_runtime;
 GRANT INSERT, UPDATE, DELETE ON sessions, telemetry TO drone_runtime;
 -- After explicitly applying the optional shared account migration (0002-identity):
+-- GRANT SELECT ON managed_identity_memberships TO drone_runtime;
 -- GRANT SELECT, INSERT, UPDATE, DELETE ON identity_transactions, identity_sessions TO drone_runtime;
 -- No runtime schema ownership, DDL, audit rewrite or audit deletion privileges.

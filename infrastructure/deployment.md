@@ -35,6 +35,26 @@ independent PostgreSQL database per environment. `scripts/vercel_package.mjs` cr
 source-bound prebuilt output with security headers and explicit API routing before
 the SPA fallback. Production and staging cannot share an API origin or database.
 
+### Prevent loss of API ingress on Git-derived Vercel builds
+
+A read-only 21 November 2026 production comparison found that the retained, source-bound
+CLI release correctly served `/api/v1/health` and `/api/v1/ready`, while a later Git
+`main` deployment serving `drone.onesa.eu` returned Vercel `NOT_FOUND` for both
+routes. A green static frontend can therefore mask a completely broken customer API.
+The root `frontend/vercel.json` now defines exact-host-only external API rewrites:
+`drone.onesa.eu` to `https://drone-api.onesa.eu` and
+`drone-staging.onesa.eu` to `https://drone-api-staging.onesa.eu`. No API is
+forwarded from a foreign preview alias. The `/api` exception to the SPA fallback
+remains enforced, and authentication/session/CSRF decisions remain backend-owned.
+
+The existing prebuilt `@vercel/output` packager and its immutable environment-specific
+routes are unchanged. Neither a new Git build nor a passing source test authorizes
+production promotion; verify the actual preview route with an anonymous readiness
+response, a denied unauthenticated private API, a genuine authenticated browser
+session, backend version/identity, separate staging data and a documented rollback.
+The currently approved new-spending ceiling is zero; do not upgrade Vercel Hobby
+or claim commercial release eligibility while its licensing gate remains open.
+
 The Dockerfile pins the official Python base digest, runs as UID 10001 and the
 Compose candidate binds only loopback with read-only filesystem, dropped capabilities,
 0.5 CPU, 256 MiB and 64 PIDs. Database/offload execution is capped at four threads and synchronous API work at

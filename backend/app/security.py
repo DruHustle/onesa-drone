@@ -2,7 +2,6 @@ import hashlib
 import secrets
 import hmac
 import time
-from collections import OrderedDict
 from threading import Lock
 from fastapi import HTTPException
 
@@ -40,16 +39,35 @@ DUMMY_HASH = password_hash("unusable-internal-account-placeholder")
 
 
 class Limiter:
+    """Bounded fixed-window limiter with isolated budgets for high-cardinality routes."""
+
+    MAX_ENTRIES = 4096
+    NAMESPACES = frozenset({
+        "login", "login-peer", "login-account", "identity-login",
+        "stream", "dispatch", "flight-plan", "assistant",
+    })
+
     def __init__(self):
-        self.entries, self.lock = OrderedDict(), Lock()
+        self.entries, self.lock, self.bucket = {}, Lock(), None
 
     def check(self, key, limit=120):
         with self.lock:
-            bucket = int(time.time() / 60)
-            old, count = self.entries.pop(key, (bucket, 0))
-            count = count + 1 if old == bucket else 1
-            self.entries[key] = (bucket, count)
-            while len(self.entries) > 4096:
-                self.entries.popitem(last=False)
+            # Rate-limit windows must not be reset by NTP/manual wall-clock changes.
+            # monotonic() advances independently of civil time adjustments.
+            bucket = int(time.monotonic() // 60)
+            if self.bucket != bucket:
+                # Every namespace belongs to one fixed-minute bucket. Clearing
+                # only on rollover keeps memory bounded and lockouts stable.
+                self.entries.clear()
+                self.bucket = bucket
+            prefix = key.partition(":")[0]
+            namespace = prefix if prefix in self.NAMESPACES else "request"
+            entries = self.entries.setdefault(namespace, {})
+            if key not in entries and len(entries) >= self.MAX_ENTRIES:
+                # Do not evict a live lockout. Saturation in one namespace must
+                # not deny unrelated API traffic or another limiter's keys.
+                raise HTTPException(429, "Request limit reached; retry after one minute")
+            count = entries.get(key, 0) + 1
+            entries[key] = count
             if count > limit:
                 raise HTTPException(429, "Request limit reached; retry after one minute")

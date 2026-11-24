@@ -83,7 +83,13 @@ for (const [port, target] of [
       const url = new URL(req.url, "https://localhost");
       const nativeStart = port === 54844 && req.method === "POST" &&
         url.pathname === "/api/v1/auth/mobile/start";
+      const nativeExchange = port === 54844 && req.method === "POST" &&
+        url.pathname === "/api/v1/auth/mobile/exchange";
       if (nativeStart) recordNativeStart("attempts");
+      if (nativeExchange && nativeFlows.length) {
+        nativeFlows.at(-1).exchangeAttempts++;
+        saveNativeAudit();
+      }
       if (port === 54844 && url.pathname === "/__onesa_fixture/start-receipt") {
         const key = process.env.ONESA_NATIVE_CONTROL_KEY;
         if (!process.env.ONESA_NATIVE_AUDIT_PATH || !key || req.method !== "GET" ||
@@ -265,6 +271,15 @@ for (const [port, target] of [
           },
         },
         (remote) => {
+          if (nativeExchange && nativeFlows.length) {
+            const status = remote.statusCode;
+            const flow = nativeFlows.at(-1);
+            const key = status === 200 ? "exchange200" :
+              status >= 400 && status < 500 ? "exchange4xx" :
+              status >= 500 && status < 600 ? "exchange5xx" : "exchangeOther";
+            flow[key]++;
+            saveNativeAudit();
+          }
           if (nativeStart) {
             const status = remote.statusCode;
             recordNativeStart(status === 200 ? "responses200" :
@@ -280,7 +295,15 @@ for (const [port, target] of [
             remote.statusCode === 200 &&
             process.env.ONESA_NATIVE_AUDIT_PATH
           ) {
-            nativeFlows.push({ credentialPosts: 0, continuePosts: 0 });
+            nativeFlows.push({
+              credentialPosts: 0,
+              continuePosts: 0,
+              exchangeAttempts: 0,
+              exchange200: 0,
+              exchange4xx: 0,
+              exchange5xx: 0,
+              exchangeOther: 0,
+            });
             currentInteraction = null;
             saveNativeAudit();
           }
