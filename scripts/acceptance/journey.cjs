@@ -55,7 +55,7 @@ async function submitPortalLogin(page) {
         step = label + " / open Drone";
         await page.goto(f.drone);
         await page
-          .getByRole("button", { name: /^(Continue|Sign in) with Onesa$/ })
+          .getByRole("button", { name: /^(Sign in|Continue with Onesa)$/ })
           .click();
         step = label + " / enter Portal";
         if (state === "signed out")
@@ -252,7 +252,7 @@ async function submitPortalLogin(page) {
           .getByRole("button", { name: "Sign out of Onesa", exact: true })
           .click();
         await expect(
-          page.getByRole("button", { name: /^(Continue|Sign in) with Onesa$/ }),
+          page.getByRole("button", { name: /^(Sign in|Continue with Onesa)$/ }),
         ).toBeVisible();
         assert.equal(
           (await context.request.get(f.drone + "/api/v1/auth/me")).status(),

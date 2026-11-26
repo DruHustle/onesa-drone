@@ -29,6 +29,7 @@ export default function AccountHome({ colors, children }) {
       setAccount(profile);
       setInitialized(true);
       setLocked(false);
+      return Boolean(profile);
     } catch (error) {
       if (attempt !== revision.current) return;
       setLocked(true);
@@ -87,7 +88,7 @@ export default function AccountHome({ colors, children }) {
       keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
     });
     setLocked(true);
-    await refresh();
+    if (await refresh()) setOpened(false);
   }
   async function logout() {
     setLocked(true);
@@ -133,7 +134,7 @@ export default function AccountHome({ colors, children }) {
               accessibilityRole="header"
               style={[styles.title, { color: colors.text }]}
             >
-              Onesa account
+              Drone account
             </Text>
             <Panel colors={colors}>
               {account && !locked ? (
@@ -164,20 +165,16 @@ export default function AccountHome({ colors, children }) {
                 </>
               ) : (
                 <>
-                  <Body colors={colors}>
-                    Use your Onesa account for your private field
-                    planner and Drone workspaces.
-                  </Body>
                   <Button
                     colors={colors}
                     disabled={working || locked}
                     onPress={() => act(login)}
                   >
-                    Sign in with Onesa
+                    Sign in
                   </Button>
                   <Button colors={colors} secondary disabled={working || locked}
                     onPress={() => act(() => registerWithOnesa(WebBrowser.openAuthSessionAsync, Platform.OS, "user", login))}>
-                    Create an Onesa account
+                    Create account
                   </Button>
                   <Button colors={colors} secondary disabled={working || locked}
                     onPress={() => act(() => registerWithOnesa(WebBrowser.openAuthSessionAsync, Platform.OS, "admin", login))}>

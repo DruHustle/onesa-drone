@@ -166,21 +166,21 @@ test("shared sign-in has one clear entry and no second account form", async ({
   const writes = await identityUI(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
-  for (const [audience, name] of [["user", "Create an Onesa account"], ["admin", "Request administrator access"]]) {
+  for (const [audience, name] of [["user", "Create account"], ["admin", "Request administrator access"]]) {
     await expect(page.getByRole("link", { name })).toHaveAttribute("href",
       "https://account.onesa.eu/register?product=drone&platform=web&audience=" + audience);
   }
   await expect(
     page.getByRole("heading", {
-      name: "One account. Every Onesa application.",
+      name: "Sign in to Drone",
     }),
   ).toBeVisible();
   await expect(page.getByLabel("Password", { exact: true })).toHaveCount(0);
   await expect(
-    page.getByRole("button", { name: "Sign in with Onesa" }),
+    page.getByRole("button", { name: "Sign in", exact: true }),
   ).toBeVisible();
   const button = await page
-    .getByRole("button", { name: "Sign in with Onesa" })
+    .getByRole("button", { name: "Sign in", exact: true })
     .boundingBox();
   expect(button!.y + button!.height).toBeLessThan(644);
   expect(
@@ -202,7 +202,7 @@ test("shared sign-in has one clear entry and no second account form", async ({
       fullPage: true,
     });
   }
-  await page.getByRole("button", { name: "Sign in with Onesa" }).click();
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Onesa account" }),
   ).toBeVisible();
@@ -300,7 +300,7 @@ test("callback failure is readable and removes the transient query from browser 
   );
   await expect(page).toHaveURL(/\/$/);
   await expect(
-    page.getByRole("button", { name: "Sign in with Onesa" }),
+    page.getByRole("button", { name: "Sign in", exact: true }),
   ).toBeEnabled();
 });
 
@@ -336,7 +336,7 @@ test("partial central logout clears Drone and provides a direct account recovery
     page.getByRole("link", { name: "Open Onesa account", exact: true }),
   ).toHaveAttribute("href", account.account_url);
   await expect(
-    page.getByRole("button", { name: "Sign in with Onesa" }),
+    page.getByRole("button", { name: "Sign in", exact: true }),
   ).toBeVisible();
   await expect(page.getByText(account.email)).toHaveCount(0);
   expect(
@@ -350,7 +350,7 @@ test("partial central logout clears Drone and provides a direct account recovery
   });
 });
 
-for (const [tier, linkName] of [["user", "Create an Onesa account"], ["admin", "Request administrator access"]]) {
+for (const [tier, linkName] of [["user", "Create account"], ["admin", "Request administrator access"]]) {
   test(`${tier} registration returns to Drone before starting product sign-in`, async ({ page }) => {
     const writes = await identityUI(page);
     await page.goto("/");

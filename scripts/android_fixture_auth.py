@@ -138,7 +138,7 @@ def main():
             raise
         tap("Onesa account")
         for state in ("signed-out", "active"):
-            tap("Sign in with Onesa")
+            tap("Sign in")
             helper = Path(__file__).parent / "android-emulator-ui" / "portal.cjs"
             child = subprocess.run(["node", str(helper), role, state], capture_output=True, timeout=125)
             if child.returncode != 0:
@@ -155,7 +155,7 @@ def main():
                 # AccountHome revalidates the foreground planner every 30s.
                 # Its genuine 401 clears the local session and closes the planner.
                 find("Your Onesa session or workspace access has changed. Sign in again.", timeout=85)
-                find("Sign in with Onesa")
+                find("Sign in")
                 print(f"PASS Android / {role} / expired product session requires sign-in", flush=True)
         tap(f"{role}@example.test")
         tap("Sign out of Onesa")
