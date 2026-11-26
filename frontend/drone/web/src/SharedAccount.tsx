@@ -9,15 +9,15 @@ const errors: Record<string, string> = {
     "That sign-in link has expired. Start again to continue.",
   identity_rejected: "Your Onesa session has ended. Sign in again to continue.",
   identity_unavailable:
-    "Onesa sign-in is temporarily unavailable. Please try again.",
+    "Sign-in is temporarily unavailable. Please try again.",
   identity_account_changed:
-    "Use the same Onesa account when confirming administrator access.",
+    "Use the same account when confirming administrator access.",
   identity_reauthentication_expired:
     "Your session changed while you were confirming access. Sign in again to continue.",
   identity_reauthentication_required:
-    "Confirm your Onesa account with MFA to continue.",
+    "Confirm your account with MFA to continue.",
   identity_mfa_required:
-    "Complete MFA in your Onesa account to use administrator access.",
+    "Complete MFA in your account to use administrator access.",
   application_access_required:
     "Your account is ready. Ask an administrator for Drone access.",
 };
@@ -56,7 +56,7 @@ export async function startSharedSignIn(reauthenticate = false) {
     ["127.0.0.1", "localhost"].includes(location.hostname) &&
     ["127.0.0.1", "localhost"].includes(target.hostname);
   if (target.protocol !== "https:" && !(local && target.protocol === "http:"))
-    throw new Error("The Onesa sign-in address is unavailable.");
+    throw new Error("The Sign-in address is unavailable.");
   window.location.assign(target.href);
 }
 
@@ -105,7 +105,7 @@ export function WorkspaceChooser({
       <a className="wordmark" href="/">
         ONESA <small>DRONE</small>
       </a>
-      <p className="eyebrow">YOUR ONESA ACCOUNT</p>
+      <p className="eyebrow">ACCOUNT SETTINGS</p>
       <h1 id="workspace-title">Choose your workspace</h1>
       <p>
         Signed in as <strong>{user.email}</strong>.
