@@ -466,7 +466,7 @@ function App() {
     if (result.central_signed_out === false) {
       setSignOutAccountUrl(user?.account_url || "");
       setNotice(
-        "You are signed out of Drone. Sign-out from your other Onesa applications could not be confirmed. Open your Onesa account to finish signing out everywhere.",
+        "You are signed out of Drone. Sign-out from your other Onesa applications could not be confirmed. Open account settings to finish signing out everywhere.",
       );
     }
   }
@@ -505,12 +505,12 @@ function App() {
           <p className="eyebrow">MISSION OPERATIONS</p>
           <h2>
             {sharedAccount
-              ? "One account. Every Onesa application."
+              ? "Sign in to Drone"
               : "Sign in to your workspace"}
           </h2>
           <p>
             {sharedAccount
-              ? "Use your Onesa account for AI Platform, Company Portal, Drone and Robot. Your workspace access follows you."
+              ? "Enter your email and password."
               : "Use your individually provisioned operator account."}
           </p>
           {sharedAccount ? (
@@ -520,17 +520,10 @@ function App() {
                 disabled={busy}
                 onClick={() => void run(() => startSharedSignIn())}
               >
-                {busy ? "Opening Onesa sign-in…" : "Continue with Onesa"}
+                {busy ? "Opening sign-in…" : "Sign in"}
               </button>
-              <p className="fine">
-                New to Onesa? Choose the registration type for your one shared
-                Onesa account. Drone workspace access is reviewed separately.
-              </p>
               <a className="identity-link" href={droneRegistrationUrl("user")}>
-                Create an Onesa account
-              </a>
-              <a className="identity-link" href={droneRegistrationUrl("admin")}>
-                Request administrator registration
+                Sign up
               </a>
             </div>
           ) : sharedAccount === false ? (
@@ -578,7 +571,7 @@ function App() {
               <p>{notice}</p>
               {signOutAccountUrl && (
                 <a className="identity-link" href={signOutAccountUrl}>
-                  Open Onesa account
+                  Open account settings
                 </a>
               )}
             </div>
@@ -783,7 +776,7 @@ function App() {
         <small>Physical flight disabled</small>
         {user.identity_managed && (
           <div className="identity-actions">
-            <a href={user.account_url}>Onesa account</a>
+            <a href={user.account_url}>Account settings</a>
             {user.role === "admin" && (
               <button
                 className="quiet"

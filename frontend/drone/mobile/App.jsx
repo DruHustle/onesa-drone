@@ -114,7 +114,7 @@ function Screen() {
     let active=true;
     const receive = value => {
       if(active && isEnrollmentReturn(value)) {
-        setNotice("Your Onesa Account registration returned to Drone. Sign-in and workspace permissions still require independent verification and approval. Physical flight remains disabled.");
+        setNotice("Sign-up is complete. Sign in to continue.");
         setTab("Aircraft");
       }
     };
@@ -124,7 +124,7 @@ function Screen() {
   },[]);
   async function openAccount(url) {
     try { await Linking.openURL(url); }
-    catch { setNotice("The Onesa Account page could not be opened. Check your internet connection and try again."); }
+    catch { setNotice("Sign-in could not be opened. Check your internet connection and try again."); }
   }
   function registerAccount(tier) {
     if(Platform.OS!=="ios" && Platform.OS!=="android") {
@@ -352,12 +352,11 @@ function Screen() {
 
       {tab==="Aircraft" && <>
         <Panel colors={colors}>
-          <Text style={[styles.h3,{color:colors.text}]}>Onesa Account</Text>
-          <Body colors={colors} muted>One Onesa account serves Drone and other Onesa products. Registration opens in your system browser. A returned enrollment link does not sign you in, grant workspace access, or authorize aircraft operation.</Body>
+          <Text style={[styles.h3,{color:colors.text}]}>Account</Text>
+          <Body colors={colors} muted>Sign up in your browser.</Body>
           <View style={styles.wrap}>
-            <Button colors={colors} onPress={()=>registerAccount("user")}>Create Onesa account</Button>
-            <Button colors={colors} secondary onPress={()=>registerAccount("admin")}>Request administrator access</Button>
-            <Button colors={colors} secondary onPress={()=>{void openAccount(accountHome);}}>Open Onesa Account</Button>
+            <Button colors={colors} onPress={()=>registerAccount("user")}>Sign up</Button>
+            <Button colors={colors} secondary onPress={()=>{void openAccount(accountHome);}}>Account settings</Button>
           </View>
         </Panel>
         <Panel colors={colors}>
