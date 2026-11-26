@@ -172,7 +172,7 @@ test("shared sign-in has one clear entry and no second account form", async ({
   }
   await expect(
     page.getByRole("heading", {
-      name: "One account. Every Onesa application.",
+      name: "Sign in to Drone",
     }),
   ).toBeVisible();
   await expect(page.getByLabel("Password", { exact: true })).toHaveCount(0);
