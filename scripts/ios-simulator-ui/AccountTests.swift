@@ -65,7 +65,7 @@ final class AccountTests: XCTestCase {
     }
 
     @MainActor private func signInGeometry(_ stage: String) {
-        let button = app.buttons["Sign in with Onesa"]
+        let button = app.buttons["Sign in"]
         guard button.exists else { return }
         let frame = button.frame
         let window = app.frame
@@ -97,7 +97,7 @@ final class AccountTests: XCTestCase {
         observed("auth-sheet-foreground", authSheet.state == .runningForeground)
         let consentPresent = browserConsentAlert() != nil
         observed("consent-continue-visible", consentPresent)
-        let signIn = app.buttons["Sign in with Onesa"]
+        let signIn = app.buttons["Sign in"]
         observed("sign-in-enabled", signIn.exists && signIn.isEnabled)
         observed("sign-in-disabled", signIn.exists && !signIn.isEnabled)
         observed("contacting-visible", app.staticTexts["Contacting Onesa…"].exists)
@@ -489,7 +489,7 @@ final class AccountTests: XCTestCase {
         checkpoint("start")
         let address = role + "@example.test"
         let accountHeading = app.staticTexts["Onesa account"]
-        let signInButton = app.buttons["Sign in with Onesa"]
+        let signInButton = app.buttons["Sign in"]
         app.launch()
         if warm {
             XCTAssertTrue(app.staticTexts["Your Onesa session or workspace access has changed. Sign in again."].waitForExistence(timeout: 45), "Expired product session requires real sign-in")
