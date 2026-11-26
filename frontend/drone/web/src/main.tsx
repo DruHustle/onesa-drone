@@ -557,12 +557,12 @@ function App() {
           <p className="eyebrow">MISSION OPERATIONS</p>
           <h2>
             {(sharedAccount || !localSimulator)
-              ? "One account. Every Onesa application."
+              ? "Sign in to Drone"
               : "Sign in to your workspace"}
           </h2>
           <p>
             {(sharedAccount || !localSimulator)
-              ? "Sign in with your Onesa account to open your approved Drone workspace."
+              ? "Sign in to open your workspace."
               : "Use your individually provisioned operator account."}
           </p>
           {sharedAccount ? (
@@ -575,7 +575,7 @@ function App() {
                   await startSharedSignIn();
                 })}
               >
-                {busy ? "Opening Onesa sign-in…" : "Sign in with Onesa"}
+                {busy ? "Opening sign-in…" : "Sign in"}
               </button>
 
             </div>
@@ -622,7 +622,7 @@ function App() {
             <p role="status">Drone shared sign-in is temporarily unavailable. Reload this page to retry.</p>
           ) : null}
           {(sharedAccount || !localSimulator) && <>
-            <a className="identity-link" href={droneRegistration + "&audience=user"} onClick={() => rememberRequestedView(entryView)}>Create an Onesa account</a>
+            <a className="identity-link" href={droneRegistration + "&audience=user"} onClick={() => rememberRequestedView(entryView)}>Create account</a>
             <a className="identity-link" href={droneRegistration + "&audience=admin"} onClick={() => rememberRequestedView(entryView)}>Request administrator access</a>
           </>}
           {notice && (
