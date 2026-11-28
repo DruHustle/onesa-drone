@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "repository": "DruHustle/onesa-drone",
+  "mobilePath": "frontend/drone/mobile",
+  "framework": "expo",
+  "appId": "eu.onesa.drone",
+  "scheme": "OnesaDrone",
+  "xcodeKind": "workspace",
+  "xcodeContainer": "ios/OnesaDrone.xcworkspace",
+  "generatedNative": true,
+  "requiredChecks": [
+    "verification",
+    "publication-hygiene",
+    "mobile",
+    "mobile-android",
+    "mobile-ios"
+  ]
+}
